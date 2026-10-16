@@ -1,0 +1,18 @@
+stages:
+  - verify
+
+check-ci-environment:
+  stage: verify
+  image: eclipse-temurin:21-jdk
+
+  tags:
+    - nexa-ci
+
+  script:
+    - echo "NEXA CI environment check"
+    - java -version
+
+  rules:
+    - when: manual
+
+  allow_failure: true
