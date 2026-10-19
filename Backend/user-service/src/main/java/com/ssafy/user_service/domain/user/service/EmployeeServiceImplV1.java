@@ -1,16 +1,27 @@
 package com.ssafy.user_service.domain.user.service;
 
+import com.ssafy.user_service.domain.user.dto.EmployeeCreateRequest;
 import com.ssafy.user_service.domain.user.dto.EmployeeSummary;
+import com.ssafy.user_service.domain.user.dto.EmployeeTerminateRequest;
 import com.ssafy.user_service.domain.user.entity.Department;
 import com.ssafy.user_service.domain.user.entity.Employee;
 import com.ssafy.user_service.domain.user.entity.Grade;
+import com.ssafy.user_service.domain.user.entity.JobAssignment;
+import com.ssafy.user_service.domain.user.entity.PersonalInfo;
+import com.ssafy.user_service.domain.user.entity.enums.JobCodeType;
 import com.ssafy.user_service.domain.user.repository.DepartmentRepository;
+import com.ssafy.user_service.domain.user.repository.DutyRepository;
 import com.ssafy.user_service.domain.user.repository.EmployeeRepository;
 import com.ssafy.user_service.domain.user.repository.GradeRepository;
+import com.ssafy.user_service.domain.user.repository.JobCodeRepository;
+import com.ssafy.user_service.domain.user.repository.PositionRepository;
 import com.ssafy.user_service.global.exception.BusinessException;
 import com.ssafy.user_service.global.exception.ErrorCode;
+import com.ssafy.user_service.global.security.TokenStore;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 
@@ -21,6 +32,58 @@ public class EmployeeServiceImplV1 implements EmployeeService {
     private final EmployeeRepository employeeRepository;
     private final DepartmentRepository departmentRepository;
     private final GradeRepository gradeRepository;
+    private final PositionRepository positionRepository;
+    private final DutyRepository dutyRepository;
+    private final JobCodeRepository jobCodeRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final TokenStore tokenStore;
+
+    @Override
+    @Transactional
+    public Long create(EmployeeCreateRequest r) {
+        if (employeeRepository.existsByLoginId(r.email())) {
+            throw new BusinessException(ErrorCode.DUPLICATE_LOGIN_ID);
+        }
+        validateReferences(r);
+
+        Employee employee = Employee.builder()
+                .empNo(r.empNo())
+                .loginId(r.email())
+                .passwordEnc(passwordEncoder.encode(r.password()))
+                .name(r.name())
+                .role(r.role())
+                .job(JobAssignment.builder()
+                        .deptId(r.deptId()).positionId(r.positionId()).gradeId(r.gradeId()).dutyId(r.dutyId())
+                        .jobFamilyId(r.jobFamilyId()).jobKindId(r.jobKindId()).jobRoleId(r.jobRoleId())
+                        .build())
+                .personal(PersonalInfo.builder()
+                        .engName(r.engName()).officePhone(r.officePhone()).mobile(r.mobile())
+                        .nationality(r.nationality()).gender(r.gender()).birthDate(r.birthDate())
+                        .address(r.address())
+                        .build())
+                .empType(r.empType())
+                .hireType(r.hireType())
+                .hireDate(r.hireDate())
+                .recogHireDate(r.recogHireDate())
+                .leavePolicyId(r.leavePolicyId())
+                .workGroupId(r.workGroupId())
+                .build();
+
+        return employeeRepository.save(employee).getEmpId();
+    }
+
+    @Override
+    @Transactional
+    public void terminate(Long employeeId, EmployeeTerminateRequest request) {
+        Employee employee = employeeRepository.findById(employeeId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.EMPLOYEE_NOT_FOUND));
+        if (employee.isTerminated()) {
+            throw new BusinessException(ErrorCode.EMPLOYEE_ALREADY_TERMINATED);
+        }
+        employee.terminate(request.resignDate(), request.resignReason());
+        // 퇴직자는 재발급으로 세션을 이어갈 수 없어야 한다 (access는 최대 15분 뒤 자연 만료)
+        tokenStore.deleteRefreshToken(employeeId);
+    }
 
     @Override
     public Optional<Employee> findByLoginId(String loginId) {
@@ -41,5 +104,18 @@ public class EmployeeServiceImplV1 implements EmployeeService {
                 .map(Grade::getName)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GRADE_NOT_FOUND));
         return new EmployeeSummary(employee.getEmpId(), employee.getName(), deptName, gradeName);
+    }
+
+    // employee의 NOT NULL FK 7개가 모두 실제 행을 가리키는지. DB FK 오류(500/409)가 아니라 400으로 응답하기 위함
+    private void validateReferences(EmployeeCreateRequest r) {
+        if (!departmentRepository.existsById(r.deptId())) throw new BusinessException(ErrorCode.DEPARTMENT_NOT_FOUND);
+        if (!positionRepository.existsById(r.positionId())) throw new BusinessException(ErrorCode.POSITION_NOT_FOUND);
+        if (!gradeRepository.existsById(r.gradeId())) throw new BusinessException(ErrorCode.GRADE_NOT_FOUND);
+        if (!dutyRepository.existsById(r.dutyId())) throw new BusinessException(ErrorCode.DUTY_NOT_FOUND);
+        if (!jobCodeRepository.existsByJobCodeIdAndType(r.jobFamilyId(), JobCodeType.FAMILY)
+                || !jobCodeRepository.existsByJobCodeIdAndType(r.jobKindId(), JobCodeType.KIND)
+                || !jobCodeRepository.existsByJobCodeIdAndType(r.jobRoleId(), JobCodeType.ROLE)) {
+            throw new BusinessException(ErrorCode.JOB_CODE_NOT_FOUND);
+        }
     }
 }
