@@ -1,0 +1,72 @@
+### Spring Initializr 기본 ###
+HELP.md
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### Spring 로컬 프로필 / 시크릿 설정 ###
+# application.properties(기본) 와 dev/prod 공용 프로필은 커밋, 개인 로컬·시크릿 프로필만 제외
+**/src/main/resources/application-local.*
+**/src/main/resources/application-secret.*
+**/src/main/resources/application-*.local.*
+**/src/test/resources/application-local.*
+**/src/main/resources/*.pem
+**/src/main/resources/*.p12
+**/src/main/resources/*.jks
+
+### 환경 변수 ###
+.env
+.env.*
+!.env.example
+
+### Docker ###
+compose.override.yaml
+compose.override.yml
+docker-compose.override.yaml
+docker-compose.override.yml
+
+### 로그 / 런타임 산출물 ###
+logs/
+*.log
+*.log.*
+hs_err_pid*
+replay_pid*
+/data/
+/tmp/
+
+### OS ###
+.DS_Store
+Thumbs.db
