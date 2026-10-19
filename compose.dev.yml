@@ -48,12 +48,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
 
     environment:
       SERVER_PORT: "8081"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nexa_user
       SPRING_DATASOURCE_USERNAME: nexa_user_app
       SPRING_DATASOURCE_PASSWORD: ${USER_DB_PASSWORD:?USER_DB_PASSWORD is required}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
 
     ports:
       - "127.0.0.1:8081:8081"
@@ -63,6 +67,13 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "3", "http://localhost:8081/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
 
   approval-service:
     build:
@@ -83,6 +94,29 @@ services:
 
     ports:
       - "127.0.0.1:8083:8083"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "3", "http://localhost:8083/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
     logging:
       driver: json-file
