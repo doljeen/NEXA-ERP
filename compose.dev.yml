@@ -64,5 +64,31 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  approval-service:
+    build:
+      context: ./Backend/approval-service
+    image: nexa-approval:local
+
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      SERVER_PORT: "8083"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nexa_approval
+      SPRING_DATASOURCE_USERNAME: nexa_approval_app
+      SPRING_DATASOURCE_PASSWORD: ${APPROVAL_DB_PASSWORD:?APPROVAL_DB_PASSWORD is required}
+
+    ports:
+      - "127.0.0.1:8083:8083"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   postgres-data:
