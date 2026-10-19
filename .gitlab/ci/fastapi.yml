@@ -1,0 +1,26 @@
+verify-fastapi:
+  stage: verify
+  image: python:3.11-slim
+
+  tags:
+    - nexa-ci
+
+  script:
+    - cd FastAPI
+    - python -m pip install --no-cache-dir -r requirements.txt
+    - python -m pip check
+    - |
+      python - <<'PY'
+      from fastapi.testclient import TestClient
+      from main import app
+
+      with TestClient(app) as client:
+          response = client.get("/health")
+          assert response.status_code == 200, response.text
+          assert response.json() == {"status": "ok"}, response.text
+
+      print("FastAPI health check passed")
+      PY
+
+  when: manual
+  allow_failure: true
