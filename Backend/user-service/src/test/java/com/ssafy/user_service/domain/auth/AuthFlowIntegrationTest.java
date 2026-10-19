@@ -1,0 +1,118 @@
+package com.ssafy.user_service.domain.auth;
+
+import com.ssafy.user_service.support.AbstractIntegrationTest;
+import jakarta.servlet.http.Cookie;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+/** 로그인/재발급/로그아웃/잠금 흐름. dev 시드의 admin@local.dev 계정을 사용한다. */
+class AuthFlowIntegrationTest extends AbstractIntegrationTest {
+
+    private static final String ADMIN_LOGIN = """
+            {"email":"admin@local.dev","pass":"admin1234!"}""";
+
+    @Autowired
+    MockMvc mvc;
+
+    private Cookie[] login(String body) throws Exception {
+        MvcResult res = mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andExpect(cookie().httpOnly("accessToken", true))
+                .andExpect(cookie().path("refreshToken", "/api/v1/auth"))
+                .andReturn();
+        return res.getResponse().getCookies();
+    }
+
+    private static String loginJson(String email, String pass) {
+        return """
+                {"email":"%s","pass":"%s"}""".formatted(email, pass);
+    }
+
+    @Test
+    void 잘못된_비밀번호는_401_AUTH_005() throws Exception {
+        mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson("admin@local.dev", "nope")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("AUTH_005"));
+    }
+
+    @Test
+    void 로그인_성공시_요약정보와_쿠키를_내려준다() throws Exception {
+        MvcResult res = mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content(ADMIN_LOGIN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.employeeId").value(1))
+                .andExpect(jsonPath("$.data.deptName").isString())
+                .andReturn();
+        assertThat(res.getResponse().getCookies()).extracting(Cookie::getName).contains("accessToken", "refreshToken");
+    }
+
+    @Test
+    void 재발급_회전과_재사용_탐지_그리고_이전_access_차단() throws Exception {
+        Cookie[] first = login(ADMIN_LOGIN);
+
+        MvcResult reissued = mvc.perform(post("/api/v1/auth/reissue").cookie(first))
+                .andExpect(status().isOk()).andReturn();
+        Cookie[] second = reissued.getResponse().getCookies();
+        assertThat(second).extracting(Cookie::getName).contains("accessToken", "refreshToken");
+
+        // 옛 refresh 재사용 → 세션 폐기
+        mvc.perform(post("/api/v1/auth/reissue").cookie(first))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("AUTH_008"));
+        // 교체된 이전 access 는 즉시 차단
+        mvc.perform(post("/api/v1/nothing").cookie(first))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("AUTH_004"));
+        // 재사용 탐지로 새 refresh 도 무효
+        mvc.perform(post("/api/v1/auth/reissue").cookie(second))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("AUTH_008"));
+    }
+
+    @Test
+    void 로그아웃_후_access는_블랙리스트_refresh는_무효_쿠키는_삭제() throws Exception {
+        Cookie[] c = login(ADMIN_LOGIN);
+        mvc.perform(post("/api/v1/auth/logout").cookie(c))
+                .andExpect(status().isOk())
+                .andExpect(cookie().maxAge("accessToken", 0))
+                .andExpect(cookie().maxAge("refreshToken", 0));
+        mvc.perform(post("/api/v1/nothing").cookie(c))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("AUTH_004"));
+        mvc.perform(post("/api/v1/auth/reissue").cookie(c))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("AUTH_008"));
+        mvc.perform(post("/api/v1/auth/logout")).andExpect(status().isOk()); // 쿠키 없이도 200
+    }
+
+    @Test
+    void 로그인_5회_실패시_계정_잠금_423() throws Exception {
+        // 잠금은 계정 존재 여부와 무관하게 loginId 기준으로 센다
+        for (int i = 0; i < 5; i++) {
+            mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                            .content(loginJson("lock@local.dev", "wrong")))
+                    .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.error.code").value("AUTH_005"));
+        }
+        mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson("lock@local.dev", "whatever")))
+                .andExpect(status().isLocked())
+                .andExpect(jsonPath("$.error.code").value("AUTH_010"));
+    }
+
+    @Test
+    void 매핑되지_않은_URL은_404() throws Exception {
+        Cookie[] admin = login(ADMIN_LOGIN);
+        mvc.perform(post("/api/v1/nothing").cookie(admin))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COMMON_003"));
+    }
+}
