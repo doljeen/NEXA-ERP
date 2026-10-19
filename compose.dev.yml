@@ -38,5 +38,31 @@ services:
       retries: 10
       start_period: 10s
 
+  user-service:
+    build:
+      context: ./Backend/user-service
+    image: nexa-user:local
+
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      SERVER_PORT: "8081"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nexa_user
+      SPRING_DATASOURCE_USERNAME: nexa_user_app
+      SPRING_DATASOURCE_PASSWORD: ${USER_DB_PASSWORD:?USER_DB_PASSWORD is required}
+
+    ports:
+      - "127.0.0.1:8081:8081"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   postgres-data:
