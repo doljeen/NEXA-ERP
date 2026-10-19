@@ -18,11 +18,18 @@ services:
       POSTGRES_USER: nexa_admin
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
 
+      USER_DB_PASSWORD: ${USER_DB_PASSWORD:?USER_DB_PASSWORD is required}
+      LEAVE_DB_PASSWORD: ${LEAVE_DB_PASSWORD:?LEAVE_DB_PASSWORD is required}
+      APPROVAL_DB_PASSWORD: ${APPROVAL_DB_PASSWORD:?APPROVAL_DB_PASSWORD is required}
+      ATTENDANCE_DB_PASSWORD: ${ATTENDANCE_DB_PASSWORD:?ATTENDANCE_DB_PASSWORD is required}
+      PAYROLL_DB_PASSWORD: ${PAYROLL_DB_PASSWORD:?PAYROLL_DB_PASSWORD is required}
+
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
 
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
 
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\"" ]
@@ -30,6 +37,58 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+  user-service:
+    build:
+      context: ./Backend/user-service
+    image: nexa-user:local
+
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      SERVER_PORT: "8081"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nexa_user
+      SPRING_DATASOURCE_USERNAME: nexa_user_app
+      SPRING_DATASOURCE_PASSWORD: ${USER_DB_PASSWORD:?USER_DB_PASSWORD is required}
+
+    ports:
+      - "127.0.0.1:8081:8081"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  approval-service:
+    build:
+      context: ./Backend/approval-service
+    image: nexa-approval:local
+
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      SERVER_PORT: "8083"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nexa_approval
+      SPRING_DATASOURCE_USERNAME: nexa_approval_app
+      SPRING_DATASOURCE_PASSWORD: ${APPROVAL_DB_PASSWORD:?APPROVAL_DB_PASSWORD is required}
+
+    ports:
+      - "127.0.0.1:8083:8083"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   postgres-data:

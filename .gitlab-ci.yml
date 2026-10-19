@@ -1,6 +1,10 @@
 stages:
   - verify
-  - test
+  - build
+
+include:
+  - local: /.gitlab/ci/user.yml
+  - local: /.gitlab/ci/approval.yml
 
 check-ci-environment:
   stage: verify
@@ -17,41 +21,3 @@ check-ci-environment:
     - when: manual
 
   allow_failure: true
-
-# user-service 단위 + 통합 테스트.
-# 통합 테스트는 Testcontainers 로 Postgres/Redis 컨테이너를 띄우므로
-# 러너(nexa-ci)에 Docker 소켓(/var/run/docker.sock) 접근이 있어야 한다.
-test:user-service:
-  stage: test
-  image: eclipse-temurin:21-jdk
-
-  tags:
-    - nexa-ci
-
-  variables:
-    GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle-home"
-    GRADLE_OPTS: "-Dorg.gradle.daemon=false"
-
-  cache:
-    key: user-service-gradle
-    paths:
-      - .gradle-home/caches
-      - .gradle-home/wrapper
-
-  script:
-    - cd Backend/user-service
-    - chmod +x gradlew
-    - ./gradlew test
-
-  artifacts:
-    when: always
-    reports:
-      junit: Backend/user-service/build/test-results/test/TEST-*.xml
-    paths:
-      - Backend/user-service/build/reports/tests/test
-    expire_in: 1 week
-
-  rules:
-    - changes:
-        - Backend/user-service/**/*
-        - .gitlab-ci.yml
