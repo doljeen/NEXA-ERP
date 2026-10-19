@@ -35,6 +35,9 @@ dependencies {
     // Eureka 서비스 인스턴스 로드밸런싱
     implementation 'org.springframework.cloud:spring-cloud-starter-loadbalancer'
 
+    // config client
+    implementation 'org.springframework.cloud:spring-cloud-starter-config'
+
     // Test
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
