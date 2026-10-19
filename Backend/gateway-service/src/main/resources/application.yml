@@ -1,63 +1,12 @@
 
-server:
-  port: 8080
-
 spring:
   application:
     name: gateway-service
 
+  config:
+    import: "configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+
   cloud:
-    gateway:
-      server:
-        webflux:
-          routes:
-            # 유저 / 인증
-            - id: user-service
-              uri: lb://user-service
-              predicates:
-                - Path=/api/{version:v[0-9]+}/users/**,/api/{version:v[0-9]+}/auth/**
-
-            # 휴가
-            - id: leave-service
-              uri: lb://leave-service
-              predicates:
-                - Path=/api/{version:v[0-9]+}/leaves/**
-
-            # 결재
-            - id: approval-service
-              uri: lb://approval-service
-              predicates:
-                - Path=/api/{version:v[0-9]+}/approvals/**
-
-            # 근태
-            - id: attendance-service
-              uri: lb://attendance-service
-              predicates:
-                - Path=/api/{version:v[0-9]+}/attendance/**
-
-            # 급여
-            - id: payroll-service
-              uri: lb://payroll-service
-              predicates:
-                - Path=/api/{version:v[0-9]+}/payroll/**
-
-            # AI
-            - id: ai-service
-              uri: lb://ai-service
-              predicates:
-                - Path=/api/{version:v[0-9]+}/ai/**
-
-# Eureka Client
-eureka:
-  client:
-    serviceUrl:
-      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/} # 이거 환경변수로 나중에 바꿔야함
-    register-with-eureka: true
-    fetch-registry: true
-
-
-# HS256 JWT
-security:
-  jwt:
-    secret-base64: ${JWT_SECRET_BASE64:askdjfhakshdhakjshdjkfhjakshdjkfjakshdjkfhjkasdkjfhjkasdhfjkhkjlasdhfkjhjk}
-    issuer: nexa-auth
+    config:
+      username: config-client
+      password: ${CONFIG_SERVER_PASSWORD}
