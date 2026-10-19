@@ -5,9 +5,28 @@ build-user:
   tags:
     - nexa-ci
 
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+
+  variables:
+    POSTGRES_DB: nexa_user_test
+    POSTGRES_USER: ci_user
+    POSTGRES_PASSWORD: ci_test_password
+
+    SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nexa_user_test
+    SPRING_DATASOURCE_USERNAME: ci_user
+    SPRING_DATASOURCE_PASSWORD: ci_test_password
+
   script:
     - cd Backend/user-service
-    - bash gradlew --no-daemon bootJar
+    - bash gradlew --no-daemon test bootJar
+
+  artifacts:
+    when: always
+    expire_in: 7 days
+    reports:
+      junit: Backend/user-service/build/test-results/test/TEST-*.xml
 
   when: manual
   allow_failure: true
