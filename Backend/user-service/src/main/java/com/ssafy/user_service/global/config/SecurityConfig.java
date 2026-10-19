@@ -42,6 +42,7 @@ public class SecurityConfig {
             SecurityConstants.AUTH_BASE_PATH + "/logout",   // access 만료 후에도 세션 정리가 가능해야 함
             SecurityConstants.AUTH_BASE_PATH + "/reissue",
             SecurityConstants.JWKS_PATH,
+            "/actuator/health",
             "/error",
             "/swagger-ui/**",
             "/v3/api-docs/**"
