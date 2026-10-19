@@ -11,43 +11,52 @@ spring:
       server:
         webflux:
           routes:
-            # 유저 서비스 (8081)
+            # 유저 / 인증
             - id: user-service
-              uri: ${USER_SERVICE_URL:http://localhost:8081}
+              uri: lb://user-service
               predicates:
                 - Path=/api/{version:v[0-9]+}/users/**,/api/{version:v[0-9]+}/auth/**
 
-            # 휴가 서비스 (8082)
+            # 휴가
             - id: leave-service
-              uri: ${LEAVE_SERVICE_URL:http://localhost:8082}
+              uri: lb://leave-service
               predicates:
                 - Path=/api/{version:v[0-9]+}/leaves/**
 
-            # 결재 서비스 (8083)
+            # 결재
             - id: approval-service
-              uri: ${APPROVAL_SERVICE_URL:http://localhost:8083}
+              uri: lb://approval-service
               predicates:
                 - Path=/api/{version:v[0-9]+}/approvals/**
 
-            # 근태 서비스 (8084)
+            # 근태
             - id: attendance-service
-              uri: ${ATTENDANCE_SERVICE_URL:http://localhost:8084}
+              uri: lb://attendance-service
               predicates:
                 - Path=/api/{version:v[0-9]+}/attendance/**
 
-            # 급여 서비스 (8085)
+            # 급여
             - id: payroll-service
-              uri: ${PAYROLL_SERVICE_URL:http://localhost:8085}
+              uri: lb://payroll-service
               predicates:
                 - Path=/api/{version:v[0-9]+}/payroll/**
 
-            # AI 서비스 (8086)
+            # AI
             - id: ai-service
-              uri: ${AI_SERVICE_URL:http://localhost:8086}
+              uri: lb://ai-service
               predicates:
                 - Path=/api/{version:v[0-9]+}/ai/**
 
-# HS256 JWT 공통 설정
+# Eureka Client
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/} # 이거 환경변수로 나중에 바꿔야함
+    register-with-eureka: true
+    fetch-registry: true
+
+
+# HS256 JWT
 security:
   jwt:
     secret-base64: ${JWT_SECRET_BASE64:askdjfhakshdhakjshdjkfhjakshdjkfjakshdjkfhjkasdkjfhjkasdhfjkhkjlasdhfkjhjk}

@@ -29,6 +29,12 @@ dependencies {
     // JWT 인증
     implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
 
+    // Eureka 서비스 등록 및 탐색
+    implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+
+    // Eureka 서비스 인스턴스 로드밸런싱
+    implementation 'org.springframework.cloud:spring-cloud-starter-loadbalancer'
+
     // Test
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
