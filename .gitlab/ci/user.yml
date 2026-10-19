@@ -1,0 +1,13 @@
+build-user:
+  stage: build
+  image: eclipse-temurin:21-jdk
+
+  tags:
+    - nexa-ci
+
+  script:
+    - cd Backend/user-service
+    - bash gradlew --no-daemon bootJar
+
+  when: manual
+  allow_failure: true

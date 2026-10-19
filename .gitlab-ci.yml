@@ -1,5 +1,10 @@
 stages:
   - verify
+  - build
+
+include:
+  - local: /.gitlab/ci/user.yml
+  - local: /.gitlab/ci/approval.yml
 
 check-ci-environment:
   stage: verify
