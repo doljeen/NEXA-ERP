@@ -93,6 +93,9 @@ def probe_unsupported(base, mid, cdir, fname, hk):
     try:
         up = upload(base, mid, hk["closestEntity"], cdir / fname)
         issues = all_issues(base, mid, up["fileId"])
+        detail = call(base, f"{API}/{mid}/files/{up['fileId']}")
+        # 수식 셀의 저장된 계산값을 실제로 읽었는지: 열마다 감지된 형식과 빈 값 비율
+        probe["columnsRead"] = {c["sourceColumn"]: {"type": c["detectedType"], "nullRate": c["nullRate"]} for c in detail["columns"]}
         probe.update(rowsRead=up["rows"], headersRead=up["headers"],
                      fileIssues=sorted({i["code"] for i in issues if i["rowNo"] is None}),
                      rowIssues=sum(i["rowNo"] is not None for i in issues))
@@ -108,8 +111,13 @@ def unsupported_section(results):
     needs = Counter()
     for r in results:
         for u in r["unsupported"]:
-            read = (f"`{u['sheetOrder'][0]}` 시트 {u['rowsRead']}행, 헤더 {', '.join(map(str, u['headersRead'][:4]))} …"
-                    if "rowsRead" in u else f"업로드 실패: {u['error']}")
+            if "rowsRead" in u:
+                cols = u["columnsRead"].values()
+                read = (f"`{u['sheetOrder'][0]}` 시트 {u['rowsRead']}행, 헤더 {', '.join(map(str, u['headersRead'][:4]))} …, "
+                        f"숫자 열 {sum(c['type'] == 'NUMBER' for c in cols)}/{len(cols)}, "
+                        f"빈 값 있는 열 {sum(c['nullRate'] > 0 for c in cols)}")
+            else:
+                read = f"업로드 실패: {u['error']}"
             lines.append(f"| {r['company']} | {u['file']} | {u['entity']} | {read} | {', '.join(u.get('fileIssues', [])) or '-'} "
                          f"| {u['accidents']}건 (검출 0, 미지원) | {u['legalDeviations']}건 |")
             needs.update(u["needs"])

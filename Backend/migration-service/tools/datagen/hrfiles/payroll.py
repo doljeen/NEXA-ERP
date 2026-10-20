@@ -470,10 +470,10 @@ def _plan(spec, roster, facts, rng):
                  needs=["FORMULA_READ", "HARDCODED_IN_FORMULA_COLUMN", "RECOMPUTE_CHECK"])
         for _ in range(2):
             plan["spaceNames"].add(pick(months[-1])["empNo"])
-        e = pick(months[-1])
+        e = newest(months[-1], month_bounds(months[0])[0]) or pick(months[-1])
         plan["numericKeys"].add(e["empNo"])
         note(type="LOOKUP_NA", sheet="근태", empNo=e["empNo"], columns=["otH", "nightH", "holH", "hol8H"], scope="allMonths",
-             detail="근태 시트에서 이 사람 사번이 숫자로 입력돼 앞자리 0이 사라짐 → 모든 월 시트의 VLOOKUP이 #N/A, 수당·공제·실지급·합계 행까지 #N/A",
+             detail="최근 입사자를 근태 시트에 추가하면서 사번을 숫자로 입력해 앞자리 0이 사라짐 → 그 사람이 있는 월 시트의 VLOOKUP이 #N/A, 수당·공제·실지급·합계 행까지 #N/A",
              needs=["ERROR_VALUE", "CROSS_SHEET_LOOKUP", "MULTI_SHEET"])
     elif sid == "daramulsan":
         ym = months[0]
