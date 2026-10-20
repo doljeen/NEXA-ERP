@@ -25,7 +25,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 from openpyxl import Workbook
 
-from hrfiles import payroll
+from hrfiles import leave, payroll
 from hrfiles.facts import build_facts, month_range
 
 CUTOVER = dt.date(2027, 1, 1)
@@ -307,7 +307,11 @@ def main():
         key = write_company(company, org, employees, errors, out_dir, rng)
         cdir = out_dir / company["id"]
         hr_rng = random.Random("%s:hr:%d" % (company["id"], args.seed))
-        key["hrFiles"] = {"급여대장.xlsx": payroll.build(company, clean, facts, cdir, hr_rng)}
+        file_rng = lambda name: random.Random("%s:%s:%d" % (company["id"], name, args.seed))  # noqa: E731 - 파일마다 따로
+        key["hrFiles"] = {
+            "급여대장.xlsx": payroll.build(company, clean, facts, cdir, hr_rng),
+            "연차관리대장.xlsx": leave.build(company, clean, facts, cdir, file_rng("leave")),
+        }
         (cdir / "answer_key.json").write_text(json.dumps(key, ensure_ascii=False, indent=2), encoding="utf-8")
         by_code = {}
         for e in key["errors"]:

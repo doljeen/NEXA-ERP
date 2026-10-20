@@ -80,6 +80,37 @@ def _dependents(e, rng):
     return deps
 
 
+LEDGER_DATE = dt.date(2026, 12, 31)  # 연차·퇴직금 등 '전환 직전' 기준일
+
+
+def statutory_leave(hire, ref=LEDGER_DATE):
+    """근로기준법 제60조: 1년 미만 월 1일(최대 11), 1년 이상 15일, 최초 1년 초과 2년마다 1일 가산, 최대 25일"""
+    from .xl import datedif_m, datedif_y
+    n = datedif_y(hire, ref)
+    if n < 1:
+        return min(datedif_m(hire, ref), 11)
+    return min(15 + (n - 1) // 2, 25)
+
+
+def _leave_usage(e, rng):
+    """2026년에 쓴 연차 (근무일만, 일부 반차). 근태기록과 연차관리대장이 같이 쓴다"""
+    if e["resignDate"] is not None or e["hireDate"] > LEDGER_DATE:
+        return []
+    start = max(dt.date(2026, 1, 1), e["hireDate"] + dt.timedelta(days=31))
+    days = [start + dt.timedelta(days=i) for i in range((LEDGER_DATE - start).days + 1)]
+    days = [d for d in days if not is_holiday(d)]
+    target = rng.uniform(0.3, 0.95) * min(statutory_leave(e["hireDate"]), 15)
+    out, total = [], 0.0
+    for d in sorted(rng.sample(days, min(len(days), int(target) + 2))):
+        if total + 1 > target:
+            break
+        kind = rng.choices(["연차", "오전반차", "오후반차"], [80, 10, 10])[0]
+        n = 1.0 if kind == "연차" else 0.5
+        out.append({"date": d, "kind": kind, "days": n, "reason": rng.choice(["개인사유", "가족행사", "병원", "여행", "휴식", "이사"])})
+        total += n
+    return out
+
+
 def build_facts(company, employees, months, seed):
     """사번 → 사실. employees는 오류를 넣기 전 '깨끗한' 직원 목록"""
     rng = random.Random("%s:facts:%d" % (company["id"], seed))
@@ -107,4 +138,7 @@ def build_facts(company, employees, months, seed):
             "hours": hrs,
             "nightCrew": night_crew,
         }
+    leave_rng = random.Random("%s:leave:%d" % (company["id"], seed))  # 따로 둬서 위 값들이 바뀌지 않게
+    for e in employees:
+        facts[e["empNo"]]["leave"] = _leave_usage(e, leave_rng)
     return facts

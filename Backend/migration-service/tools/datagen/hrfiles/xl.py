@@ -62,6 +62,16 @@ def _prod(xs):
     return r
 
 
+def datedif_y(a, b):
+    """DATEDIF(a, b, "Y"): 꽉 찬 햇수"""
+    return b.year - a.year - ((b.month, b.day) < (a.month, a.day))
+
+
+def datedif_m(a, b):
+    """DATEDIF(a, b, "M"): 꽉 찬 개월 수"""
+    return (b.year - a.year) * 12 + b.month - a.month - (b.day < a.day)
+
+
 def num(x):
     """정수로 떨어지는 실수는 정수로 (엑셀 표시와 같게)"""
     if isinstance(x, float) and x.is_integer():
