@@ -1,23 +1,44 @@
 """
 가상 회사 데이터를 이관 서비스에 올리고 정답지(answer_key.json)와 비교한다.
 
-- 매핑 정확도: 추천된 컬럼 매핑 == 정답 매핑
-- 오류 검출률: 정답지의 오류 (rowNo, field, code) 중 이관 서비스가 찾은 비율 (유형별)
-- 오탐: 정답지에 없는데 찾은 행 단위 오류
-- 인사 엑셀(급여대장 등): 이관 서비스가 아직 처리하지 못하는 파일 → 가장 가까운 entity로 올려 실제 응답(읽은 시트·헤더·경고)을
-  기록하고 '미지원'으로 표시. 정답지의 사고를 유형별로 세고, 사고를 잡는 데 필요한 기능(needs)을 집계한다
+- 직원·조직: 추천 매핑 == 정답 매핑, 정답지 오류 (rowNo, field, code) 중 서비스가 찾은 비율, 오탐
+- 인사 엑셀(급여대장 등): 파일의 데이터 시트마다 따로 올린다 (sheet 지정). 가장 가까운 entity가 없으면 REFERENCE(분석 전용).
+  - 읽기: 서비스가 읽은 행 수·헤더가 정답지 시트 구조와 맞는지
+  - 사고: 정답지 사고 유형 → 서비스 이슈 코드 대응표(ACCIDENT_CODES)로 (시트, 행) 위치가 맞는 이슈가 있으면 검출
+  - 대응표에 있는 코드인데 정답지 사고 위치가 아닌 이슈는 '정답지에 없는 경고'로 따로 센다
+
+생성기와 서비스 검증 규칙을 같은 쪽이 만들었으므로 검출률은 회귀 확인일 뿐이다.
 
 사용: python -I evaluate.py <out 폴더> [--base http://localhost:8087]
 """
 import argparse
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from collections import Counter, defaultdict
 from pathlib import Path
 
 API = "/api/v1/admin/migrations"
+
+# 직원명부 오류 코드 → 서비스가 같은 오류를 낼 때 쓰는 코드 (이름이 다른 것만)
+ROSTER_CODE_ALIAS = {"POSITION_TYPO": {"CODE_TYPO_SUSPECTED"}}
+
+# 인사 엑셀 사고 유형 → 이 사고를 잡았다고 볼 서비스 이슈 코드
+ACCIDENT_CODES = {
+    "HARDCODED_EQUAL": {"HARDCODED_VALUE"}, "HARDCODED_STALE": {"HARDCODED_VALUE"},
+    "REMAIN_HARDCODED": {"HARDCODED_VALUE"}, "GRANTED_HARDCODED": {"HARDCODED_VALUE"},
+    "AMOUNT_HARDCODED": {"HARDCODED_VALUE"}, "RATE_AMOUNT_MISMATCH": {"HARDCODED_VALUE"},
+    "NEW_ROW_FORMULA_MISSING": {"BLANK_IN_FORMULA_COLUMN"},
+    "ROW_AFTER_TOTAL": {"ROW_AFTER_TOTAL"},
+    "REF_ERROR": {"FORMULA_ERROR"}, "LOOKUP_NA": {"FORMULA_ERROR"},
+    "SUM_RANGE_MISSING": {"FORMULA_INCONSISTENT", "FORMULA_DIFFERS_ACROSS_SHEETS"},
+    "STALE_RATE_LITERAL": {"FORMULA_INCONSISTENT", "FORMULA_DIFFERS_ACROSS_SHEETS"},
+    "BASE_DATE_WRONG": {"FORMULA_INCONSISTENT"}, "UNDER_ONE_YEAR_PAID": {"FORMULA_INCONSISTENT"},
+}
+NEW_CODES = set().union(*ACCIDENT_CODES.values())
+SKIP_ROLES = {"settings", "lookupTable"}  # 설정·세액표 시트는 데이터가 아니라서 올리지 않음
 
 
 def call(base, path, data=None, ctype="application/json", method=None):
@@ -32,12 +53,13 @@ def call(base, path, data=None, ctype="application/json", method=None):
     return body["data"]
 
 
-def upload(base, mid, entity, path):
+def upload(base, mid, entity, path, sheet=None):
     boundary = "----" + uuid.uuid4().hex
     head = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{path.name}"\r\n'
             f"Content-Type: application/octet-stream\r\n\r\n").encode("utf-8")
     body = head + path.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
-    return call(base, f"{API}/{mid}/files?entity={entity}", body, f"multipart/form-data; boundary={boundary}")
+    q = f"entity={entity}" + (f"&sheet={urllib.parse.quote(sheet)}" if sheet else "")
+    return call(base, f"{API}/{mid}/files?{q}", body, f"multipart/form-data; boundary={boundary}")
 
 
 def all_issues(base, mid, file_id):
@@ -69,62 +91,118 @@ def evaluate_company(base, cdir):
 
     found = found_by_entity["HR_EMPLOYEE"]
     expected_errors = {(e["rowNo"], e["field"], e["code"]): e for e in key["errors"]}
+    matched = set()
     by_code = defaultdict(lambda: {"expected": 0, "found": 0, "detectable": True})
-    for k, e in expected_errors.items():
-        s = by_code[e["code"]]
+    for (row_no, field, code), e in expected_errors.items():
+        s = by_code[code]
         s["expected"] += 1
         s["detectable"] = e["detectable"]
-        s["found"] += k in found
+        hits = {(row_no, field, c) for c in {code} | ROSTER_CODE_ALIAS.get(code, set())} & found
+        s["found"] += bool(hits)
+        matched |= hits
     result["detection"] = dict(by_code)
-    for row_no, field, code in found - expected_errors.keys():
+    for row_no, field, code in found - matched:
         result["falsePositives"][code] += 1
     result["falsePositives"] = dict(result["falsePositives"])
     result["orgIssues"] = len(found_by_entity["HR_ORG"])
-    result["unsupported"] = [probe_unsupported(base, mid, cdir, fname, hk) for fname, hk in key.get("hrFiles", {}).items()]
+    result["hrFiles"] = [evaluate_hr_file(base, mid, cdir, fname, hk) for fname, hk in key.get("hrFiles", {}).items()]
     return result
 
 
-def probe_unsupported(base, mid, cdir, fname, hk):
-    """처리 못 하는 파일을 올려 보고 서비스가 실제로 무엇을 읽었는지 남긴다. 실패해도 직원·조직 평가는 계속"""
-    probe = {"file": fname, "entity": hk["closestEntity"], "sheetOrder": hk["sheetOrder"],
-             "accidents": len(hk["accidents"]), "accidentTypes": dict(Counter(a["type"] for a in hk["accidents"])),
-             "legalDeviations": len(hk.get("legalDeviations", [])),
-             "needs": dict(Counter(n for a in hk["accidents"] for n in a["needs"]))}
-    if hk["closestEntity"] is None:
-        probe["error"] = "올릴 entity 없음 (MigrationEntity에 해당 종류가 없음)"
-        return probe
-    try:
-        up = upload(base, mid, hk["closestEntity"], cdir / fname)
-        issues = all_issues(base, mid, up["fileId"])
-        detail = call(base, f"{API}/{mid}/files/{up['fileId']}")
-        # 수식 셀의 저장된 계산값을 실제로 읽었는지: 열마다 감지된 형식과 빈 값 비율
-        probe["columnsRead"] = {c["sourceColumn"]: {"type": c["detectedType"], "nullRate": c["nullRate"]} for c in detail["columns"]}
-        probe.update(rowsRead=up["rows"], headersRead=up["headers"],
-                     fileIssues=sorted({i["code"] for i in issues if i["rowNo"] is None}),
-                     rowIssues=sum(i["rowNo"] is not None for i in issues))
-    except Exception as e:  # noqa: BLE001 - 업로드 거절도 결과로 남긴다
-        probe["error"] = str(e)
-    return probe
+def evaluate_hr_file(base, mid, cdir, fname, hk):
+    """데이터 시트마다 올려 읽기 결과와 사고 검출을 본다. 업로드가 거절돼도 다른 평가는 계속"""
+    entity = hk["closestEntity"] or "REFERENCE"
+    res = {"file": fname, "entity": entity, "sheets": [], "accidents": [], "unexpected": Counter(),
+           "legalDeviations": len(hk.get("legalDeviations", [])),
+           "needs": dict(Counter(n for a in hk["accidents"] for n in a["needs"]))}
+    issues_by_sheet = {}
+    for name, meta in hk["sheets"].items():
+        if meta.get("role") in SKIP_ROLES:
+            continue
+        sr = {"sheet": name, "role": meta.get("role")}
+        try:
+            up = upload(base, mid, entity, cdir / fname, name)
+            issues = all_issues(base, mid, up["fileId"])
+            issues_by_sheet[name] = issues
+            sr.update(read=_read_check(up, meta, hk), fileIssues=sorted({i["code"] for i in issues if i["rowNo"] is None}))
+        except Exception as e:  # noqa: BLE001 - 업로드 거절도 결과로 남긴다
+            sr["error"] = str(e)
+        res["sheets"].append(sr)
+
+    explained = set()
+    for a in hk["accidents"]:
+        codes = ACCIDENT_CODES.get(a["type"])
+        item = {"id": a["id"], "type": a["type"], "codes": sorted(codes) if codes else None, "detected": False}
+        if codes:
+            for sheet, row in _locations(a):
+                for i in issues_by_sheet.get(sheet, []):
+                    if i["code"] in codes and (row is None or i["rowNo"] == row):
+                        item["detected"] = True
+                        explained.add((sheet, i["rowNo"], i["code"]))
+        res["accidents"].append(item)
+    for sheet, issues in issues_by_sheet.items():
+        for i in issues:
+            if i["code"] in NEW_CODES and (sheet, i["rowNo"], i["code"]) not in explained:
+                res["unexpected"][i["code"]] += 1
+    res["unexpected"] = dict(res["unexpected"])
+    return res
 
 
-def unsupported_section(results):
-    lines = ["## 미지원 파일 (인사 엑셀)", "",
-             "| 회사 | 파일 | 올린 entity | 서비스가 읽은 것 | 파일 경고 | 정답지 사고 | 법정 기준과 다른 규칙 |",
-             "|---|---|---|---|---|---|---|"]
-    needs = Counter()
+def _locations(a):
+    """사고가 드러나는 (시트, 행). 행이 None이면 그 시트 어디든 (시트 단위 사고)"""
+    if a.get("affected"):
+        return [(x["sheet"], x["rowNo"]) for x in a["affected"]]
+    if a.get("rowNo"):
+        return [(a["sheet"], a["rowNo"])]
+    rows = [r for r in a.get("rows", []) if isinstance(r, int)]
+    if rows:
+        return [(a["sheet"], r) for r in rows]
+    return [(a["sheet"], None)]
+
+
+def _read_check(up, meta, hk):
+    """서비스가 읽은 행 수·헤더 vs 정답지 시트 구조"""
+    expected_rows = None
+    if meta.get("firstDataRow") and meta.get("lastDataRow"):
+        expected_rows = meta["lastDataRow"] - meta["firstDataRow"] + 1 + len(meta.get("rowsAfterTotal", []))
+    mapping = hk.get("expectedMapping", {}).get(meta.get("role"), {})
+    want = {" ".join(h.split()) for h in mapping}
+    got = {" ".join(str(h).split()) for h in up["headers"]}
+    return {"sheetRead": up.get("sheetName"), "rows": up["rows"], "expectedRows": expected_rows,
+            "headersMatched": len(want & got), "headersExpected": len(want), "headersSample": up["headers"][:4]}
+
+
+def hr_section(results):
+    lines = ["## 인사 엑셀", "", "### 읽기 (시트별)", "",
+             "| 회사 | 파일 | 시트 | 읽은 시트 | 행 (읽음/정답) | 헤더 일치 | 파일 경고 |", "|---|---|---|---|---|---|---|"]
+    by_type = defaultdict(lambda: {"expected": 0, "detected": 0, "codes": None})
+    unexpected, needs = Counter(), Counter()
     for r in results:
-        for u in r["unsupported"]:
-            if "rowsRead" in u:
-                cols = u["columnsRead"].values()
-                read = (f"`{u['sheetOrder'][0]}` 시트 {u['rowsRead']}행, 헤더 {', '.join(map(str, u['headersRead'][:4]))} …, "
-                        f"숫자 열 {sum(c['type'] == 'NUMBER' for c in cols)}/{len(cols)}, "
-                        f"빈 값 있는 열 {sum(c['nullRate'] > 0 for c in cols)}")
-            else:
-                read = u["error"]
-            lines.append(f"| {r['company']} | {u['file']} | {u['entity'] or '-'} | {read} | {', '.join(u.get('fileIssues', [])) or '-'} "
-                         f"| {u['accidents']}건 (검출 0, 미지원) | {u['legalDeviations']}건 |")
-            needs.update(u["needs"])
-    lines += ["", "### 사고를 잡는 데 필요한 기능 (정답지 needs 집계)", "", "| 기능 | 필요한 사고 수 |", "|---|---|"]
+        for f in r["hrFiles"]:
+            for s in f["sheets"]:
+                if "error" in s:
+                    lines.append(f"| {r['company']} | {f['file']} | {s['sheet']} | 업로드 실패: {s['error']} | | | |")
+                    continue
+                rd = s["read"]
+                rows = f"{rd['rows']}/{rd['expectedRows']}" + ("" if rd["rows"] == rd["expectedRows"] else " ✗")
+                head = f"{rd['headersMatched']}/{rd['headersExpected']}" if rd["headersExpected"] else "-"
+                lines.append(f"| {r['company']} | {f['file']} | {s['sheet']} | {rd['sheetRead'] or '(첫 시트)'} | {rows} | {head} "
+                             f"| {', '.join(s['fileIssues']) or '-'} |")
+            for a in f["accidents"]:
+                t = by_type[a["type"]]
+                t["expected"] += 1
+                t["detected"] += a["detected"]
+                t["codes"] = a["codes"]
+            unexpected.update(f["unexpected"])
+            needs.update(f["needs"])
+    total = sum(t["expected"] for t in by_type.values())
+    hit = sum(t["detected"] for t in by_type.values())
+    lines += ["", f"### 사고 검출: {hit}/{total}", "",
+              "| 사고 유형 | 정답 | 검출 | 대응 이슈 코드 |", "|---|---|---|---|"]
+    for k, t in sorted(by_type.items(), key=lambda x: (-x[1]["detected"], x[0])):
+        lines.append(f"| {k} | {t['expected']} | {t['detected']} | {', '.join(t['codes']) if t['codes'] else '대응 기능 없음'} |")
+    lines += ["", f"- 정답지에 없는 경고 (대응표 코드 기준): {dict(unexpected) or '없음'}",
+              "", "### 사고를 잡는 데 필요한 기능 (정답지 needs 집계)", "", "| 기능 | 필요한 사고 수 |", "|---|---|"]
     lines += [f"| {k} | {v} |" for k, v in needs.most_common()]
     return lines + [""]
 
@@ -149,19 +227,18 @@ def main():
         lines.append("|---|---|---|---|---|")
         for code, s in sorted(r["detection"].items()):
             rate = s["found"] / s["expected"] if s["expected"] else 0
-            lines.append(f"| {code} | {s['expected']} | {s['found']} | {rate:.0%} | {'' if s['detectable'] else '아직 못 잡는 유형'} |")
-            if s["detectable"]:
-                total_det["expected"] += s["expected"]
-                total_det["found"] += s["found"]
+            lines.append(f"| {code} | {s['expected']} | {s['found']} | {rate:.0%} | {'' if s['detectable'] else '1차에서 못 잡던 유형'} |")
+            total_det["expected"] += s["expected"]
+            total_det["found"] += s["found"]
         lines.append("")
         lines.append(f"- 오탐(정답지에 없는데 검출): {r['falsePositives'] or '없음'}")
         lines.append(f"- 파일 단위 오류: {r['fileLevel'] or '없음'}")
         lines.append(f"- 조직 파일 행 오류: {r['orgIssues']}")
         lines.append("")
-    lines += unsupported_section(results)
+    lines += hr_section(results)
     rate = total_det["found"] / total_det["expected"] if total_det["expected"] else 0
     lines.insert(2, "> 생성기의 오류 유형과 이관 서비스의 검증 규칙을 같은 쪽이 만들었다. 아래 검출률은 회귀 확인이지 정확도가 아니다.\n")
-    lines.insert(2, f"**전체 검출률 (잡을 수 있는 유형 기준): {total_det['found']}/{total_det['expected']} = {rate:.1%}**\n")
+    lines.insert(2, f"**직원명부 검출률 (전체 유형): {total_det['found']}/{total_det['expected']} = {rate:.1%}**\n")
     (out / "evaluation.md").write_text("\n".join(lines), encoding="utf-8")
 
 
