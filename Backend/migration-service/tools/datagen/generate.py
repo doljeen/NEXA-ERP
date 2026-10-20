@@ -4,19 +4,29 @@
 NVIDIA Nemotron-Personas-Korea (CC BY 4.0) 의 합성 인물을 직원으로 삼아,
 회사마다 다른 양식·형식으로 '지저분한' 조직·직원 파일과 정답지(answer_key.json)를 만든다.
 
-사용: python generate.py <personas.parquet> <출력 폴더> [--seed 42]
+직원명부·조직에 더해 ERP 도입 전 회사가 쓰던 인사 엑셀(급여대장 등)도 만든다 (hrfiles/).
+
+사용: python -I generate.py <personas.parquet> <출력 폴더> [--seed 42]
 """
 import argparse
+import copy
 import csv
 import datetime as dt
 import json
 import random
 import re
+import sys
 from pathlib import Path
+
+# python -I(격리 모드)는 스크립트 폴더를 import 경로에 넣지 않는다
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pandas as pd
 import pyarrow.parquet as pq
 from openpyxl import Workbook
+
+from hrfiles import payroll
+from hrfiles.facts import build_facts, month_range
 
 CUTOVER = dt.date(2027, 1, 1)
 NAME_RE = re.compile(r"^([가-힣]{2,4}) 씨")
@@ -80,7 +90,7 @@ INDUSTRY_BIAS = {"IT": {"개발본부": 4.0, "영업본부": 1.5}, "제조": {"�
 
 
 def load_personas(path, rng):
-    cols = ["uuid", "persona", "sex", "age", "marital_status", "education_level", "occupation", "district", "province"]
+    cols = ["uuid", "persona", "sex", "age", "marital_status", "family_type", "education_level", "occupation", "district", "province"]
     df = pq.read_table(path, columns=cols).to_pandas()
     df = df[(df.age >= 24) & (df.age <= 59) & (df.occupation != "무직")].copy()
     df["name"] = df.persona.str.extract(NAME_RE)
@@ -144,6 +154,7 @@ def build_clean(company, people, rng):
             "_salary": 2_800_000 + 400_000 * POSITIONS.index(next(x for x in POSITIONS if x[1] == position)) + rng.randint(0, 30) * 10_000,
             "_memo": None,
             "_persona": p["uuid"],
+            "_hq": hq, "_sex": p["sex"], "_familyType": p["family_type"],
         })
     # 팀마다 최연장자(재직)를 팀장으로
     seen = set()
@@ -270,7 +281,6 @@ def write_company(company, org, employees, errors, out_dir, rng):
         "counts": {"employees": len(employees), "orgs": len(org)},
         "source": "NVIDIA Nemotron-Personas-Korea (CC BY 4.0) 의 합성 인물을 사용",
     }
-    (cdir / "answer_key.json").write_text(json.dumps(key, ensure_ascii=False, indent=2), encoding="utf-8")
     return key
 
 
@@ -289,8 +299,16 @@ def main():
     for company in COMPANIES:
         people = pick_people(df, company, rng, used)
         org, employees = build_clean(company, people, rng)
+        facts = build_facts(company, employees, month_range("2026-01", "2026-12"), args.seed)
+        for e in employees:  # 직원명부의 기본급 = 연봉 / 12 (회사별 끝수 처리)
+            e["_salary"] = facts[e["empNo"]]["basePay"]
+        clean = copy.deepcopy(employees)  # 오류를 넣기 전 명부: 인사 파일들은 이 명부로 만든다
         errors = inject_errors(company, employees, rng)
         key = write_company(company, org, employees, errors, out_dir, rng)
+        cdir = out_dir / company["id"]
+        hr_rng = random.Random("%s:hr:%d" % (company["id"], args.seed))
+        key["hrFiles"] = {"급여대장.xlsx": payroll.build(company, clean, facts, cdir, hr_rng)}
+        (cdir / "answer_key.json").write_text(json.dumps(key, ensure_ascii=False, indent=2), encoding="utf-8")
         by_code = {}
         for e in key["errors"]:
             by_code[e["code"]] = by_code.get(e["code"], 0) + 1

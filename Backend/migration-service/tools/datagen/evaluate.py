@@ -4,8 +4,10 @@
 - 매핑 정확도: 추천된 컬럼 매핑 == 정답 매핑
 - 오류 검출률: 정답지의 오류 (rowNo, field, code) 중 이관 서비스가 찾은 비율 (유형별)
 - 오탐: 정답지에 없는데 찾은 행 단위 오류
+- 인사 엑셀(급여대장 등): 이관 서비스가 아직 처리하지 못하는 파일 → 가장 가까운 entity로 올려 실제 응답(읽은 시트·헤더·경고)을
+  기록하고 '미지원'으로 표시. 정답지의 사고를 유형별로 세고, 사고를 잡는 데 필요한 기능(needs)을 집계한다
 
-사용: python evaluate.py <out 폴더> [--base http://localhost:8087]
+사용: python -I evaluate.py <out 폴더> [--base http://localhost:8087]
 """
 import argparse
 import json
@@ -78,7 +80,42 @@ def evaluate_company(base, cdir):
         result["falsePositives"][code] += 1
     result["falsePositives"] = dict(result["falsePositives"])
     result["orgIssues"] = len(found_by_entity["HR_ORG"])
+    result["unsupported"] = [probe_unsupported(base, mid, cdir, fname, hk) for fname, hk in key.get("hrFiles", {}).items()]
     return result
+
+
+def probe_unsupported(base, mid, cdir, fname, hk):
+    """처리 못 하는 파일을 올려 보고 서비스가 실제로 무엇을 읽었는지 남긴다. 실패해도 직원·조직 평가는 계속"""
+    probe = {"file": fname, "entity": hk["closestEntity"], "sheetOrder": hk["sheetOrder"],
+             "accidents": len(hk["accidents"]), "accidentTypes": dict(Counter(a["type"] for a in hk["accidents"])),
+             "legalDeviations": len(hk.get("legalDeviations", [])),
+             "needs": dict(Counter(n for a in hk["accidents"] for n in a["needs"]))}
+    try:
+        up = upload(base, mid, hk["closestEntity"], cdir / fname)
+        issues = all_issues(base, mid, up["fileId"])
+        probe.update(rowsRead=up["rows"], headersRead=up["headers"],
+                     fileIssues=sorted({i["code"] for i in issues if i["rowNo"] is None}),
+                     rowIssues=sum(i["rowNo"] is not None for i in issues))
+    except Exception as e:  # noqa: BLE001 - 업로드 거절도 결과로 남긴다
+        probe["error"] = str(e)
+    return probe
+
+
+def unsupported_section(results):
+    lines = ["## 미지원 파일 (인사 엑셀)", "",
+             "| 회사 | 파일 | 올린 entity | 서비스가 읽은 것 | 파일 경고 | 정답지 사고 | 법정 기준과 다른 규칙 |",
+             "|---|---|---|---|---|---|---|"]
+    needs = Counter()
+    for r in results:
+        for u in r["unsupported"]:
+            read = (f"`{u['sheetOrder'][0]}` 시트 {u['rowsRead']}행, 헤더 {', '.join(map(str, u['headersRead'][:4]))} …"
+                    if "rowsRead" in u else f"업로드 실패: {u['error']}")
+            lines.append(f"| {r['company']} | {u['file']} | {u['entity']} | {read} | {', '.join(u.get('fileIssues', [])) or '-'} "
+                         f"| {u['accidents']}건 (검출 0, 미지원) | {u['legalDeviations']}건 |")
+            needs.update(u["needs"])
+    lines += ["", "### 사고를 잡는 데 필요한 기능 (정답지 needs 집계)", "", "| 기능 | 필요한 사고 수 |", "|---|---|"]
+    lines += [f"| {k} | {v} |" for k, v in needs.most_common()]
+    return lines + [""]
 
 
 def main():
@@ -110,7 +147,9 @@ def main():
         lines.append(f"- 파일 단위 오류: {r['fileLevel'] or '없음'}")
         lines.append(f"- 조직 파일 행 오류: {r['orgIssues']}")
         lines.append("")
+    lines += unsupported_section(results)
     rate = total_det["found"] / total_det["expected"] if total_det["expected"] else 0
+    lines.insert(2, "> 생성기의 오류 유형과 이관 서비스의 검증 규칙을 같은 쪽이 만들었다. 아래 검출률은 회귀 확인이지 정확도가 아니다.\n")
     lines.insert(2, f"**전체 검출률 (잡을 수 있는 유형 기준): {total_det['found']}/{total_det['expected']} = {rate:.1%}**\n")
     (out / "evaluation.md").write_text("\n".join(lines), encoding="utf-8")
 
