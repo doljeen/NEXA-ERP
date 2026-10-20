@@ -25,7 +25,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 from openpyxl import Workbook
 
-from hrfiles import attendance, leave, payroll
+from hrfiles import appointments, attendance, leave, payroll, salary
 from hrfiles.facts import build_facts, month_range
 
 CUTOVER = dt.date(2027, 1, 1)
@@ -314,6 +314,8 @@ def main():
         }
         att, reg = attendance.build(company, clean, facts, cdir, file_rng("attendance"), key["hrFiles"]["급여대장.xlsx"])
         key["hrFiles"].update({"근태기록.xlsx": att, "연장근무신청대장.xlsx": reg})
+        key["hrFiles"]["인사발령대장.xlsx"] = appointments.build(company, clean, cdir, file_rng("appointments"))
+        key["hrFiles"]["연봉이력.xlsx"] = salary.build(company, clean, facts, cdir, file_rng("salary"))
         (cdir / "answer_key.json").write_text(json.dumps(key, ensure_ascii=False, indent=2), encoding="utf-8")
         by_code = {}
         for e in key["errors"]:
