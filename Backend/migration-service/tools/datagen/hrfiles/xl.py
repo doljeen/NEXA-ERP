@@ -149,6 +149,8 @@ class Sheet:
             self.ws.write_datetime(r, c, value, f or self.book.f["date"])
         elif isinstance(value, dt.date):
             self.ws.write_datetime(r, c, dt.datetime(value.year, value.month, value.day), f or self.book.f["date"])
+        elif isinstance(value, dt.time):
+            self.ws.write_datetime(r, c, value, f or self.book.f["time"])
         elif isinstance(value, str):
             self.ws.write_string(r, c, value, f)
         else:

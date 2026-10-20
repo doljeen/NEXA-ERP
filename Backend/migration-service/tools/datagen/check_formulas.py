@@ -81,6 +81,8 @@ def main():
 
 
 def same(a, b):
+    if a is None and b == "":
+        return True  # 빈 문자열 결과는 openpyxl이 None으로 읽는다
     if isinstance(b, formulas.functions.XlError) or type(b).__name__ == "XlError":
         return isinstance(a, str) and a == str(b)
     if hasattr(b, "item"):

@@ -90,6 +90,9 @@ def probe_unsupported(base, mid, cdir, fname, hk):
              "accidents": len(hk["accidents"]), "accidentTypes": dict(Counter(a["type"] for a in hk["accidents"])),
              "legalDeviations": len(hk.get("legalDeviations", [])),
              "needs": dict(Counter(n for a in hk["accidents"] for n in a["needs"]))}
+    if hk["closestEntity"] is None:
+        probe["error"] = "올릴 entity 없음 (MigrationEntity에 해당 종류가 없음)"
+        return probe
     try:
         up = upload(base, mid, hk["closestEntity"], cdir / fname)
         issues = all_issues(base, mid, up["fileId"])
@@ -117,8 +120,8 @@ def unsupported_section(results):
                         f"숫자 열 {sum(c['type'] == 'NUMBER' for c in cols)}/{len(cols)}, "
                         f"빈 값 있는 열 {sum(c['nullRate'] > 0 for c in cols)}")
             else:
-                read = f"업로드 실패: {u['error']}"
-            lines.append(f"| {r['company']} | {u['file']} | {u['entity']} | {read} | {', '.join(u.get('fileIssues', [])) or '-'} "
+                read = u["error"]
+            lines.append(f"| {r['company']} | {u['file']} | {u['entity'] or '-'} | {read} | {', '.join(u.get('fileIssues', [])) or '-'} "
                          f"| {u['accidents']}건 (검출 0, 미지원) | {u['legalDeviations']}건 |")
             needs.update(u["needs"])
     lines += ["", "### 사고를 잡는 데 필요한 기능 (정답지 needs 집계)", "", "| 기능 | 필요한 사고 수 |", "|---|---|"]
