@@ -231,6 +231,8 @@ xlsxwriter로 **수식 + 파이썬으로 계산한 결과**를 같이 저장한�
 
 ### 정답지 (`answer_key.json`의 `hrFiles`)
 
+파일 9종이 같은 구조다 (아래 값은 형태를 보여주는 예시). 파일에 따라 `employees`(직원별 정답값)·`crossFile`(다른 파일과 맞춰 볼 항목)·`finalState` 등이 더 있다.
+
 ```jsonc
 "hrFiles": {
   "급여대장.xlsx": {
