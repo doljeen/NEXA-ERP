@@ -70,3 +70,41 @@ services:
       timeout: 5s
       retries: 3
       start_period: 40s
+  
+
+  attendance-service:
+    build:
+      context: ./Backend/attendance-service
+    image: nexa-attendance:local
+
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      config-server:
+        condition: service_started
+      eureka-server:
+        condition: service_started
+
+    environment:
+      SERVER_PORT: "8084"
+
+      CONFIG_SERVER_URL: http://config-server:8888
+      SPRING_CLOUD_CONFIG_USERNAME: config-client
+      SPRING_CLOUD_CONFIG_PASSWORD: ${CONFIG_SERVER_PASSWORD:?CONFIG_SERVER_PASSWORD is required}
+
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nexa_attendance
+      SPRING_DATASOURCE_USERNAME: nexa_attendance_app
+      SPRING_DATASOURCE_PASSWORD: ${ATTENDANCE_DB_PASSWORD:?ATTENDANCE_DB_PASSWORD is required}
+
+      EUREKA_URL: "http://${EUREKA_USER:?EUREKA_USER is required}:${EUREKA_PASSWORD:?EUREKA_PASSWORD is required}@eureka-server:8761/eureka/"
+
+    ports:
+      - "127.0.0.1:8084:8084"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
