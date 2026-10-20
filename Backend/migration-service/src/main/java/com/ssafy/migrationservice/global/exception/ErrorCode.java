@@ -23,6 +23,7 @@ public enum ErrorCode {
     BATCH_NOT_LOADED(HttpStatus.CONFLICT, "LOAD_005", "적재 완료 상태의 묶음만 되돌릴 수 있습니다."),
     ROLLBACK_DEPENDENCY_EXISTS(HttpStatus.CONFLICT, "LOAD_006", "이 묶음에 의존하는 묶음을 먼저 되돌려야 합니다."),
     TARGET_CALL_FAILED(HttpStatus.BAD_GATEWAY, "LOAD_007", "대상 서비스 호출에 실패했습니다."),
+    FIX_PENDING(HttpStatus.CONFLICT, "LOAD_008", "자동 정리를 먼저 적용해야 합니다."),
 
     // 파일
     FILE_EMPTY(HttpStatus.BAD_REQUEST, "FILE_001", "빈 파일입니다."),

@@ -38,7 +38,7 @@ class LoadIntegrationTest extends AbstractIntegrationTest {
             D200,인사팀,D010
             """;
 
-    // 필수 컬럼 모두 있음. 입사일 '2024.1.2'는 FIX라 적재 가능하고, 보낼 때 ISO로 정리된다
+    // 필수 컬럼 모두 있음. 입사일 '2024.1.2'는 FIX라 자동 정리를 적용해야 적재할 수 있다
     private static final String EMP_CSV = """
             사번,이름,이메일,부서,직위,직급,직책,직군,직종,직무,입사일,직원구분
             00123,홍길동,hong@nexa.com,개발1팀,과장,G3,팀원,개발,SW,백엔드,2024.1.2,정규직
@@ -64,6 +64,10 @@ class LoadIntegrationTest extends AbstractIntegrationTest {
                                 {"companyId":1,"name":"적재 테스트"}"""))
                 .andReturn().getResponse().getContentAsString();
         return ((Number) JsonPath.read(body, "$.data.migrationId")).longValue();
+    }
+
+    private void applyFixes(long migrationId) throws Exception {
+        mvc.perform(post(BASE + "/{id}/fixes", migrationId)).andExpect(status().isOk());
     }
 
     private long upload(long migrationId, String entity, String csv) throws Exception {
@@ -94,7 +98,8 @@ class LoadIntegrationTest extends AbstractIntegrationTest {
 
         mvc.perform(post(BASE + "/{id}/loads", id).param("dryRun", "true"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.loadable").value(true))
+                .andExpect(jsonPath("$.data.loadable").value(false))
+                .andExpect(jsonPath("$.data.fixIssues").value(1))
                 .andExpect(jsonPath("$.data.files[*].entity").value(contains("HR_ORG", "HR_EMPLOYEE")))
                 .andExpect(jsonPath("$.data.files[1].sample[0].hireDate").value("2024-01-02"))
                 .andExpect(jsonPath("$.data.files[1].sample[0].empType").value("REGULAR"));
@@ -102,10 +107,31 @@ class LoadIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void 자동_정리가_남아_있으면_적재하지_않고_적용하면_적재된다() throws Exception {
+        long id = createJob();
+        upload(id, "HR_ORG", ORG_CSV);
+        upload(id, "HR_EMPLOYEE", EMP_CSV);
+
+        mvc.perform(post(BASE + "/{id}/loads", id))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("LOAD_008"))
+                .andExpect(jsonPath("$.error.message").value("자동 정리 1건을 먼저 적용하세요"));
+        assertThat(HR.rows("orgs")).isEmpty();
+
+        applyFixes(id);
+        mvc.perform(post(BASE + "/{id}/loads", id).param("dryRun", "true"))
+                .andExpect(jsonPath("$.data.loadable").value(true));
+        mvc.perform(post(BASE + "/{id}/loads", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("LOADED"));
+    }
+
+    @Test
     void 조직부터_적재하고_대사가_맞는다() throws Exception {
         long id = createJob();
         long empFile = upload(id, "HR_EMPLOYEE", EMP_CSV);   // 직원을 먼저 올려도
         upload(id, "HR_ORG", ORG_CSV);
+        applyFixes(id);
 
         mvc.perform(post(BASE + "/{id}/loads", id))
                 .andExpect(status().isOk())
@@ -148,6 +174,7 @@ class LoadIntegrationTest extends AbstractIntegrationTest {
         long id = createJob();
         upload(id, "HR_ORG", ORG_CSV);
         upload(id, "HR_EMPLOYEE", EMP_CSV);
+        applyFixes(id);
         String loaded = mvc.perform(post(BASE + "/{id}/loads", id)).andReturn().getResponse().getContentAsString();
         String orgBatch = JsonPath.read(loaded, "$.data.batches[0].batchId");
         String empBatch = JsonPath.read(loaded, "$.data.batches[1].batchId");
@@ -177,6 +204,7 @@ class LoadIntegrationTest extends AbstractIntegrationTest {
         long id = createJob();
         upload(id, "HR_ORG", ORG_CSV.replace("D200,인사팀,D010", "D200,FAIL,D010"));
         upload(id, "HR_EMPLOYEE", EMP_CSV);
+        applyFixes(id);
 
         String body = mvc.perform(post(BASE + "/{id}/loads", id))
                 .andExpect(status().isOk())

@@ -50,13 +50,14 @@ public class LoadService {
     public LoadPreviewResponse preview(Long migrationId, List<Long> fileIds) {
         findEditableJob(migrationId);
         List<MigrationFile> files = selectFiles(migrationId, fileIds);
-        long blocks = countBlocks(migrationId, files);
+        long blocks = count(migrationId, files, Severity.BLOCK);
+        long fixes = count(migrationId, files, Severity.FIX);
         List<LoadPreviewResponse.Item> items = files.stream().map(f -> {
             List<LoadRow> rows = transform(f);
             List<Map<String, Object>> sample = rows.stream().limit(PREVIEW_SAMPLE).map(LoadRow::data).toList();
             return new LoadPreviewResponse.Item(f.getFileId(), f.getEntity(), rows.size(), sample);
         }).toList();
-        return new LoadPreviewResponse(blocks == 0, blocks, items);
+        return new LoadPreviewResponse(blocks == 0 && fixes == 0, blocks, fixes, items);
     }
 
     /**
@@ -66,9 +67,14 @@ public class LoadService {
     public LoadResponse load(Long migrationId, List<Long> fileIds) {
         MigrationJob job = findEditableJob(migrationId);
         List<MigrationFile> files = selectFiles(migrationId, fileIds);
-        long blocks = countBlocks(migrationId, files);
+        long blocks = count(migrationId, files, Severity.BLOCK);
         if (blocks > 0) {
             throw new BusinessException(ErrorCode.BLOCK_ISSUES_EXIST, "차단 오류 " + blocks + "건을 먼저 해결해야 합니다");
+        }
+        // 임시 테이블 값 = 보낸 값이 되도록, 자동 정리는 적재 전에 반영돼 있어야 한다 (변경 이력에도 남음)
+        long fixes = count(migrationId, files, Severity.FIX);
+        if (fixes > 0) {
+            throw new BusinessException(ErrorCode.FIX_PENDING, "자동 정리 " + fixes + "건을 먼저 적용하세요");
         }
 
         for (MigrationFile file : files) {
@@ -176,8 +182,8 @@ public class LoadService {
         return EntitySchemas.of(f.getEntity()).isPresent() && loaders.stream().anyMatch(l -> l.supports(f.getEntity()));
     }
 
-    private long countBlocks(Long migrationId, List<MigrationFile> files) {
-        return files.stream().mapToLong(f -> issueRepository.totals(migrationId, f.getFileId()).get(Severity.BLOCK)).sum();
+    private long count(Long migrationId, List<MigrationFile> files, Severity severity) {
+        return files.stream().mapToLong(f -> issueRepository.totals(migrationId, f.getFileId()).get(severity)).sum();
     }
 
     private List<LoadRow> transform(MigrationFile file) {

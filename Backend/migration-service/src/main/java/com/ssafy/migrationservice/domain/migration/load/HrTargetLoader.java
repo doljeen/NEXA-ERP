@@ -5,10 +5,12 @@ import com.ssafy.migrationservice.global.exception.BusinessException;
 import com.ssafy.migrationservice.global.exception.ErrorCode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -34,7 +36,11 @@ public class HrTargetLoader implements TargetLoader {
     private final RestClient restClient;
 
     public HrTargetLoader(@Value("${migration.targets.hr.base-url}") String baseUrl) {
-        this.restClient = RestClient.builder().baseUrl(baseUrl).build();
+        // 대상 서비스가 응답하지 않으면 적재 요청이 끝없이 걸리지 않게
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(Duration.ofSeconds(3));
+        factory.setReadTimeout(Duration.ofSeconds(30));
+        this.restClient = RestClient.builder().baseUrl(baseUrl).requestFactory(factory).build();
     }
 
     @Override
@@ -53,7 +59,8 @@ public class HrTargetLoader implements TargetLoader {
                     .retrieve()
                     .body(new ParameterizedTypeReference<InternalResult<UpsertData>>() {
                     }));
-            total = total.plus(new LoadResult(res.data().created(), res.data().updated()));
+            UpsertData data = requireData(res);
+            total = total.plus(new LoadResult(data.created(), data.updated()));
         }
         return total;
     }
@@ -73,7 +80,14 @@ public class HrTargetLoader implements TargetLoader {
                 .retrieve()
                 .body(new ParameterizedTypeReference<InternalResult<SummaryData>>() {
                 }));
-        return new TargetSummary(res.data().count());
+        return new TargetSummary(requireData(res).count());
+    }
+
+    private static <T> T requireData(InternalResult<T> res) {
+        if (res == null || !res.success() || res.data() == null) {
+            throw new BusinessException(ErrorCode.TARGET_CALL_FAILED, "인사 서비스 응답이 비어 있거나 실패입니다");
+        }
+        return res.data();
     }
 
     private static <T> T call(Supplier<T> request) {
