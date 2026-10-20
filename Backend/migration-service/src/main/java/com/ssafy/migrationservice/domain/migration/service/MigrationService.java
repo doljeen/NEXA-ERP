@@ -102,6 +102,12 @@ public class MigrationService {
         validationService.validate(file);
         // 같은 양식의 다른 시트는 시트끼리 수식 비교 결과가 바뀌므로 다시 검증
         formulaRuleService.siblings(file).forEach(validationService::validate);
+        // 직원명부를 새로 올리면 다른 파일의 사번 대조 결과가 바뀐다
+        if (entity == MigrationEntity.HR_EMPLOYEE) {
+            fileRepository.findByMigrationIdOrderByFileIdAsc(migrationId).stream()
+                    .filter(f -> f.getEntity() != MigrationEntity.HR_EMPLOYEE && f.getEntity() != MigrationEntity.HR_ORG)
+                    .forEach(validationService::validate);
+        }
 
         return new FileUploadResponse(file.getFileId(), entity, table.rows().size(), table.headers(),
                 mappingService.missingRequired(file), issueRepository.totals(migrationId, file.getFileId()),

@@ -47,7 +47,7 @@ public final class ColumnMappingSuggester {
         return f.synonyms().stream().anyMatch(s -> normalizedHeader.equals(normalize(s)));
     }
 
-    static String normalize(String s) {
+    public static String normalize(String s) {
         return s == null ? "" : s.toLowerCase(Locale.ROOT).replaceAll("[\\s()\\[\\]_\\-./]", "");
     }
 }

@@ -26,6 +26,11 @@ public enum IssueCode {
     DUPLICATE_KEY,
     DUPLICATE_SUSPECTED,
     CODE_TYPO_SUSPECTED,
+    // 파일 사이 참조 (직원명부 대조)
+    EMP_NOT_IN_ROSTER,
+    EMP_NAME_MISMATCH,
+    EMP_KEY_MISSING,
+    EMPNO_ZERO_PADDED,
     // 업무 규칙
     DATE_ORDER,
     SELF_PARENT,

@@ -36,7 +36,10 @@ ACCIDENT_CODES = {
     "SUM_RANGE_MISSING": {"FORMULA_INCONSISTENT", "FORMULA_DIFFERS_ACROSS_SHEETS"},
     "STALE_RATE_LITERAL": {"FORMULA_INCONSISTENT", "FORMULA_DIFFERS_ACROSS_SHEETS"},
     "BASE_DATE_WRONG": {"FORMULA_INCONSISTENT"}, "UNDER_ONE_YEAR_PAID": {"FORMULA_INCONSISTENT"},
+    "KEY_MISSING": {"EMP_KEY_MISSING"},
 }
+# 직원명부 대조 이슈: 정답지 사고가 아니라 직원명부에 넣은 오류(사번 중복·같은 사람 두 번)의 결과라 따로 센다
+REF_CODES = {"EMP_NOT_IN_ROSTER", "EMP_NAME_MISMATCH", "EMPNO_ZERO_PADDED"}
 NEW_CODES = set().union(*ACCIDENT_CODES.values())
 SKIP_ROLES = {"settings", "lookupTable"}  # 설정·세액표 시트는 데이터가 아니라서 올리지 않음
 
@@ -106,7 +109,50 @@ def evaluate_company(base, cdir):
     result["falsePositives"] = dict(result["falsePositives"])
     result["orgIssues"] = len(found_by_entity["HR_ORG"])
     result["hrFiles"] = [evaluate_hr_file(base, mid, cdir, fname, hk) for fname, hk in key.get("hrFiles", {}).items()]
+    result["reference"] = reference_check(cdir, key, [i for f in result["hrFiles"] for i in f.pop("refIssues")])
     return result
+
+
+def reference_check(cdir, key, issues):
+    """직원명부 대조 이슈가 직원명부에 넣은 오류로 설명되는지"""
+    roster = read_roster(cdir, key)
+    present = {emp for emp, _ in roster.values()}
+    truth = set().union(*[set(h.get("finalState", {})) for h in key["hrFiles"].values()])
+    missing = truth - present  # 사번 중복 오류로 명부에서 사라진 사번
+    dup_names = {roster[e["rowNo"]][1] for e in key["errors"] if e["code"] == "DUPLICATE_SUSPECTED" and e["rowNo"] in roster}
+    out = {"missingFromRoster": sorted(missing), "byCode": {}}
+    for code in sorted(REF_CODES):
+        mine = [i for i in issues if i["code"] == code]
+        if code == "EMP_NOT_IN_ROSTER":
+            ok = [i for i in mine if str(i["value"]).zfill(5) in missing]
+        elif code == "EMP_NAME_MISMATCH":
+            ok = [i for i in mine if i["suggestion"] in dup_names]
+        else:
+            ok = mine
+        out["byCode"][code] = {"issues": len(mine), "explainedByRosterErrors": len(ok), "sheets": len({i["sheet"] for i in mine})}
+    return out
+
+
+def read_roster(cdir, key):
+    """직원명부 행 번호 → (사번, 이름). 정답 매핑으로 헤더를 찾는다"""
+    path = cdir / key["files"]["HR_EMPLOYEE"]
+    mapping = key["expectedMapping"]["HR_EMPLOYEE"]
+    emp_h = next(h for h, f in mapping.items() if f == "empNo")
+    name_h = next(h for h, f in mapping.items() if f == "name")
+    if path.suffix == ".csv":
+        import csv
+        raw = path.read_bytes()
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = raw.decode("cp949")
+        rows = list(csv.reader(text.splitlines()))
+    else:
+        import openpyxl
+        rows = [[("" if v is None else str(v)) for v in r] for r in openpyxl.load_workbook(path, data_only=True).active.iter_rows(values_only=True)]
+    h = next(i for i, r in enumerate(rows) if emp_h in r)
+    ei, ni = rows[h].index(emp_h), rows[h].index(name_h)
+    return {i + 1: (r[ei].strip(), r[ni].strip()) for i, r in enumerate(rows) if i > h and len(r) > max(ei, ni) and r[ei]}
 
 
 def evaluate_hr_file(base, mid, cdir, fname, hk):
@@ -116,6 +162,7 @@ def evaluate_hr_file(base, mid, cdir, fname, hk):
            "legalDeviations": len(hk.get("legalDeviations", [])),
            "needs": dict(Counter(n for a in hk["accidents"] for n in a["needs"]))}
     issues_by_sheet, uploaded = {}, []
+    res["refIssues"] = []
     for name, meta in hk["sheets"].items():
         if meta.get("role") in SKIP_ROLES:
             continue
@@ -132,6 +179,7 @@ def evaluate_hr_file(base, mid, cdir, fname, hk):
         issues = all_issues(base, mid, file_id)
         issues_by_sheet[sr["sheet"]] = issues
         sr["fileIssues"] = sorted({i["code"] for i in issues if i["rowNo"] is None})
+        res["refIssues"] += [{**i, "sheet": sr["sheet"]} for i in issues if i["code"] in REF_CODES]
 
     explained = set()
     for a in hk["accidents"]:
@@ -206,6 +254,13 @@ def hr_section(results):
     for k, t in sorted(by_type.items(), key=lambda x: (-x[1]["detected"], x[0])):
         lines.append(f"| {k} | {t['expected']} | {t['detected']} | {', '.join(t['codes']) if t['codes'] else '대응 기능 없음'} |")
     lines += ["", f"- 정답지에 없는 경고 (대응표 코드 기준): {dict(unexpected) or '없음'}",
+              "", "### 직원명부 대조 (파일 사이 참조)", "",
+              "직원명부에 일부러 넣은 오류(사번 중복 → 한 사람 사번이 명부에서 사라짐, 같은 사람 두 번 → 이름 바뀜)가 다른 파일에서 드러난 것.", "",
+              "| 회사 | 이슈 코드 | 건수 | 직원명부 오류로 설명됨 | 시트 수 |", "|---|---|---|---|---|"]
+    for r in results:
+        for code, c in r["reference"]["byCode"].items():
+            lines.append(f"| {r['company']} | {code} | {c['issues']} | {c['explainedByRosterErrors']} | {c['sheets']} |")
+    lines += ["",
               "", "### 사고를 잡는 데 필요한 기능 (정답지 needs 집계)", "", "| 기능 | 필요한 사고 수 |", "|---|---|"]
     lines += [f"| {k} | {v} |" for k, v in needs.most_common()]
     return lines + [""]
