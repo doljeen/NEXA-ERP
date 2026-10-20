@@ -67,6 +67,7 @@ public class MigrationAdminController {
     @PostMapping(value = "/{migrationId}/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResult<FileUploadResponse>> upload(@PathVariable Long migrationId,
                                                                 @RequestParam MigrationEntity entity,
+                                                                @RequestParam(required = false) String sheet,
                                                                 @RequestPart MultipartFile file) {
         byte[] content;
         try {
@@ -74,7 +75,7 @@ public class MigrationAdminController {
         } catch (IOException e) {
             throw new BusinessException(ErrorCode.FILE_READ_FAILED);
         }
-        FileUploadResponse response = migrationService.upload(migrationId, entity, file.getOriginalFilename(), content);
+        FileUploadResponse response = migrationService.upload(migrationId, entity, file.getOriginalFilename(), content, sheet);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResult.success(response));
     }
 

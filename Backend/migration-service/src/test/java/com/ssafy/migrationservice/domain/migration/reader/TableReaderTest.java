@@ -5,6 +5,7 @@ import com.ssafy.migrationservice.global.exception.ErrorCode;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 
@@ -13,6 +14,7 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -59,6 +61,81 @@ class TableReaderTest {
                 .containsEntry("입사일", "2024-01-02")
                 .containsEntry("기본급", "3500000")
                 .containsEntry("연봉", "42000000");
+    }
+
+    @Test
+    void xlsx_모든_시트를_읽고_2줄_헤더_합계행_수식_오류값을_정리한다() throws IOException {
+        byte[] xlsx;
+        try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet settings = wb.createSheet("설정");
+            settings.createRow(0).createCell(0).setCellValue("항목");
+            settings.getRow(0).createCell(1).setCellValue("값");
+            settings.createRow(1).createCell(0).setCellValue("국민연금");
+            settings.getRow(1).createCell(1).setCellValue(0.0475);
+
+            Sheet s = wb.createSheet("2026-07");
+            s.createRow(0).createCell(0).setCellValue("급여대장");
+            Row info = s.createRow(1);                                                    // 제목 아래 '값 2칸 이상' 행
+            info.createCell(0).setCellValue("귀속: 2026년 7월");
+            info.createCell(2).setCellValue("기준일");
+            info.createCell(3).setCellValue(LocalDate.of(2026, 7, 31));
+            Row group = s.createRow(2);                                                   // 묶음 머리글 + 세로 병합
+            group.createCell(0).setCellValue("사번");
+            group.createCell(1).setCellValue("성명");
+            group.createCell(2).setCellValue("07월");
+            group.createCell(4).setCellValue("08월");
+            s.addMergedRegion(new CellRangeAddress(2, 3, 0, 0));
+            s.addMergedRegion(new CellRangeAddress(2, 3, 1, 1));
+            s.addMergedRegion(new CellRangeAddress(2, 2, 2, 3));
+            s.addMergedRegion(new CellRangeAddress(2, 2, 4, 5));
+            Row header = s.createRow(3);
+            String[] sub = {"연장", "야간", "연장", "야간"};
+            for (int c = 0; c < sub.length; c++) {
+                header.createCell(c + 2).setCellValue(sub[c]);
+            }
+            Object[][] data = {{"00101", "홍길동", 10, 2, 8, 1}, {"00102", "김민수", 5, 0, 4, 0}};
+            for (int r = 0; r < data.length; r++) {
+                Row row = s.createRow(4 + r);
+                row.createCell(0).setCellValue((String) data[r][0]);
+                row.createCell(1).setCellValue((String) data[r][1]);
+                for (int c = 2; c < 6; c++) {
+                    row.createCell(c).setCellValue(((Integer) data[r][c]).doubleValue());
+                }
+            }
+            s.getRow(4).getCell(5).setCellFormula("D5-1");                                // 수식 셀
+            s.getRow(5).getCell(3).setCellFormula("NA()");                                // 오류값 #N/A
+            Row total = s.createRow(6);
+            total.createCell(0).setCellValue("합 계");
+            total.createCell(2).setCellFormula("SUM(C5:C6)");
+            Row after = s.createRow(7);                                                   // 합계 아래에 추가한 행
+            after.createCell(0).setCellValue("00103");
+            after.createCell(1).setCellValue("이영희");
+            after.createCell(2).setCellValue(3);
+            wb.getCreationHelper().createFormulaEvaluator().evaluateAll();
+            wb.write(out);
+            xlsx = out.toByteArray();
+        }
+
+        List<ParsedTable> tables = reader.readAll("급여대장.xlsx", xlsx);
+
+        assertThat(tables).extracting(ParsedTable::sheetName).containsExactly("설정", "2026-07");
+        ParsedTable t = tables.get(1);
+        assertThat(t.headerRowNo()).isEqualTo(4);
+        assertThat(t.headers()).containsExactly("사번", "성명", "07월 연장", "07월 야간", "08월 연장", "08월 야간");
+        assertThat(t.rows()).extracting(ParsedTable.Row::rowNo).containsExactly(5, 6, 8);
+        assertThat(t.totalRows()).containsExactly(7);
+        assertThat(t.rowsAfterTotal()).containsExactly(8);
+        assertThat(t.rows().get(0).values()).containsEntry("08월 야간", "1");
+        assertThat(t.rows().get(0).formulas()).containsEntry("08월 야간", "D5-1");
+        assertThat(t.rows().get(1).values()).containsEntry("07월 야간", null);
+        assertThat(t.rows().get(1).errors()).containsEntry("07월 야간", "#N/A");
+    }
+
+    @Test
+    void 헤더보다_글자칸이_조금_많은_데이터행이_있어도_헤더를_고른다() {
+        byte[] csv = "사번,이름,부서\n00123,홍길동,개발팀\n00124,김민수,인사팀\n".getBytes(StandardCharsets.UTF_8);
+
+        assertThat(reader.read("a.csv", csv).headers()).containsExactly("사번", "이름", "부서");
     }
 
     @Test

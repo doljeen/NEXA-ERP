@@ -9,6 +9,9 @@ import com.ssafy.migrationservice.domain.migration.dto.FixApplyRequest;
 import com.ssafy.migrationservice.domain.migration.dto.FixApplyResponse;
 import com.ssafy.migrationservice.domain.migration.dto.RowUpdateRequest;
 import com.ssafy.migrationservice.domain.migration.dto.RowUpdateResponse;
+import com.ssafy.migrationservice.domain.migration.dto.SheetInfo;
+import com.ssafy.migrationservice.domain.migration.mapping.ColumnMappingSuggester;
+import com.ssafy.migrationservice.domain.migration.validation.schema.EntitySchemas;
 import com.ssafy.migrationservice.domain.migration.repository.StagingChangeRepository;
 import com.ssafy.migrationservice.domain.migration.dto.IssueListResponse;
 import com.ssafy.migrationservice.domain.migration.dto.MappingUpdateRequest;
@@ -34,8 +37,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -68,11 +73,15 @@ public class MigrationService {
                 batchRepository.findByMigrationIdOrderByStartedAtAsc(migrationId).stream().map(BatchView::from).toList());
     }
 
-    /** 읽기 → 임시 테이블 저장 → 매핑 추천 → 검증까지 한 번에. 원본 바이트는 저장하지 않는다. */
+    /**
+     * 읽기 → 임시 테이블 저장 → 매핑 추천 → 검증까지 한 번에. 원본 바이트는 저장하지 않는다.
+     * 엑셀은 sheet로 시트를 고른다. 없으면 entity 필드와 헤더가 가장 많이 맞는 시트 (스키마가 없으면 첫 시트)
+     */
     @Transactional
-    public FileUploadResponse upload(Long migrationId, MigrationEntity entity, String fileName, byte[] content) {
+    public FileUploadResponse upload(Long migrationId, MigrationEntity entity, String fileName, byte[] content, String sheet) {
         MigrationJob job = findEditableJob(migrationId);
-        ParsedTable table = tableReader.read(fileName, content);
+        List<ParsedTable> tables = tableReader.readAll(fileName, content);
+        ParsedTable table = pickSheet(tables, entity, sheet);
 
         MigrationFile file = fileRepository.save(MigrationFile.builder()
                 .migrationId(job.getMigrationId())
@@ -80,20 +89,41 @@ public class MigrationService {
                 .fileName(fileName)
                 .headers(table.headers().toArray(String[]::new))
                 .rowCount(table.rows().size())
+                .sheetName(table.sheetName())
+                .headerRow(table.headerRowNo())
+                .totalRows(table.totalRows().toArray(Integer[]::new))
+                .rowsAfterTotal(table.rowsAfterTotal().toArray(Integer[]::new))
                 .build());
         stagingRowRepository.saveAll(file.getFileId(), table.rows());
         mappingService.suggest(file);
         validationService.validate(file);
 
         return new FileUploadResponse(file.getFileId(), entity, table.rows().size(), table.headers(),
-                mappingService.missingRequired(file), issueRepository.totals(migrationId, file.getFileId()));
+                mappingService.missingRequired(file), issueRepository.totals(migrationId, file.getFileId()),
+                table.sheetName(), table.headerRowNo(), table.totalRows(),
+                tables.stream().filter(t -> t.sheetName() != null).map(SheetInfo::of).toList());
+    }
+
+    private static ParsedTable pickSheet(List<ParsedTable> tables, MigrationEntity entity, String sheet) {
+        if (sheet != null && !sheet.isBlank()) {
+            return tables.stream().filter(t -> sheet.equals(t.sheetName())).findFirst()
+                    .orElseThrow(() -> new BusinessException(ErrorCode.SHEET_NOT_FOUND, "시트를 찾을 수 없습니다: " + sheet));
+        }
+        return EntitySchemas.of(entity)
+                .map(schema -> tables.stream()
+                        .max(Comparator.comparingLong((ParsedTable t) -> ColumnMappingSuggester.suggest(t.headers(), schema)
+                                        .values().stream().filter(Objects::nonNull).count())
+                                .thenComparing(t -> -tables.indexOf(t)))
+                        .orElseThrow())
+                .orElse(tables.get(0));
     }
 
     @Transactional(readOnly = true)
     public FileDetailResponse getFile(Long migrationId, Long fileId) {
         MigrationFile file = findFile(migrationId, fileId);
         List<ParsedTable.Row> rows = stagingRowRepository.findByFileId(fileId);
-        return new FileDetailResponse(file.getFileId(), file.getFileName(), file.getEntity(), file.getRowCount(),
+        return new FileDetailResponse(file.getFileId(), file.getFileName(), file.getSheetName(), file.getHeaderRow(),
+                file.getEntity(), file.getRowCount(),
                 file.getUploadedAt(), ColumnProfiler.profile(List.of(file.getHeaders()), rows),
                 mappingService.view(file), mappingService.missingRequired(file),
                 issueRepository.totals(migrationId, fileId));

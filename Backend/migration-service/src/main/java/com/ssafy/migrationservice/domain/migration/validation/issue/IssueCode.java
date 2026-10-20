@@ -4,6 +4,10 @@ public enum IssueCode {
     // 파일 구조
     MISSING_REQUIRED_COLUMN,
     SCHEMA_NOT_READY,
+    TOTAL_ROW_SKIPPED,
+    ROW_AFTER_TOTAL,
+    // 엑셀 수식
+    FORMULA_ERROR,
     // 형식·필수값
     REQUIRED,
     INVALID_DATE,
