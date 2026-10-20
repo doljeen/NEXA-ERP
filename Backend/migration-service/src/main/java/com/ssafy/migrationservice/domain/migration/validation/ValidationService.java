@@ -100,6 +100,24 @@ public class ValidationService {
             }
         }
 
+        // ②-1 코드성 필드 오타 의심: 드문 값이 흔한 값과 자모 하나만 다름
+        for (Map.Entry<String, String> e : fieldToColumn.entrySet()) {
+            FieldSpec f = schema.field(e.getKey()).orElseThrow();
+            if (!f.codeLike()) {
+                continue;
+            }
+            String column = e.getValue();
+            Map<String, CodeValueChecker.Suspect> suspects = CodeValueChecker.suspects(rows, column);
+            for (ParsedTable.Row row : rows) {
+                CodeValueChecker.Suspect s = suspects.get(row.values().get(column));
+                if (s != null) {
+                    issues.add(new ValidationIssue(file.getFileId(), row.rowNo(), f.name(), column, Severity.WARN,
+                            IssueCode.CODE_TYPO_SUSPECTED, f.label() + " 값 '" + s.value() + "'은(는) '" + s.likely() + "'("
+                            + s.likelyCount() + "건)의 오타일 수 있습니다", s.value(), s.likely()));
+                }
+            }
+        }
+
         // ④ 파일 안 중복: 기준 키는 SQL로 한 번에
         for (FieldSpec key : schema.keyFields()) {
             String column = fieldToColumn.get(key.name());

@@ -30,11 +30,11 @@ public final class EntitySchemas {
                 FieldSpec.of("engName", "영문이름", STRING).synonyms("영문명", "영문성명", "englishname").build(),
                 FieldSpec.of("email", "이메일", EMAIL).required().synonyms("메일", "이메일주소", "로그인id", "email").build(),
                 FieldSpec.of("dept", "부서", STRING).required().synonyms("부서명", "소속", "소속부서", "부서코드").build(),
-                FieldSpec.of("position", "직위", STRING).required().synonyms("직위명").build(),
-                FieldSpec.of("grade", "직급", STRING).required().synonyms("직급명").build(),
-                FieldSpec.of("duty", "직책", STRING).required().synonyms("직책명").build(),
-                FieldSpec.of("jobFamily", "직군", STRING).required().build(),
-                FieldSpec.of("jobKind", "직종", STRING).required().build(),
+                FieldSpec.of("position", "직위", STRING).required().codeLike().synonyms("직위명").build(),
+                FieldSpec.of("grade", "직급", STRING).required().codeLike().synonyms("직급명").build(),
+                FieldSpec.of("duty", "직책", STRING).required().codeLike().synonyms("직책명").build(),
+                FieldSpec.of("jobFamily", "직군", STRING).required().codeLike().build(),
+                FieldSpec.of("jobKind", "직종", STRING).required().codeLike().build(),
                 FieldSpec.of("jobRole", "직무", STRING).required().build(),
                 FieldSpec.of("empType", "직원구분", ENUM).synonyms("고용형태", "근로형태")
                         .enumValues(Map.of("정규직", "REGULAR", "파트타임", "PARTTIME", "계약직", "CONTRACT")).build(),
@@ -55,8 +55,9 @@ public final class EntitySchemas {
 
         SCHEMAS.put(MigrationEntity.HR_ORG, new EntitySchema(MigrationEntity.HR_ORG, List.of(
                 FieldSpec.of("deptCode", "부서코드", STRING).key().maxLength(50).synonyms("조직코드", "부서id").build(),
-                FieldSpec.of("name", "부서명", STRING).required().synonyms("조직명", "부서").build(),
-                FieldSpec.of("parentDeptCode", "상위부서", STRING).synonyms("상위부서코드", "상위조직", "상위조직코드").build(),
+                FieldSpec.of("name", "부서명", STRING).required().synonyms("조직명", "부서", "deptname", "orgname").build(),
+                FieldSpec.of("parentDeptCode", "상위부서", STRING)
+                        .synonyms("상위부서코드", "상위조직", "상위조직코드", "parentcode", "parentdept", "upperdeptcode", "parentorgcode").build(),
                 FieldSpec.of("sortOrder", "정렬순서", NUMBER).synonyms("순서", "표시순서").build()
         )));
     }

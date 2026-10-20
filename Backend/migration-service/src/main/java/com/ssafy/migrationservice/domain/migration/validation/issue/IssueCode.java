@@ -25,6 +25,7 @@ public enum IssueCode {
     // 파일 안 정합성
     DUPLICATE_KEY,
     DUPLICATE_SUSPECTED,
+    CODE_TYPO_SUSPECTED,
     // 업무 규칙
     DATE_ORDER,
     SELF_PARENT,
