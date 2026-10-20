@@ -687,6 +687,9 @@ def _write_month(sh, book, spec, ym, roster, facts, T, sheet_over, row_over, pla
         e = next(x for x in emps if x["empNo"] == after)
         row_of[after] = r
         vals[after] = _write_row(sh, spec, ym, r, e, facts, T, calc, base, ph, row_over.get((ym, after), {}), values, plan)
+    for emp, v in vals.items():  # 퇴직금추계표가 쓴다: 담당자가 옮겨 적는 값(actual)과 사고 없는 값(ideal)
+        facts[emp].setdefault("pay", {})[ym] = {"gross": v["ideal"]["gross"], "grossActual": v["actual"]["gross"],
+                                                "hourly": v["ideal"]["hourly"]}
     meta = {"payMonth": ym, "headerRows": [hr - 1, hr] if spec["groups"] else [hr], "firstDataRow": spec["firstRow"],
             "lastDataRow": last, "totalRow": total_row, "rowOf": row_of,
             "titleRows": [row for _, row, _, _ in spec["title"](ym)],

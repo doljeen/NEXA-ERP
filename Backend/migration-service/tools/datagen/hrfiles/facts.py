@@ -10,6 +10,7 @@ import random
 from .xl import ROUND, ROUNDDOWN, ROUNDUP
 
 CUTOVER = dt.date(2027, 1, 1)
+TAX_YEAR = 2026  # 부양가족 기본공제 나이 기준 (귀속연도: 자녀 20세 이하, 직계존속 60세 이상)
 
 # 2026년 공휴일 (대체공휴일 포함, 6/3 지방선거). 생성기 내장값이므로 실제 달력과 다를 수 있다
 HOLIDAYS_2026 = {dt.date(2026, m, d) for m, d in [
@@ -72,11 +73,11 @@ def _dependents(e, rng):
             if cy >= CUTOVER.year:
                 continue
             cb = dt.date(cy, rng.randint(1, 12), rng.randint(1, 28))
-            deps.append({"relation": "자녀", "birthDate": cb, "basic": CUTOVER.year - cb.year <= 20})
+            deps.append({"relation": "자녀", "birthDate": cb, "basic": TAX_YEAR - cb.year <= 20})
     if "부모" in ft or "어머니" in ft or "3세대" in ft:
         pb = dt.date(birth.year - rng.randint(25, 32), rng.randint(1, 12), rng.randint(1, 28))
         deps.append({"relation": "모" if "어머니" in ft or rng.random() < 0.5 else "부", "birthDate": pb,
-                     "basic": CUTOVER.year - pb.year >= 60})
+                     "basic": TAX_YEAR - pb.year >= 60})
     return deps
 
 
