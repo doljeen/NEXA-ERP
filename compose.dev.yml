@@ -158,6 +158,29 @@ services:
         max-size: "10m"
         max-file: "3"
 
+
+  config-server:
+    build:
+      context: ./Backend/config-server
+    image: nexa-config:local
+
+    restart: unless-stopped
+
+    environment:
+      CONFIG_GIT_URI: ${CONFIG_GIT_URI:?CONFIG_GIT_URI is required}
+      CONFIG_GIT_PRIVATE_KEY: ${CONFIG_GIT_PRIVATE_KEY:?CONFIG_GIT_PRIVATE_KEY is required}
+      GITHUB_SSH_HOST_KEY: ${GITHUB_SSH_HOST_KEY:?GITHUB_SSH_HOST_KEY is required}
+      CONFIG_SERVER_PASSWORD: ${CONFIG_SERVER_PASSWORD:?CONFIG_SERVER_PASSWORD is required}
+
+    ports:
+      - "127.0.0.1:8888:8888"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
