@@ -181,6 +181,44 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  gateway-service:
+    build:
+      context: ./Backend/gateway-service
+    image: nexa-gateway:local
+
+    restart: unless-stopped
+
+    depends_on:
+      config-server:
+        condition: service_started
+      eureka-server:
+        condition: service_started
+      user-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      CONFIG_SERVER_PASSWORD: ${CONFIG_SERVER_PASSWORD:?CONFIG_SERVER_PASSWORD is required}
+
+      JWT_JWKS_URI: http://user-service:8081/.well-known/jwks.json
+
+      EUREKA_SERVER_URL: "http://${EUREKA_USER:?EUREKA_USER is required}:${EUREKA_PASSWORD:?EUREKA_PASSWORD is required}@eureka-server:8761/eureka/"
+
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DATABASE: "0"
+
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
