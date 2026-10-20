@@ -4,16 +4,16 @@ import com.ssafy.user_service.domain.user.dto.*;
 import com.ssafy.user_service.domain.user.entity.Employee;
 import com.ssafy.user_service.domain.user.service.EmployeeService;
 import com.ssafy.user_service.global.dto.ApiResult;
+import com.ssafy.user_service.global.exception.BusinessException;
+import com.ssafy.user_service.global.exception.ErrorCode;
 import com.ssafy.user_service.global.security.SecurityConstants;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
-import java.util.Optional;
 
 /** 사원 관리 API. /api/v1/admin/** 는 SecurityConfig에서 ROLE_ADMIN 전용으로 묶인다. */
 @RestController
@@ -44,9 +44,9 @@ public class EmployeeAdminController {
     // 회원 상세 조회 API
     @GetMapping("/{employeeId}")
     public ResponseEntity<ApiResult<EmployeeInfoResponse>> getEmployeeInfo(@PathVariable Long employeeId) {
-        Optional<Employee> employee = employeeService.findById(employeeId);
-        if (!employee.isPresent()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Employee not found");
-        return ResponseEntity.ok(ApiResult.success(EmployeeInfoResponse.from(employee.get())));
+        Employee employee = employeeService.findById(employeeId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.EMPLOYEE_NOT_FOUND));
+        return ResponseEntity.ok(ApiResult.success(EmployeeInfoResponse.from(employee)));
     }
 
     // 회원 탈퇴 API
