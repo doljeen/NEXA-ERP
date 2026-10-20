@@ -7,6 +7,10 @@ plugins {
 group = 'com.ssafy'
 version = '0.0.1-SNAPSHOT'
 
+ext {
+	set('springCloudVersion', "2022.0.4")
+}
+
 java {
 	toolchain {
 		languageVersion = JavaLanguageVersion.of(21)
@@ -43,6 +47,16 @@ dependencies {
 	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
 	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+
+
+	// Eureka
+	implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+}
+
+dependencyManagement {
+	imports {
+		mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+	}
 
 	// Actuator 추가
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
