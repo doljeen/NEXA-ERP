@@ -36,7 +36,9 @@ public class CorsConfig {
                 "X-Request-Id"
         ));
 
-        config.setAllowCredentials(false);
+        // 쿠키를 포함한 Cross-Origin 요청 허용
+        config.setAllowCredentials(true);
+
         config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source =
