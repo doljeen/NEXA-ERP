@@ -2,8 +2,7 @@ package com.ssafy.migrationservice.domain.migration.validation;
 
 import com.ssafy.migrationservice.domain.migration.entity.MigrationFile;
 import com.ssafy.migrationservice.domain.migration.entity.enums.MigrationEntity;
-import com.ssafy.migrationservice.domain.migration.mapping.ColumnMapping;
-import com.ssafy.migrationservice.domain.migration.mapping.ColumnMappingRepository;
+import com.ssafy.migrationservice.domain.migration.mapping.MappingService;
 import com.ssafy.migrationservice.domain.migration.reader.ParsedTable;
 import com.ssafy.migrationservice.domain.migration.repository.StagingRowRepository;
 import com.ssafy.migrationservice.domain.migration.validation.issue.IssueCode;
@@ -39,7 +38,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ValidationService {
 
-    private final ColumnMappingRepository mappingRepository;
+    private final MappingService mappingService;
     private final StagingRowRepository stagingRowRepository;
     private final IssueRepository issueRepository;
 
@@ -54,7 +53,7 @@ public class ValidationService {
             return;
         }
         EntitySchema schema = schemaOpt.get();
-        Map<String, String> fieldToColumn = mappedColumns(file.getFileId());
+        Map<String, String> fieldToColumn = mappingService.fieldToColumn(file.getFileId());
 
         // ① 파일 구조: 필수 필드가 어느 컬럼에도 연결되지 않음 → 한 건으로 묶어 보여준다
         List<String> missing = schema.fields().stream()
@@ -189,17 +188,6 @@ public class ValidationService {
                         parent, null));
             }
         }
-    }
-
-    /** 필드 → 원본 컬럼 (연결된 것만) */
-    private Map<String, String> mappedColumns(Long fileId) {
-        Map<String, String> m = new LinkedHashMap<>();
-        for (ColumnMapping cm : mappingRepository.findByFileIdOrderByMappingIdAsc(fileId)) {
-            if (cm.getTargetField() != null) {
-                m.put(cm.getTargetField(), cm.getSourceColumn());
-            }
-        }
-        return m;
     }
 
     private static ValidationIssue fileIssue(MigrationFile file, Severity severity, IssueCode code, String message) {

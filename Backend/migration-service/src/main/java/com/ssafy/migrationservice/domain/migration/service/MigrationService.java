@@ -1,7 +1,10 @@
 package com.ssafy.migrationservice.domain.migration.service;
 
 import com.ssafy.migrationservice.domain.migration.dto.FileDetailResponse;
+import com.ssafy.migrationservice.domain.migration.dto.BatchView;
 import com.ssafy.migrationservice.domain.migration.dto.FileUploadResponse;
+import com.ssafy.migrationservice.domain.migration.load.BatchStatus;
+import com.ssafy.migrationservice.domain.migration.load.MigrationBatchRepository;
 import com.ssafy.migrationservice.domain.migration.dto.FixApplyRequest;
 import com.ssafy.migrationservice.domain.migration.dto.FixApplyResponse;
 import com.ssafy.migrationservice.domain.migration.dto.RowUpdateRequest;
@@ -46,6 +49,7 @@ public class MigrationService {
     private final ValidationService validationService;
     private final IssueRepository issueRepository;
     private final StagingChangeRepository stagingChangeRepository;
+    private final MigrationBatchRepository batchRepository;
 
     @Transactional
     public MigrationCreateResponse create(MigrationCreateRequest r) {
@@ -60,7 +64,8 @@ public class MigrationService {
     @Transactional(readOnly = true)
     public MigrationDetailResponse get(Long migrationId) {
         MigrationJob job = findJob(migrationId);
-        return MigrationDetailResponse.of(job, fileRepository.findByMigrationIdOrderByFileIdAsc(migrationId));
+        return MigrationDetailResponse.of(job, fileRepository.findByMigrationIdOrderByFileIdAsc(migrationId),
+                batchRepository.findByMigrationIdOrderByStartedAtAsc(migrationId).stream().map(BatchView::from).toList());
     }
 
     /** 읽기 → 임시 테이블 저장 → 매핑 추천 → 검증까지 한 번에. 원본 바이트는 저장하지 않는다. */
@@ -98,7 +103,7 @@ public class MigrationService {
     @Transactional
     public MappingUpdateResponse updateMappings(Long migrationId, Long fileId, MappingUpdateRequest request) {
         findEditableJob(migrationId);
-        MigrationFile file = findFile(migrationId, fileId);
+        MigrationFile file = findEditableFile(migrationId, fileId);
         mappingService.update(file, request);
         validationService.validate(file);
         return new MappingUpdateResponse(mappingService.missingRequired(file), issueRepository.totals(migrationId, fileId));
@@ -110,6 +115,7 @@ public class MigrationService {
         findEditableJob(migrationId);
         String code = r.code() == null ? null : r.code().name();
         List<Long> fileIds = stagingChangeRepository.filesWithFixes(migrationId, r.fileId(), code, r.field());
+        fileIds.forEach(id -> findEditableFile(migrationId, id));
         int applied = stagingChangeRepository.applyFixes(migrationId, r.fileId(), code, r.field());
         for (Long fileId : fileIds) {
             validationService.validate(findFile(migrationId, fileId));
@@ -121,7 +127,7 @@ public class MigrationService {
     @Transactional
     public RowUpdateResponse updateRow(Long migrationId, Long fileId, int rowNo, RowUpdateRequest r) {
         findEditableJob(migrationId);
-        MigrationFile file = findFile(migrationId, fileId);
+        MigrationFile file = findEditableFile(migrationId, fileId);
         List<String> headers = List.of(file.getHeaders());
         for (String column : r.values().keySet()) {
             if (!headers.contains(column)) {
@@ -161,6 +167,15 @@ public class MigrationService {
             throw new BusinessException(ErrorCode.MIGRATION_COMPLETED);
         }
         return job;
+    }
+
+    /** 적재된 파일은 되돌린 뒤에만 고칠 수 있다 (임시 테이블과 대상 서비스 데이터가 어긋나지 않게) */
+    private MigrationFile findEditableFile(Long migrationId, Long fileId) {
+        MigrationFile file = findFile(migrationId, fileId);
+        if (batchRepository.existsByFileIdAndStatus(fileId, BatchStatus.LOADED)) {
+            throw new BusinessException(ErrorCode.FILE_ALREADY_LOADED);
+        }
+        return file;
     }
 
     private MigrationFile findFile(Long migrationId, Long fileId) {

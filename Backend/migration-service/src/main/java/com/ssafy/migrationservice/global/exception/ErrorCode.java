@@ -13,6 +13,16 @@ public enum ErrorCode {
     MIGRATION_FILE_NOT_FOUND(HttpStatus.NOT_FOUND, "MIG_002", "존재하지 않는 업로드 파일입니다."),
     MIGRATION_COMPLETED(HttpStatus.CONFLICT, "MIG_003", "전환 완료된 이관 작업은 변경할 수 없습니다."),
     STAGING_ROW_NOT_FOUND(HttpStatus.NOT_FOUND, "MIG_004", "존재하지 않는 행입니다."),
+    FILE_ALREADY_LOADED(HttpStatus.CONFLICT, "MIG_005", "적재된 파일은 수정할 수 없습니다. 되돌린 뒤 수정하세요."),
+
+    // 적재
+    BLOCK_ISSUES_EXIST(HttpStatus.CONFLICT, "LOAD_001", "차단 오류를 먼저 해결해야 합니다."),
+    LOAD_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "LOAD_002", "아직 적재를 지원하지 않는 데이터입니다."),
+    NOTHING_TO_LOAD(HttpStatus.BAD_REQUEST, "LOAD_003", "적재할 파일이 없습니다."),
+    BATCH_NOT_FOUND(HttpStatus.NOT_FOUND, "LOAD_004", "존재하지 않는 적재 묶음입니다."),
+    BATCH_NOT_LOADED(HttpStatus.CONFLICT, "LOAD_005", "적재 완료 상태의 묶음만 되돌릴 수 있습니다."),
+    ROLLBACK_DEPENDENCY_EXISTS(HttpStatus.CONFLICT, "LOAD_006", "이 묶음에 의존하는 묶음을 먼저 되돌려야 합니다."),
+    TARGET_CALL_FAILED(HttpStatus.BAD_GATEWAY, "LOAD_007", "대상 서비스 호출에 실패했습니다."),
 
     // 파일
     FILE_EMPTY(HttpStatus.BAD_REQUEST, "FILE_001", "빈 파일입니다."),

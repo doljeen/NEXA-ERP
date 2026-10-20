@@ -5,6 +5,12 @@ import com.ssafy.migrationservice.domain.migration.dto.FileUploadResponse;
 import com.ssafy.migrationservice.domain.migration.dto.FixApplyRequest;
 import com.ssafy.migrationservice.domain.migration.dto.FixApplyResponse;
 import com.ssafy.migrationservice.domain.migration.dto.IssueListResponse;
+import com.ssafy.migrationservice.domain.migration.dto.LoadRequest;
+import com.ssafy.migrationservice.domain.migration.dto.LoadResponse;
+import com.ssafy.migrationservice.domain.migration.dto.ReconciliationItem;
+import com.ssafy.migrationservice.domain.migration.load.LoadService;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import java.util.List;
 import com.ssafy.migrationservice.domain.migration.dto.RowUpdateRequest;
 import com.ssafy.migrationservice.domain.migration.dto.RowUpdateResponse;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -46,6 +52,7 @@ import java.io.IOException;
 public class MigrationAdminController {
 
     private final MigrationService migrationService;
+    private final LoadService loadService;
 
     @PostMapping
     public ResponseEntity<ApiResult<MigrationCreateResponse>> create(@Valid @RequestBody MigrationCreateRequest request) {
@@ -98,6 +105,33 @@ public class MigrationAdminController {
                                                                   @PathVariable int rowNo,
                                                                   @Valid @RequestBody RowUpdateRequest request) {
         return ResponseEntity.ok(ApiResult.success(migrationService.updateRow(migrationId, fileId, rowNo, request)));
+    }
+
+    /**
+     * 적재. dryRun=true면 보낼 순서·건수·정리된 값 예시만 보여주고 실제로 보내지 않는다.
+     * 본문의 fileIds를 비우면 적재 가능한 파일 전체를 entity 순서대로 넣는다.
+     */
+    @PostMapping("/{migrationId}/loads")
+    public ResponseEntity<ApiResult<?>> load(@PathVariable Long migrationId,
+                                             @RequestParam(defaultValue = "false") boolean dryRun,
+                                             @RequestBody(required = false) LoadRequest request) {
+        List<Long> fileIds = request == null ? null : request.fileIds();
+        if (dryRun) {
+            return ResponseEntity.ok(ApiResult.success(loadService.preview(migrationId, fileIds)));
+        }
+        return ResponseEntity.ok(ApiResult.success(loadService.load(migrationId, fileIds)));
+    }
+
+    /** 적재 묶음 되돌리기. 나중 순서의 묶음이 적재돼 있으면 409 */
+    @DeleteMapping("/{migrationId}/batches/{batchId}")
+    public ResponseEntity<ApiResult<LoadResponse>> rollback(@PathVariable Long migrationId, @PathVariable String batchId) {
+        return ResponseEntity.ok(ApiResult.success(loadService.rollback(migrationId, batchId)));
+    }
+
+    /** 대사: 적재된 묶음별 원본 행 수 vs 대상 서비스에 들어간 수 */
+    @GetMapping("/{migrationId}/reconciliation")
+    public ResponseEntity<ApiResult<List<ReconciliationItem>>> reconcile(@PathVariable Long migrationId) {
+        return ResponseEntity.ok(ApiResult.success(loadService.reconcile(migrationId)));
     }
 
     /** 원인별 묶음(groups) + 행 단위 목록(content). fileId·severity 없으면 전체 */

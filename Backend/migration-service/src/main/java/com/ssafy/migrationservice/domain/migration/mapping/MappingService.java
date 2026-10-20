@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -96,6 +97,18 @@ public class MappingService {
                 .map(cm -> new ColumnMappingView(cm.getSourceColumn(), cm.getTargetField(),
                         labels.get(cm.getTargetField()), cm.isConfirmed()))
                 .toList();
+    }
+
+    /** 필드 → 원본 컬럼 (연결된 것만) */
+    @Transactional(readOnly = true)
+    public Map<String, String> fieldToColumn(Long fileId) {
+        Map<String, String> m = new LinkedHashMap<>();
+        for (ColumnMapping cm : mappingRepository.findByFileIdOrderByMappingIdAsc(fileId)) {
+            if (cm.getTargetField() != null) {
+                m.put(cm.getTargetField(), cm.getSourceColumn());
+            }
+        }
+        return m;
     }
 
     /** 필수 필드 중 아직 어느 컬럼에도 연결되지 않은 것 (라벨) */

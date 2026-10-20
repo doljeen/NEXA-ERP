@@ -56,4 +56,13 @@ public class MigrationJob {
     public boolean isCompleted() {
         return status == MigrationStatus.COMPLETED;
     }
+
+    public void markLoaded() {
+        this.status = MigrationStatus.LOADED;
+    }
+
+    /** 적재된 묶음이 모두 되돌려지면 다시 작성 중으로 */
+    public void markDraft() {
+        this.status = MigrationStatus.DRAFT;
+    }
 }
