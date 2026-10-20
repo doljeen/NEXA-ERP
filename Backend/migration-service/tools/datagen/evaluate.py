@@ -31,8 +31,8 @@ ACCIDENT_CODES = {
     "REMAIN_HARDCODED": {"HARDCODED_VALUE"}, "GRANTED_HARDCODED": {"HARDCODED_VALUE"},
     "AMOUNT_HARDCODED": {"HARDCODED_VALUE"}, "RATE_AMOUNT_MISMATCH": {"HARDCODED_VALUE"},
     "NEW_ROW_FORMULA_MISSING": {"BLANK_IN_FORMULA_COLUMN"},
-    "ROW_AFTER_TOTAL": {"ROW_AFTER_TOTAL"},
-    "REF_ERROR": {"FORMULA_ERROR"}, "LOOKUP_NA": {"FORMULA_ERROR"},
+    "ROW_AFTER_TOTAL": {"ROW_AFTER_TOTAL", "HARDCODED_VALUE"},  # 합계 아래 행은 계산 결과도 숫자로만 입력
+    "REF_ERROR": {"FORMULA_ERROR", "FORMULA_INCONSISTENT"}, "LOOKUP_NA": {"FORMULA_ERROR"},
     "SUM_RANGE_MISSING": {"FORMULA_INCONSISTENT", "FORMULA_DIFFERS_ACROSS_SHEETS"},
     "STALE_RATE_LITERAL": {"FORMULA_INCONSISTENT", "FORMULA_DIFFERS_ACROSS_SHEETS"},
     "BASE_DATE_WRONG": {"FORMULA_INCONSISTENT"}, "UNDER_ONE_YEAR_PAID": {"FORMULA_INCONSISTENT"},
@@ -115,19 +115,23 @@ def evaluate_hr_file(base, mid, cdir, fname, hk):
     res = {"file": fname, "entity": entity, "sheets": [], "accidents": [], "unexpected": Counter(),
            "legalDeviations": len(hk.get("legalDeviations", [])),
            "needs": dict(Counter(n for a in hk["accidents"] for n in a["needs"]))}
-    issues_by_sheet = {}
+    issues_by_sheet, uploaded = {}, []
     for name, meta in hk["sheets"].items():
         if meta.get("role") in SKIP_ROLES:
             continue
         sr = {"sheet": name, "role": meta.get("role")}
         try:
             up = upload(base, mid, entity, cdir / fname, name)
-            issues = all_issues(base, mid, up["fileId"])
-            issues_by_sheet[name] = issues
-            sr.update(read=_read_check(up, meta, hk), fileIssues=sorted({i["code"] for i in issues if i["rowNo"] is None}))
+            sr["read"] = _read_check(up, meta, hk)
+            uploaded.append((sr, up["fileId"]))
         except Exception as e:  # noqa: BLE001 - 업로드 거절도 결과로 남긴다
             sr["error"] = str(e)
         res["sheets"].append(sr)
+    # 같은 파일의 시트를 다 올린 뒤에 이슈를 본다 (서비스가 시트끼리 수식을 비교하므로)
+    for sr, file_id in uploaded:
+        issues = all_issues(base, mid, file_id)
+        issues_by_sheet[sr["sheet"]] = issues
+        sr["fileIssues"] = sorted({i["code"] for i in issues if i["rowNo"] is None})
 
     explained = set()
     for a in hk["accidents"]:

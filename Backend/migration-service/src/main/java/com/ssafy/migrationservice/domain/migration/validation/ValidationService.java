@@ -5,6 +5,7 @@ import com.ssafy.migrationservice.domain.migration.entity.enums.MigrationEntity;
 import com.ssafy.migrationservice.domain.migration.mapping.MappingService;
 import com.ssafy.migrationservice.domain.migration.reader.ParsedTable;
 import com.ssafy.migrationservice.domain.migration.repository.StagingRowRepository;
+import com.ssafy.migrationservice.domain.migration.validation.formula.FormulaRuleService;
 import com.ssafy.migrationservice.domain.migration.validation.issue.IssueCode;
 import com.ssafy.migrationservice.domain.migration.validation.issue.IssueRepository;
 import com.ssafy.migrationservice.domain.migration.validation.issue.Severity;
@@ -31,7 +32,7 @@ import java.util.stream.Collectors;
 
 /**
  * 파일 하나를 단계별로 검증하고 결과를 validation_issue에 덮어쓴다.
- * ⓪ 엑셀 구조(합계 행·수식 오류, 모든 entity) → ① 파일 구조 → ② 형식·③ 필수값 → ④ 파일 안 중복 → ⑥ 업무 규칙
+ * ⓪ 엑셀 구조(합계 행·수식 오류·수식 규칙에서 벗어난 칸, 모든 entity) → ① 파일 구조 → ② 형식·③ 필수값 → ④ 파일 안 중복 → ⑥ 업무 규칙
  * 앞 단계에서 형식이 틀린 값은 업무 규칙에서 쓰지 않는다 (오류가 번지지 않게).
  * 참조(⑤)·검산(⑦)은 다음 단계에서 추가.
  */
@@ -42,12 +43,14 @@ public class ValidationService {
     private final MappingService mappingService;
     private final StagingRowRepository stagingRowRepository;
     private final IssueRepository issueRepository;
+    private final FormulaRuleService formulaRuleService;
 
     @Transactional
     public void validate(MigrationFile file) {
         List<ValidationIssue> issues = new ArrayList<>();
         List<ParsedTable.Row> rows = stagingRowRepository.findByFileId(file.getFileId());
         sheetStructure(file, rows, issues);
+        issues.addAll(formulaRuleService.inspect(file, rows).issues());
         Optional<EntitySchema> schemaOpt = EntitySchemas.of(file.getEntity());
         if (schemaOpt.isEmpty()) {
             if (file.getEntity() != MigrationEntity.REFERENCE) {

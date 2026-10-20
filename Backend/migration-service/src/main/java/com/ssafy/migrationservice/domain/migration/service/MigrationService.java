@@ -3,6 +3,8 @@ package com.ssafy.migrationservice.domain.migration.service;
 import com.ssafy.migrationservice.domain.migration.dto.FileDetailResponse;
 import com.ssafy.migrationservice.domain.migration.dto.BatchView;
 import com.ssafy.migrationservice.domain.migration.dto.FileUploadResponse;
+import com.ssafy.migrationservice.domain.migration.dto.FormulaRulesResponse;
+import com.ssafy.migrationservice.domain.migration.validation.formula.FormulaRuleService;
 import com.ssafy.migrationservice.domain.migration.load.BatchStatus;
 import com.ssafy.migrationservice.domain.migration.load.MigrationBatchRepository;
 import com.ssafy.migrationservice.domain.migration.dto.FixApplyRequest;
@@ -55,6 +57,7 @@ public class MigrationService {
     private final IssueRepository issueRepository;
     private final StagingChangeRepository stagingChangeRepository;
     private final MigrationBatchRepository batchRepository;
+    private final FormulaRuleService formulaRuleService;
 
     @Transactional
     public MigrationCreateResponse create(MigrationCreateRequest r) {
@@ -97,6 +100,8 @@ public class MigrationService {
         stagingRowRepository.saveAll(file.getFileId(), table.rows());
         mappingService.suggest(file);
         validationService.validate(file);
+        // 같은 양식의 다른 시트는 시트끼리 수식 비교 결과가 바뀌므로 다시 검증
+        formulaRuleService.siblings(file).forEach(validationService::validate);
 
         return new FileUploadResponse(file.getFileId(), entity, table.rows().size(), table.headers(),
                 mappingService.missingRequired(file), issueRepository.totals(migrationId, file.getFileId()),
@@ -116,6 +121,14 @@ public class MigrationService {
                                 .thenComparing(t -> -tables.indexOf(t)))
                         .orElseThrow())
                 .orElse(tables.get(0));
+    }
+
+    /** 수식에서 뽑은 열별 규칙과 벗어난 행 */
+    @Transactional(readOnly = true)
+    public FormulaRulesResponse formulas(Long migrationId, Long fileId) {
+        MigrationFile file = findFile(migrationId, fileId);
+        return new FormulaRulesResponse(fileId, file.getSheetName(),
+                formulaRuleService.inspect(file, stagingRowRepository.findByFileId(fileId)).columns());
     }
 
     @Transactional(readOnly = true)

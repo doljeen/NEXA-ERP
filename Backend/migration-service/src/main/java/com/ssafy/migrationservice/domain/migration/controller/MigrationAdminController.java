@@ -2,6 +2,7 @@ package com.ssafy.migrationservice.domain.migration.controller;
 
 import com.ssafy.migrationservice.domain.migration.dto.FileDetailResponse;
 import com.ssafy.migrationservice.domain.migration.dto.FileUploadResponse;
+import com.ssafy.migrationservice.domain.migration.dto.FormulaRulesResponse;
 import com.ssafy.migrationservice.domain.migration.dto.FixApplyRequest;
 import com.ssafy.migrationservice.domain.migration.dto.FixApplyResponse;
 import com.ssafy.migrationservice.domain.migration.dto.IssueListResponse;
@@ -82,6 +83,12 @@ public class MigrationAdminController {
     @GetMapping("/{migrationId}/files/{fileId}")
     public ResponseEntity<ApiResult<FileDetailResponse>> getFile(@PathVariable Long migrationId, @PathVariable Long fileId) {
         return ResponseEntity.ok(ApiResult.success(migrationService.getFile(migrationId, fileId)));
+    }
+
+    /** 엑셀 수식에서 뽑은 열별 규칙 (대표 수식, 값 직접 입력·빈 칸·다른 수식 행, 다른 시트와 비교) */
+    @GetMapping("/{migrationId}/files/{fileId}/formulas")
+    public ResponseEntity<ApiResult<FormulaRulesResponse>> formulas(@PathVariable Long migrationId, @PathVariable Long fileId) {
+        return ResponseEntity.ok(ApiResult.success(migrationService.formulas(migrationId, fileId)));
     }
 
     @PutMapping("/{migrationId}/files/{fileId}/mappings")

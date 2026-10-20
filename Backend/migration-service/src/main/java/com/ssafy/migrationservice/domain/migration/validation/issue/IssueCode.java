@@ -8,6 +8,10 @@ public enum IssueCode {
     ROW_AFTER_TOTAL,
     // 엑셀 수식
     FORMULA_ERROR,
+    HARDCODED_VALUE,
+    BLANK_IN_FORMULA_COLUMN,
+    FORMULA_INCONSISTENT,
+    FORMULA_DIFFERS_ACROSS_SHEETS,
     // 형식·필수값
     REQUIRED,
     INVALID_DATE,
