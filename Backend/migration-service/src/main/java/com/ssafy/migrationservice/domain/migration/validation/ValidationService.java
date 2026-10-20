@@ -56,12 +56,17 @@ public class ValidationService {
         EntitySchema schema = schemaOpt.get();
         Map<String, String> fieldToColumn = mappedColumns(file.getFileId());
 
-        // ① 파일 구조: 필수 필드가 어느 컬럼에도 연결되지 않음
-        for (FieldSpec f : schema.fields()) {
-            if (f.required() && !fieldToColumn.containsKey(f.name())) {
-                issues.add(new ValidationIssue(file.getFileId(), null, f.name(), null, Severity.BLOCK,
-                        IssueCode.MISSING_REQUIRED_COLUMN, "필수 컬럼 '" + f.label() + "'이(가) 없습니다", null, null));
-            }
+        // ① 파일 구조: 필수 필드가 어느 컬럼에도 연결되지 않음 → 한 건으로 묶어 보여준다
+        List<String> missing = schema.fields().stream()
+                .filter(f -> f.required() && !fieldToColumn.containsKey(f.name()))
+                .map(FieldSpec::label)
+                .toList();
+        if (!missing.isEmpty()) {
+            String labels = String.join(", ", missing);
+            issues.add(new ValidationIssue(file.getFileId(), null, null, null, Severity.BLOCK,
+                    IssueCode.MISSING_REQUIRED_COLUMN,
+                    "필수 컬럼 " + missing.size() + "개가 없습니다: " + labels + ". 컬럼을 추가하거나 매핑에서 연결해 주세요",
+                    labels, null));
         }
 
         // ② 형식 · ③ 필수값. 형식이 맞는 날짜만 모아 업무 규칙에 넘긴다
@@ -75,7 +80,7 @@ public class ValidationService {
                 if (value == null) {
                     if (f.required()) {
                         issues.add(new ValidationIssue(file.getFileId(), row.rowNo(), f.name(), column, Severity.BLOCK,
-                                IssueCode.REQUIRED, f.label() + "이(가) 비어 있습니다", null, null));
+                                IssueCode.REQUIRED, Josa.iGa(f.label()) + " 비어 있습니다", null, null));
                     }
                     continue;
                 }
@@ -99,7 +104,7 @@ public class ValidationService {
                 String where = rowNos.stream().map(String::valueOf).collect(Collectors.joining(", "));
                 for (Integer rowNo : rowNos) {
                     issues.add(new ValidationIssue(file.getFileId(), rowNo, key.name(), column, Severity.BLOCK,
-                            IssueCode.DUPLICATE_KEY, key.label() + " '" + value + "'이(가) 중복됩니다 (" + where + "행)",
+                            IssueCode.DUPLICATE_KEY, key.label() + " 중복: '" + value + "' (" + where + "행)",
                             value, null));
                 }
             });
@@ -180,7 +185,7 @@ public class ValidationService {
                         IssueCode.SELF_PARENT, "자기 자신을 상위부서로 지정했습니다", parent, null));
             } else if (!codes.contains(parent)) {
                 issues.add(new ValidationIssue(file.getFileId(), row.rowNo(), "parentDeptCode", parentCol, Severity.WARN,
-                        IssueCode.PARENT_NOT_IN_FILE, "상위부서 '" + parent + "'이(가) 이 파일에 없습니다. 기존 부서인지 확인해 주세요",
+                        IssueCode.PARENT_NOT_IN_FILE, "이 파일에 없는 상위부서입니다: '" + parent + "'. 기존 부서인지 확인해 주세요",
                         parent, null));
             }
         }

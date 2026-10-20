@@ -2,7 +2,12 @@ package com.ssafy.migrationservice.domain.migration.controller;
 
 import com.ssafy.migrationservice.domain.migration.dto.FileDetailResponse;
 import com.ssafy.migrationservice.domain.migration.dto.FileUploadResponse;
+import com.ssafy.migrationservice.domain.migration.dto.FixApplyRequest;
+import com.ssafy.migrationservice.domain.migration.dto.FixApplyResponse;
 import com.ssafy.migrationservice.domain.migration.dto.IssueListResponse;
+import com.ssafy.migrationservice.domain.migration.dto.RowUpdateRequest;
+import com.ssafy.migrationservice.domain.migration.dto.RowUpdateResponse;
+import org.springframework.web.bind.annotation.PatchMapping;
 import com.ssafy.migrationservice.domain.migration.dto.MappingUpdateRequest;
 import com.ssafy.migrationservice.domain.migration.dto.MappingUpdateResponse;
 import com.ssafy.migrationservice.domain.migration.validation.issue.Severity;
@@ -76,6 +81,23 @@ public class MigrationAdminController {
                                                                            @PathVariable Long fileId,
                                                                            @Valid @RequestBody MappingUpdateRequest request) {
         return ResponseEntity.ok(ApiResult.success(migrationService.updateMappings(migrationId, fileId, request)));
+    }
+
+    /** 자동 정리 일괄 적용. 본문을 비우면 작업 전체, fileId·code·field로 묶음 하나만 적용 */
+    @PostMapping("/{migrationId}/fixes")
+    public ResponseEntity<ApiResult<FixApplyResponse>> applyFixes(@PathVariable Long migrationId,
+                                                                  @RequestBody(required = false) FixApplyRequest request) {
+        FixApplyRequest r = request == null ? FixApplyRequest.all() : request;
+        return ResponseEntity.ok(ApiResult.success(migrationService.applyFixes(migrationId, r)));
+    }
+
+    /** 화면에서 행 하나 직접 수정 (원본 컬럼명 → 새 값) */
+    @PatchMapping("/{migrationId}/files/{fileId}/rows/{rowNo}")
+    public ResponseEntity<ApiResult<RowUpdateResponse>> updateRow(@PathVariable Long migrationId,
+                                                                  @PathVariable Long fileId,
+                                                                  @PathVariable int rowNo,
+                                                                  @Valid @RequestBody RowUpdateRequest request) {
+        return ResponseEntity.ok(ApiResult.success(migrationService.updateRow(migrationId, fileId, rowNo, request)));
     }
 
     /** 원인별 묶음(groups) + 행 단위 목록(content). fileId·severity 없으면 전체 */

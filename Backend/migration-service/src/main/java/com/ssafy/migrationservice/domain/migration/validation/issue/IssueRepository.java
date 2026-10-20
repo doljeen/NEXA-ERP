@@ -118,6 +118,23 @@ public class IssueRepository {
                 withPaging);
     }
 
+    public List<ValidationIssue> findByRow(Long fileId, int rowNo) {
+        return jdbcTemplate.query("""
+                        SELECT file_id, row_no, field, source_column, severity, code, message, value, suggestion
+                        FROM validation_issue WHERE file_id = ? AND row_no = ? ORDER BY issue_id""",
+                (rs, n) -> new ValidationIssue(
+                        rs.getLong("file_id"),
+                        (Integer) rs.getObject("row_no"),
+                        rs.getString("field"),
+                        rs.getString("source_column"),
+                        Severity.valueOf(rs.getString("severity")),
+                        IssueCode.valueOf(rs.getString("code")),
+                        rs.getString("message"),
+                        rs.getString("value"),
+                        rs.getString("suggestion")),
+                fileId, rowNo);
+    }
+
     public long count(Long migrationId, Long fileId, Severity severity) {
         Long n = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM validation_issue " + FILTER,
                 Long.class, params(migrationId, fileId, severity));

@@ -12,6 +12,7 @@ public enum ErrorCode {
     MIGRATION_NOT_FOUND(HttpStatus.NOT_FOUND, "MIG_001", "존재하지 않는 이관 작업입니다."),
     MIGRATION_FILE_NOT_FOUND(HttpStatus.NOT_FOUND, "MIG_002", "존재하지 않는 업로드 파일입니다."),
     MIGRATION_COMPLETED(HttpStatus.CONFLICT, "MIG_003", "전환 완료된 이관 작업은 변경할 수 없습니다."),
+    STAGING_ROW_NOT_FOUND(HttpStatus.NOT_FOUND, "MIG_004", "존재하지 않는 행입니다."),
 
     // 파일
     FILE_EMPTY(HttpStatus.BAD_REQUEST, "FILE_001", "빈 파일입니다."),

@@ -2,6 +2,11 @@ package com.ssafy.migrationservice.domain.migration.service;
 
 import com.ssafy.migrationservice.domain.migration.dto.FileDetailResponse;
 import com.ssafy.migrationservice.domain.migration.dto.FileUploadResponse;
+import com.ssafy.migrationservice.domain.migration.dto.FixApplyRequest;
+import com.ssafy.migrationservice.domain.migration.dto.FixApplyResponse;
+import com.ssafy.migrationservice.domain.migration.dto.RowUpdateRequest;
+import com.ssafy.migrationservice.domain.migration.dto.RowUpdateResponse;
+import com.ssafy.migrationservice.domain.migration.repository.StagingChangeRepository;
 import com.ssafy.migrationservice.domain.migration.dto.IssueListResponse;
 import com.ssafy.migrationservice.domain.migration.dto.MappingUpdateRequest;
 import com.ssafy.migrationservice.domain.migration.dto.MappingUpdateResponse;
@@ -27,6 +32,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -39,6 +45,7 @@ public class MigrationService {
     private final MappingService mappingService;
     private final ValidationService validationService;
     private final IssueRepository issueRepository;
+    private final StagingChangeRepository stagingChangeRepository;
 
     @Transactional
     public MigrationCreateResponse create(MigrationCreateRequest r) {
@@ -95,6 +102,41 @@ public class MigrationService {
         mappingService.update(file, request);
         validationService.validate(file);
         return new MappingUpdateResponse(mappingService.missingRequired(file), issueRepository.totals(migrationId, fileId));
+    }
+
+    /** FIX 이슈의 제안값을 일괄 반영하고, 바뀐 파일을 다시 검증한다 */
+    @Transactional
+    public FixApplyResponse applyFixes(Long migrationId, FixApplyRequest r) {
+        findEditableJob(migrationId);
+        String code = r.code() == null ? null : r.code().name();
+        List<Long> fileIds = stagingChangeRepository.filesWithFixes(migrationId, r.fileId(), code, r.field());
+        int applied = stagingChangeRepository.applyFixes(migrationId, r.fileId(), code, r.field());
+        for (Long fileId : fileIds) {
+            validationService.validate(findFile(migrationId, fileId));
+        }
+        return new FixApplyResponse(applied, issueRepository.totals(migrationId, null));
+    }
+
+    /** 화면에서 행 하나를 고친다. 그 파일을 다시 검증하고 그 행에 남은 오류를 돌려준다 */
+    @Transactional
+    public RowUpdateResponse updateRow(Long migrationId, Long fileId, int rowNo, RowUpdateRequest r) {
+        findEditableJob(migrationId);
+        MigrationFile file = findFile(migrationId, fileId);
+        List<String> headers = List.of(file.getHeaders());
+        for (String column : r.values().keySet()) {
+            if (!headers.contains(column)) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "파일에 없는 컬럼입니다: " + column);
+            }
+        }
+        for (Map.Entry<String, String> e : r.values().entrySet()) {
+            String value = e.getValue() == null || e.getValue().isBlank() ? null : e.getValue().strip();
+            if (!stagingChangeRepository.updateCell(fileId, rowNo, e.getKey(), value)) {
+                throw new BusinessException(ErrorCode.STAGING_ROW_NOT_FOUND);
+            }
+        }
+        validationService.validate(file);
+        return new RowUpdateResponse(rowNo, issueRepository.findByRow(fileId, rowNo),
+                issueRepository.totals(migrationId, fileId));
     }
 
     @Transactional(readOnly = true)

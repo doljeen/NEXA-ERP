@@ -34,7 +34,7 @@ public final class FieldValueChecker {
 
     public static Optional<Finding> check(FieldSpec f, String value) {
         if (f.maxLength() != null && value.length() > f.maxLength()) {
-            return block(IssueCode.TOO_LONG, f.label() + "은(는) " + f.maxLength() + "자 이하여야 합니다");
+            return block(IssueCode.TOO_LONG, Josa.eunNeun(f.label()) + " " + f.maxLength() + "자 이하여야 합니다");
         }
         return switch (f.type()) {
             case STRING -> Optional.empty();
@@ -70,7 +70,7 @@ public final class FieldValueChecker {
     private static Optional<Finding> checkDate(FieldSpec f, String value) {
         Optional<LocalDate> date = parseDate(value);
         if (date.isEmpty()) {
-            return block(IssueCode.INVALID_DATE, f.label() + "이(가) 날짜가 아닙니다");
+            return block(IssueCode.INVALID_DATE, Josa.iGa(f.label()) + " 날짜가 아닙니다");
         }
         if (ISO_DATE.matcher(value).matches()) {
             return Optional.empty();
@@ -87,7 +87,7 @@ public final class FieldValueChecker {
             return Optional.of(new Finding(Severity.FIX, IssueCode.NUMBER_FORMAT,
                     f.label() + "의 쉼표를 제거합니다", value.replace(",", "")));
         }
-        return block(IssueCode.INVALID_NUMBER, f.label() + "이(가) 숫자가 아닙니다");
+        return block(IssueCode.INVALID_NUMBER, Josa.iGa(f.label()) + " 숫자가 아닙니다");
     }
 
     private static Optional<Finding> checkPhone(FieldSpec f, String value) {
