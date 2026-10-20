@@ -9,6 +9,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
@@ -38,7 +39,8 @@ public class GlobalExceptionHandler {
 
     // JSON 파싱 실패, enum 값 오류, 필수 파라미터·파트 누락
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class,
-            MissingServletRequestParameterException.class, MissingServletRequestPartException.class})
+            MissingServletRequestParameterException.class, MissingServletRequestPartException.class,
+            HandlerMethodValidationException.class})
     public ResponseEntity<ApiResult<Void>> handleBadRequest(Exception e) {
         return ResponseEntity.status(ErrorCode.INVALID_INPUT.getStatus())
                 .body(ApiResult.fail(ErrorCode.INVALID_INPUT));

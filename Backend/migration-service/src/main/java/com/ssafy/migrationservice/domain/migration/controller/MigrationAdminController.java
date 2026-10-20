@@ -2,6 +2,13 @@ package com.ssafy.migrationservice.domain.migration.controller;
 
 import com.ssafy.migrationservice.domain.migration.dto.FileDetailResponse;
 import com.ssafy.migrationservice.domain.migration.dto.FileUploadResponse;
+import com.ssafy.migrationservice.domain.migration.dto.IssueListResponse;
+import com.ssafy.migrationservice.domain.migration.dto.MappingUpdateRequest;
+import com.ssafy.migrationservice.domain.migration.dto.MappingUpdateResponse;
+import com.ssafy.migrationservice.domain.migration.validation.issue.Severity;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import org.springframework.web.bind.annotation.PutMapping;
 import com.ssafy.migrationservice.domain.migration.dto.MigrationCreateRequest;
 import com.ssafy.migrationservice.domain.migration.dto.MigrationCreateResponse;
 import com.ssafy.migrationservice.domain.migration.dto.MigrationDetailResponse;
@@ -62,5 +69,22 @@ public class MigrationAdminController {
     @GetMapping("/{migrationId}/files/{fileId}")
     public ResponseEntity<ApiResult<FileDetailResponse>> getFile(@PathVariable Long migrationId, @PathVariable Long fileId) {
         return ResponseEntity.ok(ApiResult.success(migrationService.getFile(migrationId, fileId)));
+    }
+
+    @PutMapping("/{migrationId}/files/{fileId}/mappings")
+    public ResponseEntity<ApiResult<MappingUpdateResponse>> updateMappings(@PathVariable Long migrationId,
+                                                                           @PathVariable Long fileId,
+                                                                           @Valid @RequestBody MappingUpdateRequest request) {
+        return ResponseEntity.ok(ApiResult.success(migrationService.updateMappings(migrationId, fileId, request)));
+    }
+
+    /** 원인별 묶음(groups) + 행 단위 목록(content). fileId·severity 없으면 전체 */
+    @GetMapping("/{migrationId}/issues")
+    public ResponseEntity<ApiResult<IssueListResponse>> issues(@PathVariable Long migrationId,
+                                                               @RequestParam(required = false) Long fileId,
+                                                               @RequestParam(required = false) Severity severity,
+                                                               @RequestParam(defaultValue = "0") @Min(0) int page,
+                                                               @RequestParam(defaultValue = "50") @Min(1) @Max(500) int size) {
+        return ResponseEntity.ok(ApiResult.success(migrationService.issues(migrationId, fileId, severity, page, size)));
     }
 }
