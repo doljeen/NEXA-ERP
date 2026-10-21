@@ -25,4 +25,11 @@ public class AttendanceController {
     public ResponseEntity<ApiResult<AttendanceStatusResponse>> clockIn(@RequestHeader("X-User-Id") Long empId) {
         return ResponseEntity.ok(ApiResult.success(attendanceService.clockIn(empId)));
     }
+
+    // 퇴근 API
+    // TODO: 인증 적용 시 @RequestHeader("X-User-Id") → @AuthenticationPrincipal AuthUser 로 교체
+    @PostMapping("/clock-out")
+    public ResponseEntity<ApiResult<AttendanceStatusResponse>> clockOut(@RequestHeader("X-User-Id") Long empId) {
+        return ResponseEntity.ok(ApiResult.success(attendanceService.clockOut(empId)));
+    }
 }

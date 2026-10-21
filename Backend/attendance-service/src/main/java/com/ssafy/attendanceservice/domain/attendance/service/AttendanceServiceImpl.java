@@ -82,6 +82,37 @@ public class AttendanceServiceImpl implements AttendanceService {
         return AttendanceStatusResponse.of(daily, clockInCode, getAbleStatuses(clockInCode));
     }
 
+    @Override
+    @Transactional
+    public AttendanceStatusResponse clockOut(Long empId) {
+        OffsetDateTime now = OffsetDateTime.now(ZONE);
+
+        // 1. 가장 최근 근태 (자정을 넘긴 퇴근도 출근일 기록에 처리)
+        AttendanceDaily daily = attendanceDailyRepository.findTopByEmpIdOrderByWorkDateDesc(empId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_CLOCKED_IN));
+
+        // 2. 퇴근 취소 없이 다시 퇴근할 수 없음
+        if (daily.isClockedOut()) {
+            throw new BusinessException(ErrorCode.ALREADY_CLOCKED_OUT);
+        }
+
+        // 3. 퇴근 시각 기록 (변경 감지로 UPDATE)
+        daily.clockOut(now);
+
+        // 4. 퇴근 로그
+        WorkStatusCode clockOutCode = getStatusCode(WorkStatusCode.CLOCK_OUT);
+        workStatusLogRepository.save(WorkStatusLog.builder()
+                .workStatusCode(clockOutCode)
+                .empId(empId)
+                .workDate(daily.getWorkDate())
+                .startAt(now)
+                .source(WorkStatusSource.SELF)
+                .createdBy(empId)
+                .build());
+
+        return AttendanceStatusResponse.of(daily, clockOutCode, getAbleStatuses(clockOutCode));
+    }
+
     /** 해당 날짜에 배정된 근무그룹. 배정이 없으면 기본 그룹 */
     private WorkGroup resolveWorkGroup(Long empId, LocalDate date) {
         return employeeWorkGroupRepository.findEffectiveWorkGroup(empId, date)
@@ -94,8 +125,14 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORK_STATUS_CODE_NOT_FOUND));
     }
 
-    /** 현재 상태에서 바꿀 수 있는 상태 목록 (출퇴근 버튼 상태와 현재 상태 제외) */
+    /** 현재 상태에서 바꿀 수 있는 상태 목록 */
     private List<WorkStatusCode> getAbleStatuses(WorkStatusCode current) {
+        // 퇴근 후에는 업무로만 바꿀 수 있음 (업무로 바꾸면 퇴근취소)
+        if (WorkStatusCode.CLOCK_OUT.equals(current.getStatusCode())) {
+            return List.of(getStatusCode(WorkStatusCode.WORKING));
+        }
+
+        // 그 외: 출퇴근 버튼 상태와 현재 상태 제외
         return workStatusCodeRepository.findByStatusCodeNotIn(CLOCK_STATUS_CODES).stream()
                 .filter(code -> !code.getStatusCode().equals(current.getStatusCode()))
                 .toList();

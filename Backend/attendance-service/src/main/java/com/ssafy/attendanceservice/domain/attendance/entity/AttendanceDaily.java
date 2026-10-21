@@ -105,4 +105,14 @@ public class AttendanceDaily {
         this.unapprovedOtMin = 0;
         this.isConfirmed = false;
     }
+
+    /** 퇴근 처리 */
+    public void clockOut(OffsetDateTime clockOut) {
+        this.clockOut = clockOut;
+    }
+
+    /** 퇴근 여부 */
+    public boolean isClockedOut() {
+        return clockOut != null;
+    }
 }
