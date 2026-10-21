@@ -16,6 +16,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.time.DayOfWeek;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 
@@ -83,5 +84,11 @@ public class WorkGroup {
         this.weeklyStdHours = weeklyStdHours;
         this.weeklyMaxHours = weeklyMaxHours;
         this.isDefault = isDefault;
+    }
+
+    /** 해당 요일이 근무 요일인지 (비트마스크: 월=1, 화=2, 수=4, 목=8, 금=16, 토=32, 일=64) */
+    public boolean isWorkDay(DayOfWeek dayOfWeek) {
+        int bit = 1 << (dayOfWeek.getValue() - 1);
+        return (workDays & bit) != 0;
     }
 }
