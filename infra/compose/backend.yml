@@ -37,6 +37,7 @@ services:
       retries: 3
       start_period: 40s
 
+
   approval-service:
     build:
       context: ./Backend/approval-service
@@ -83,7 +84,7 @@ services:
       postgres:
         condition: service_healthy
       config-server:
-        condition: service_started
+        condition: service_healthy
       eureka-server:
         condition: service_started
 
@@ -102,6 +103,46 @@ services:
 
     ports:
       - "127.0.0.1:8084:8084"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+  migration-service:
+    build:
+      context: ./Backend/migration-service
+    image: nexa-migration:local
+
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+
+    environment:
+      SERVER_PORT: "8087"
+
+      CONFIG_SERVER_URL: http://config-server:8888
+      SPRING_CLOUD_CONFIG_USERNAME: config-client
+      SPRING_CLOUD_CONFIG_PASSWORD: ${CONFIG_SERVER_PASSWORD:?CONFIG_SERVER_PASSWORD is required}
+
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nexa_migration
+      SPRING_DATASOURCE_USERNAME: nexa_migration_app
+      MIGRATION_DB_PASSWORD: ${MIGRATION_DB_PASSWORD:?MIGRATION_DB_PASSWORD is required}
+
+      EUREKA_URL: "http://${EUREKA_USER:?EUREKA_USER is required}:${EUREKA_PASSWORD:?EUREKA_PASSWORD is required}@eureka-server:8761/eureka/"
+
+      HR_SERVICE_URL: http://user-service:8081
+
+    ports:
+      - "127.0.0.1:8087:8087"
 
     logging:
       driver: json-file
