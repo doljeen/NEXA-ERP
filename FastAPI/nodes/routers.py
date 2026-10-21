@@ -1,26 +1,24 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
+from core.response import ApiResult, ok
 from nodes import service
 from nodes.schemas import CategoryResponse, NodeSummary, NodeDetail
 
-router = APIRouter(prefix="/api/v1/nodes", tags=["노드"])
+router = APIRouter(prefix="/nodes", tags=["노드"])
 
 
-@router.get("/categories", response_model=list[CategoryResponse])
+@router.get("/categories", response_model=ApiResult[list[CategoryResponse]])
 def get_categories():
-    return service.get_categories()
+    return ok(service.get_categories())
 
 
-@router.get("", response_model=list[NodeSummary])
+@router.get("", response_model=ApiResult[list[NodeSummary]])
 def search_nodes(category: str | None = None, q: str | None = None):
-    return service.search_nodes(category, q)
+    return ok(service.search_nodes(category, q))
 
 
-@router.get("/{node_type}", response_model=NodeDetail)
+@router.get("/{node_type}", response_model=ApiResult[NodeDetail])
 def get_node(node_type: str):
-    node = service.get_node(node_type)
-    if node is None:
-        raise HTTPException(status_code=404, detail="노드를 찾을 수 없습니다.")
-    return node
+    return ok(service.get_node(node_type))
 
 

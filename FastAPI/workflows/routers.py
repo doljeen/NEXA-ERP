@@ -1,5 +1,5 @@
-from fastapi import FastAPI
+from fastapi import APIRouter
 
 from workflows import service
 
-router = APIRouter(prefix="/api/v1/workflows", tags=["워크플로우"])
+router = APIRouter(prefix="/workflows", tags=["워크플로우"])

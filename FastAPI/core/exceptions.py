@@ -1,0 +1,77 @@
+import logging
+from enum import Enum
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+log = logging.getLogger(__name__)
+
+
+class ErrorCode(Enum):
+    # 공통 에러 코드
+    INVALID_INPUT = (400, "COMMON_001", "요청 값이 올바르지 않습니다.")
+    NOT_FOUND = (404, "COMMON_003", "요청한 리소스를 찾을 수 없습니다.")
+    INTERNAL_ERROR = (500, "COMMON_999", "서버 오류가 발생했습니다.")
+
+    #노드
+    NODE_NOT_FOUND = (404, "NODE_001", "존재하지 않는 노드입니다.")
+
+    def __init__(self, status: int, code: str, message: str):
+        self.status = status
+        self.code = code
+        self.message = message
+
+
+class BusinessException(Exception):
+    def __init__(self, error_code: ErrorCode, message: str | None = None):
+        self.error_code = error_code
+        self.message = message or error_code.message
+
+
+def _fail(error_code: ErrorCode, message: str | None = None) -> JSONResponse:
+    return JSONResponse(
+        status_code=error_code.status,
+        content={
+            "success": False,
+            "error": {"code": error_code.code, "message": message or error_code.message},
+            "data": None,
+        },
+    )
+
+
+def register_exception_handlers(app: FastAPI) -> None:
+
+    # 우리가 직접 던진 에러
+    @app.exception_handler(BusinessException)
+    async def handle_business(request: Request, e: BusinessException):
+        return _fail(e.error_code.message)
+
+    # 요청 값 형식 오류
+    @app.exception_handler(RequestValidationError)
+    async def handle_validation(request: Request, e: RequestValidationError):
+        detail = ", ".join(
+            f"{'.'.join(str(x) for x in err['loc'][1:])}: {err['msg']}" for err in e.errors()
+        )
+        return _fail(ErrorCode.INVALID_INPUT, detail)
+
+    # 없는 주소 등 FastAPI가 내는 에러
+    @app.exception_handler(StarletteHTTPException)
+    async def handle_http(request: Request, e: StarletteHTTPException):
+        if e.status_code == 404:
+            return _fail(ErrorCode.NOT_FOUND)
+        return JSONResponse(
+            status_code=e.status_code,
+            content={
+                "success": False,
+                "error": {"code": f"HTTP_{e.status_code}", "message": str(e.detail)},
+                "data": None,
+            },
+        )
+
+    # 예상 못 한 에러 (코드 버그 등)
+    @app.exception_handler(Exception)
+    async def handle_unexpected(request: Request, e: Exception):
+        log.exception("Unhandled exception")
+        return _fail(ErrorCode.INTERNAL_ERROR)

@@ -1,18 +1,18 @@
-from pydantic import BaseModel
+from core.schemas import CamelModel
 
-class CategoryResponse(BaseModel):
+class CategoryResponse(CamelModel):
     code: str
     name: str
 
 
-class NodeSummary(BaseModel):
+class NodeSummary(CamelModel):
     node_type: str
     name: str
     category: str
     description: str
 
 
-class ConfigField(BaseModel):
+class ConfigField(CamelModel):
     key: str
     label: str
     type: str
@@ -20,7 +20,7 @@ class ConfigField(BaseModel):
     options: list[str] = []
 
 
-class OutputVar(BaseModel):
+class OutputVar(CamelModel):
     key: str
     label: str
     type: str

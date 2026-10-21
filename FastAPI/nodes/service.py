@@ -1,3 +1,4 @@
+from core.exceptions import BusinessException, ErrorCode
 from nodes.catalog import CATEGORIES, NODES
 
 
@@ -21,4 +22,4 @@ def get_node(node_type: str) -> dict | None:
     for node in NODES:
         if node["node_type"] == node_type:
             return node
-    return None
+    return BusinessException(ErrorCode.NODE_NOT_FOUND)
