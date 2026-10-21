@@ -43,6 +43,20 @@ services:
         max-size: "10m"
         max-file: "3"
 
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl --fail --silent --show-error
+          --max-time 10
+          --user "config-client:$${CONFIG_SERVER_PASSWORD}"
+          --output /dev/null
+          http://localhost:8888/gateway-service/default/main
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
+
   gateway-service:
     build:
       context: ./Backend/gateway-service
@@ -52,7 +66,7 @@ services:
 
     depends_on:
       config-server:
-        condition: service_started
+        condition: service_healthy
       eureka-server:
         condition: service_started
       user-service:
