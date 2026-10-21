@@ -5,6 +5,7 @@ import com.ssafy.attendanceservice.domain.attendance.entity.WorkStatusCode;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.List;
 
 /** 근태 위젯 상태 응답. 출근/퇴근/상태변경/today API가 공통으로 사용한다. */
@@ -28,6 +29,8 @@ public record AttendanceStatusResponse(
         }
     }
 
+    private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
+
     public static AttendanceStatusResponse of(AttendanceDaily daily,
                                               WorkStatusCode current,
                                               List<WorkStatusCode> ableStatuses) {
@@ -36,9 +39,13 @@ public record AttendanceStatusResponse(
                 current.getStatusCode(),
                 current.getName(),
                 current.getCountAsWork(),
-                daily.getClockIn(),
-                daily.getClockOut(),
+                toSeoul(daily.getClockIn()),
+                toSeoul(daily.getClockOut()),
                 ableStatuses.stream().map(StatusItem::from).toList()
         );
+    }
+
+    private static OffsetDateTime toSeoul(OffsetDateTime time) {
+        return time == null ? null : time.atZoneSameInstant(ZONE).toOffsetDateTime();
     }
 }

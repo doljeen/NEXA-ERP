@@ -9,4 +9,7 @@ public interface AttendanceService {
 
     /** 퇴근. 출근 기록이 없거나 이미 퇴근했으면 BusinessException */
     AttendanceStatusResponse clockOut(Long empId);
+
+    /** 근무상태 변경. 퇴근 상태에서 업무로 바꾸면 퇴근취소. 바꿀 수 없는 상태면 BusinessException */
+    AttendanceStatusResponse changeStatus(Long empId, String statusCode);
 }

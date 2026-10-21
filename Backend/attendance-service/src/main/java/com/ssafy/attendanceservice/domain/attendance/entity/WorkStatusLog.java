@@ -75,4 +75,9 @@ public class WorkStatusLog {
         this.reason = reason;
         this.isDeleted = false;
     }
+
+    /** 상태 코드 변경 (퇴근 → 퇴근취소 등) */
+    public void changeWorkStatusCode(WorkStatusCode workStatusCode) {
+        this.workStatusCode = workStatusCode;
+    }
 }

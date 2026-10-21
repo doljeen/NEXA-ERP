@@ -22,6 +22,7 @@ public enum ErrorCode {
     WORK_STATUS_CODE_NOT_FOUND(HttpStatus.INTERNAL_SERVER_ERROR, "ATTN_004", "근무 상태 코드가 설정되지 않았습니다."),
     NOT_CLOCKED_IN(HttpStatus.CONFLICT, "ATTN_005", "출근 기록이 없습니다."),
     ALREADY_CLOCKED_OUT(HttpStatus.CONFLICT, "ATTN_006", "이미 퇴근 처리되었습니다."),
+    INVALID_STATUS_CHANGE(HttpStatus.CONFLICT, "ATTN_007", "변경할 수 없는 근무 상태입니다."),
 
     // 공통 (user-service와 동일)
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),

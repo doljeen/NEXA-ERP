@@ -18,9 +18,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @Service
@@ -28,6 +30,8 @@ import java.util.List;
 public class AttendanceServiceImpl implements AttendanceService {
 
     private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
+    // 퇴근 후 퇴근취소(상태변경)를 허용하는 시간
+    private static final Duration CLOCK_OUT_CANCEL_LIMIT = Duration.ofHours(2);
 
     // 버튼(출근/퇴근)으로만 처리하는 상태. 상태변경 목록에서 제외한다.
     private static final List<String> CLOCK_STATUS_CODES = List.of(
@@ -46,7 +50,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     @Transactional
     public AttendanceStatusResponse clockIn(Long empId) {
-        OffsetDateTime now = OffsetDateTime.now(ZONE);
+        OffsetDateTime now = OffsetDateTime.now(ZONE).truncatedTo(ChronoUnit.MICROS);
         LocalDate today = now.toLocalDate();
 
         // 1. 출근은 하루 1번
@@ -85,7 +89,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     @Transactional
     public AttendanceStatusResponse clockOut(Long empId) {
-        OffsetDateTime now = OffsetDateTime.now(ZONE);
+        OffsetDateTime now = OffsetDateTime.now(ZONE).truncatedTo(ChronoUnit.MICROS);
 
         // 1. 가장 최근 근태 (자정을 넘긴 퇴근도 출근일 기록에 처리)
         AttendanceDaily daily = attendanceDailyRepository.findTopByEmpIdOrderByWorkDateDesc(empId)
@@ -111,6 +115,49 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .build());
 
         return AttendanceStatusResponse.of(daily, clockOutCode, getAbleStatuses(clockOutCode));
+    }
+
+    @Override
+    @Transactional
+    public AttendanceStatusResponse changeStatus(Long empId, String statusCode) {
+        OffsetDateTime now = OffsetDateTime.now(ZONE).truncatedTo(ChronoUnit.MICROS);
+
+        // 1. 가장 최근 근태와 현재 상태
+        AttendanceDaily daily = attendanceDailyRepository.findTopByEmpIdOrderByWorkDateDesc(empId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_CLOCKED_IN));
+        WorkStatusLog lastLog = workStatusLogRepository
+                .findTopByEmpIdAndWorkDateAndIsDeletedFalseOrderByStartAtDescLogIdDesc(empId, daily.getWorkDate())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_CLOCKED_IN));
+        WorkStatusCode current = lastLog.getWorkStatusCode();
+
+        // 2. 퇴근 후 2시간이 지나면 변경 불가 (이후는 근무시간 수정 신청으로 처리)
+        if (daily.isClockedOut() && now.isAfter(daily.getClockOut().plus(CLOCK_OUT_CANCEL_LIMIT))) {
+            throw new BusinessException(ErrorCode.INVALID_STATUS_CHANGE);
+        }
+
+        // 3. 요청한 상태가 지금 바꿀 수 있는 상태인지
+        WorkStatusCode target = getAbleStatuses(current).stream()
+                .filter(code -> code.getStatusCode().equals(statusCode))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_STATUS_CHANGE));
+
+        // 4. 퇴근 상태였다면 퇴근취소
+        if (daily.isClockedOut()) {
+            lastLog.changeWorkStatusCode(getStatusCode(WorkStatusCode.CLOCK_OUT_CANCEL));
+            daily.cancelClockOut();
+        }
+
+        // 5. 상태 로그
+        workStatusLogRepository.save(WorkStatusLog.builder()
+                .workStatusCode(target)
+                .empId(empId)
+                .workDate(daily.getWorkDate())
+                .startAt(now)
+                .source(WorkStatusSource.SELF)
+                .createdBy(empId)
+                .build());
+
+        return AttendanceStatusResponse.of(daily, target, getAbleStatuses(target));
     }
 
     /** 해당 날짜에 배정된 근무그룹. 배정이 없으면 기본 그룹 */

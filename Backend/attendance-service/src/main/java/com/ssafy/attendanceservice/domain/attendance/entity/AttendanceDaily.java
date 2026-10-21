@@ -115,4 +115,9 @@ public class AttendanceDaily {
     public boolean isClockedOut() {
         return clockOut != null;
     }
+
+    /** 퇴근 취소 (퇴근 시각 초기화) */
+    public void cancelClockOut() {
+        this.clockOut = null;
+    }
 }
