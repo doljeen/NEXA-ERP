@@ -24,6 +24,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -158,6 +159,38 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .build());
 
         return AttendanceStatusResponse.of(daily, target, getAbleStatuses(target));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AttendanceStatusResponse getToday(Long empId) {
+        OffsetDateTime now = OffsetDateTime.now(ZONE).truncatedTo(ChronoUnit.MICROS);
+        LocalDate today = now.toLocalDate();
+
+        // 1. 근태 기록이 없으면 출근 전
+        Optional<AttendanceDaily> latest = attendanceDailyRepository.findTopByEmpIdOrderByWorkDateDesc(empId);
+        if (latest.isEmpty()) {
+            return AttendanceStatusResponse.beforeClockIn(today);
+        }
+
+        AttendanceDaily daily = latest.get();
+        WorkStatusCode current = workStatusLogRepository
+                .findTopByEmpIdAndWorkDateAndIsDeletedFalseOrderByStartAtDescLogIdDesc(empId, daily.getWorkDate())
+                .map(WorkStatusLog::getWorkStatusCode)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_CLOCKED_IN));
+
+        // 2. 퇴근 후 2시간이 지난 경우
+        if (daily.isClockedOut() && now.isAfter(daily.getClockOut().plus(CLOCK_OUT_CANCEL_LIMIT))) {
+            // 오늘 근무: 다시 출근할 수 없으니 퇴근 상태로 보여주고 변경 불가
+            if (daily.getWorkDate().equals(today)) {
+                return AttendanceStatusResponse.of(daily, current, List.of());
+            }
+            // 이전 근무: 새 근무일 시작 전
+            return AttendanceStatusResponse.beforeClockIn(today);
+        }
+
+        // 3. 근무 중이거나 퇴근 후 2시간 이내
+        return AttendanceStatusResponse.of(daily, current, getAbleStatuses(current));
     }
 
     /** 해당 날짜에 배정된 근무그룹. 배정이 없으면 기본 그룹 */

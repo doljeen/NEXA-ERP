@@ -12,4 +12,7 @@ public interface AttendanceService {
 
     /** 근무상태 변경. 퇴근 상태에서 업무로 바꾸면 퇴근취소. 바꿀 수 없는 상태면 BusinessException */
     AttendanceStatusResponse changeStatus(Long empId, String statusCode);
+
+    /** 현재 근무 상태 조회 (근태 위젯) */
+    AttendanceStatusResponse getToday(Long empId);
 }

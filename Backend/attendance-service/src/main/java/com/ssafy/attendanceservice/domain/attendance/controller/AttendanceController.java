@@ -39,4 +39,11 @@ public class AttendanceController {
                                                                             @Valid @RequestBody WorkStatusChangeRequest request) {
         return ResponseEntity.ok(ApiResult.success(attendanceService.changeStatus(empId, request.statusCode())));
     }
+
+    // 현재 근무 상태 조회 API
+    // TODO: 인증 적용 시 @RequestHeader("X-User-Id") → @AuthenticationPrincipal AuthUser 로 교체
+    @GetMapping("/today")
+    public ResponseEntity<ApiResult<AttendanceStatusResponse>> getToday(@RequestHeader("X-User-Id") Long empId) {
+        return ResponseEntity.ok(ApiResult.success(attendanceService.getToday(empId)));
+    }
 }

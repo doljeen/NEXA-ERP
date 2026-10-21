@@ -45,6 +45,19 @@ public record AttendanceStatusResponse(
         );
     }
 
+    /** 출근 전 (오늘 근태 기록 없음) */
+    public static AttendanceStatusResponse beforeClockIn(LocalDate today) {
+        return new AttendanceStatusResponse(
+                today,
+                null,
+                null,
+                false,
+                null,
+                null,
+                List.of()
+        );
+    }
+
     private static OffsetDateTime toSeoul(OffsetDateTime time) {
         return time == null ? null : time.atZoneSameInstant(ZONE).toOffsetDateTime();
     }
