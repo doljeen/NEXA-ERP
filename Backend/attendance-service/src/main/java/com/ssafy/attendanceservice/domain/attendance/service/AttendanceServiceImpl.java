@@ -1,6 +1,7 @@
 package com.ssafy.attendanceservice.domain.attendance.service;
 
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceStatusResponse;
+import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusCodeResponse;
 import com.ssafy.attendanceservice.domain.attendance.entity.AttendanceDaily;
 import com.ssafy.attendanceservice.domain.attendance.entity.WorkGroup;
 import com.ssafy.attendanceservice.domain.attendance.entity.WorkStatusCode;
@@ -15,6 +16,7 @@ import com.ssafy.attendanceservice.domain.attendance.repository.WorkStatusLogRep
 import com.ssafy.attendanceservice.global.exception.BusinessException;
 import com.ssafy.attendanceservice.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -191,6 +193,14 @@ public class AttendanceServiceImpl implements AttendanceService {
 
         // 3. 근무 중이거나 퇴근 후 2시간 이내
         return AttendanceStatusResponse.of(daily, current, getAbleStatuses(current));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<WorkStatusCodeResponse> getStatusCodes() {
+        return workStatusCodeRepository.findAll(Sort.by("statusCode")).stream()
+                .map(WorkStatusCodeResponse::from)
+                .toList();
     }
 
     /** 해당 날짜에 배정된 근무그룹. 배정이 없으면 기본 그룹 */

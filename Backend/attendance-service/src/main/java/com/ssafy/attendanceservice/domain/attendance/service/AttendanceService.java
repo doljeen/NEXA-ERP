@@ -1,6 +1,9 @@
 package com.ssafy.attendanceservice.domain.attendance.service;
 
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceStatusResponse;
+import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusCodeResponse;
+
+import java.util.List;
 
 public interface AttendanceService {
 
@@ -15,4 +18,7 @@ public interface AttendanceService {
 
     /** 현재 근무 상태 조회 (근태 위젯) */
     AttendanceStatusResponse getToday(Long empId);
+
+    /** 근무 상태 코드 전체 목록 */
+    List<WorkStatusCodeResponse> getStatusCodes();
 }

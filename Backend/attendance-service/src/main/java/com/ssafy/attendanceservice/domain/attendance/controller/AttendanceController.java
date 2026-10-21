@@ -2,12 +2,15 @@ package com.ssafy.attendanceservice.domain.attendance.controller;
 
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceStatusResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusChangeRequest;
+import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusCodeResponse;
 import com.ssafy.attendanceservice.domain.attendance.service.AttendanceService;
 import com.ssafy.attendanceservice.global.dto.ApiResult;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /** 본인 근태 API */
 // TODO: 인증 적용 전까지 사용자 식별은 X-User-Id 헤더로 임시 처리
@@ -45,5 +48,11 @@ public class AttendanceController {
     @GetMapping("/today")
     public ResponseEntity<ApiResult<AttendanceStatusResponse>> getToday(@RequestHeader("X-User-Id") Long empId) {
         return ResponseEntity.ok(ApiResult.success(attendanceService.getToday(empId)));
+    }
+
+    // 근무 상태 코드 목록 API
+    @GetMapping("/status-codes")
+    public ResponseEntity<ApiResult<List<WorkStatusCodeResponse>>> getStatusCodes() {
+        return ResponseEntity.ok(ApiResult.success(attendanceService.getStatusCodes()));
     }
 }
