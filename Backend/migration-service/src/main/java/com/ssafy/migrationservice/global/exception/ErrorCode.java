@@ -31,6 +31,7 @@ public enum ErrorCode {
     FILE_READ_FAILED(HttpStatus.BAD_REQUEST, "FILE_003", "파일을 읽을 수 없습니다."),
     FILE_NO_HEADER(HttpStatus.BAD_REQUEST, "FILE_004", "헤더 행을 찾을 수 없습니다."),
     FILE_TOO_LARGE(HttpStatus.CONTENT_TOO_LARGE, "FILE_005", "파일 크기가 너무 큽니다."),
+    SHEET_NOT_FOUND(HttpStatus.BAD_REQUEST, "FILE_006", "파일에 그 이름의 시트가 없습니다."),
 
     // 공통
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),

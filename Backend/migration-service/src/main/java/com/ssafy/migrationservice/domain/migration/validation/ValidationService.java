@@ -5,6 +5,7 @@ import com.ssafy.migrationservice.domain.migration.entity.enums.MigrationEntity;
 import com.ssafy.migrationservice.domain.migration.mapping.MappingService;
 import com.ssafy.migrationservice.domain.migration.reader.ParsedTable;
 import com.ssafy.migrationservice.domain.migration.repository.StagingRowRepository;
+import com.ssafy.migrationservice.domain.migration.validation.formula.FormulaRuleService;
 import com.ssafy.migrationservice.domain.migration.validation.issue.IssueCode;
 import com.ssafy.migrationservice.domain.migration.validation.issue.IssueRepository;
 import com.ssafy.migrationservice.domain.migration.validation.issue.Severity;
@@ -19,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -30,7 +32,7 @@ import java.util.stream.Collectors;
 
 /**
  * 파일 하나를 단계별로 검증하고 결과를 validation_issue에 덮어쓴다.
- * ① 파일 구조 → ② 형식·③ 필수값 → ④ 파일 안 중복 → ⑥ 업무 규칙
+ * ⓪ 엑셀 구조(합계 행·수식 오류·수식 규칙에서 벗어난 칸)·⑤ 직원명부 참조 (모든 entity) → ① 파일 구조 → ② 형식·③ 필수값 → ④ 파일 안 중복 → ⑥ 업무 규칙
  * 앞 단계에서 형식이 틀린 값은 업무 규칙에서 쓰지 않는다 (오류가 번지지 않게).
  * 참조(⑤)·검산(⑦)은 다음 단계에서 추가.
  */
@@ -41,14 +43,22 @@ public class ValidationService {
     private final MappingService mappingService;
     private final StagingRowRepository stagingRowRepository;
     private final IssueRepository issueRepository;
+    private final FormulaRuleService formulaRuleService;
+    private final RosterReferenceChecker rosterReferenceChecker;
 
     @Transactional
     public void validate(MigrationFile file) {
         List<ValidationIssue> issues = new ArrayList<>();
+        List<ParsedTable.Row> rows = stagingRowRepository.findByFileId(file.getFileId());
+        sheetStructure(file, rows, issues);
+        issues.addAll(formulaRuleService.inspect(file, rows).issues());
+        issues.addAll(rosterReferenceChecker.check(file, rows));
         Optional<EntitySchema> schemaOpt = EntitySchemas.of(file.getEntity());
         if (schemaOpt.isEmpty()) {
-            issues.add(fileIssue(file, Severity.WARN, IssueCode.SCHEMA_NOT_READY,
-                    file.getEntity() + " 검증 규칙은 준비 중입니다"));
+            if (file.getEntity() != MigrationEntity.REFERENCE) {
+                issues.add(fileIssue(file, Severity.WARN, IssueCode.SCHEMA_NOT_READY,
+                        file.getEntity() + " 검증 규칙은 준비 중입니다"));
+            }
             issueRepository.replaceForFile(file.getMigrationId(), file.getFileId(), issues);
             return;
         }
@@ -69,7 +79,6 @@ public class ValidationService {
         }
 
         // ② 형식 · ③ 필수값. 형식이 맞는 날짜만 모아 업무 규칙에 넘긴다
-        List<ParsedTable.Row> rows = stagingRowRepository.findByFileId(file.getFileId());
         Map<Integer, Map<String, LocalDate>> validDates = new HashMap<>();
         for (ParsedTable.Row row : rows) {
             for (Map.Entry<String, String> e : fieldToColumn.entrySet()) {
@@ -89,6 +98,24 @@ public class ValidationService {
                 if (f.type() == FieldType.DATE && finding.map(fd -> fd.severity() != Severity.BLOCK).orElse(true)) {
                     FieldValueChecker.parseDate(value)
                             .ifPresent(d -> validDates.computeIfAbsent(row.rowNo(), k -> new HashMap<>()).put(f.name(), d));
+                }
+            }
+        }
+
+        // ②-1 코드성 필드 오타 의심: 드문 값이 흔한 값과 자모 하나만 다름
+        for (Map.Entry<String, String> e : fieldToColumn.entrySet()) {
+            FieldSpec f = schema.field(e.getKey()).orElseThrow();
+            if (!f.codeLike()) {
+                continue;
+            }
+            String column = e.getValue();
+            Map<String, CodeValueChecker.Suspect> suspects = CodeValueChecker.suspects(rows, column);
+            for (ParsedTable.Row row : rows) {
+                CodeValueChecker.Suspect s = suspects.get(row.values().get(column));
+                if (s != null) {
+                    issues.add(new ValidationIssue(file.getFileId(), row.rowNo(), f.name(), column, Severity.WARN,
+                            IssueCode.CODE_TYPO_SUSPECTED, f.label() + " 값 '" + s.value() + "'은(는) '" + s.likely() + "'("
+                            + s.likelyCount() + "건)의 오타일 수 있습니다", s.value(), s.likely()));
                 }
             }
         }
@@ -187,6 +214,24 @@ public class ValidationService {
                         IssueCode.PARENT_NOT_IN_FILE, "이 파일에 없는 상위부서입니다: '" + parent + "'. 기존 부서인지 확인해 주세요",
                         parent, null));
             }
+        }
+    }
+
+    /** ⓪ 엑셀 구조: 합계 행, 합계 아래 행, 저장된 값이 오류인 수식 셀. 스키마가 없어도 본다 */
+    private void sheetStructure(MigrationFile file, List<ParsedTable.Row> rows, List<ValidationIssue> issues) {
+        if (file.getTotalRows().length > 0) {
+            String where = Arrays.stream(file.getTotalRows()).map(String::valueOf).collect(Collectors.joining(", "));
+            issues.add(fileIssue(file, Severity.WARN, IssueCode.TOTAL_ROW_SKIPPED,
+                    "합계·소계 행 " + file.getTotalRows().length + "개(" + where + "행)는 데이터에서 뺐습니다"));
+        }
+        for (Integer rowNo : file.getRowsAfterTotal()) {
+            issues.add(new ValidationIssue(file.getFileId(), rowNo, null, null, Severity.WARN, IssueCode.ROW_AFTER_TOTAL,
+                    "합계 행 아래에 있는 행입니다. 합계에 빠졌을 수 있으니 확인해 주세요", null, null));
+        }
+        for (ParsedTable.Row row : rows) {
+            row.errors().forEach((column, error) -> issues.add(new ValidationIssue(file.getFileId(), row.rowNo(), null, column,
+                    Severity.BLOCK, IssueCode.FORMULA_ERROR,
+                    "'" + column + "' 수식 결과가 오류(" + error + ")입니다. 원본 엑셀에서 수식이 참조하는 칸을 확인해 주세요", error, null)));
         }
     }
 

@@ -10,6 +10,8 @@ import java.util.Map;
 public record FileDetailResponse(
         Long fileId,
         String fileName,
+        String sheetName,
+        Integer headerRow,
         MigrationEntity entity,
         int rows,
         LocalDateTime uploadedAt,

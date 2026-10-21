@@ -4,6 +4,14 @@ public enum IssueCode {
     // 파일 구조
     MISSING_REQUIRED_COLUMN,
     SCHEMA_NOT_READY,
+    TOTAL_ROW_SKIPPED,
+    ROW_AFTER_TOTAL,
+    // 엑셀 수식
+    FORMULA_ERROR,
+    HARDCODED_VALUE,
+    BLANK_IN_FORMULA_COLUMN,
+    FORMULA_INCONSISTENT,
+    FORMULA_DIFFERS_ACROSS_SHEETS,
     // 형식·필수값
     REQUIRED,
     INVALID_DATE,
@@ -17,6 +25,12 @@ public enum IssueCode {
     // 파일 안 정합성
     DUPLICATE_KEY,
     DUPLICATE_SUSPECTED,
+    CODE_TYPO_SUSPECTED,
+    // 파일 사이 참조 (직원명부 대조)
+    EMP_NOT_IN_ROSTER,
+    EMP_NAME_MISMATCH,
+    EMP_KEY_MISSING,
+    EMPNO_ZERO_PADDED,
     // 업무 규칙
     DATE_ORDER,
     SELF_PARENT,

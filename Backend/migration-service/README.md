@@ -45,8 +45,9 @@ user-service의 이관용 내부 API는 아직 없어서, 적재 테스트는 `F
 |---|---|---|
 | POST | `/` | 작업 생성 |
 | GET | `/{id}` | 작업 상세 (파일, 적재 묶음) |
-| POST | `/{id}/files?entity=` | 업로드 → 읽기·매핑 추천·검증 |
+| POST | `/{id}/files?entity=&sheet=` | 업로드 → 읽기·매핑 추천·검증. `sheet` 없으면 entity 필드와 가장 잘 맞는 시트 |
 | GET | `/{id}/files/{fileId}` | 파일 진단, 매핑, 오류 건수 |
+| GET | `/{id}/files/{fileId}/formulas` | 엑셀 수식에서 뽑은 열별 규칙, 규칙에서 벗어난 행, 같은 양식 다른 시트와 비교 |
 | PUT | `/{id}/files/{fileId}/mappings` | 매핑 확정 → 재검증 |
 | PATCH | `/{id}/files/{fileId}/rows/{rowNo}` | 행 직접 수정 → 재검증 |
 | GET | `/{id}/issues` | 오류: 심각도별 건수, 원인별 묶음, 행 단위 목록 |
@@ -54,6 +55,19 @@ user-service의 이관용 내부 API는 아직 없어서, 적재 테스트는 `F
 | POST | `/{id}/loads?dryRun=` | 적재 / 미리보기 (차단·자동정리 0건일 때만) |
 | DELETE | `/{id}/batches/{batchId}` | 묶음 되돌리기 |
 | GET | `/{id}/reconciliation` | 대사 |
+
+## 엑셀 읽기·검사
+
+- 모든 시트를 읽는다. 응답의 `sheets`에 시트별 행 수·헤더 행·수식 셀 수, `sheetName`에 읽은 시트
+- 헤더 행: 위쪽 30행에서 글자 칸이 가장 많은 행의 절반 이상인 첫 행 (제목·귀속월·요율 행 건너뜀). 세로 병합은 채우고, 가로 병합 묶음 머리글은 이름이 겹치는 열에만 붙임 (`07월 연장`)
+- 합계·소계 행은 데이터에서 빼고 `TOTAL_ROW_SKIPPED`, 합계 아래 데이터 행은 `ROW_AFTER_TOTAL`
+- 수식 셀은 저장된 계산값을 값으로 쓰고, 수식 문자열·오류값은 `staging_row.meta`에 따로 저장. 오류값 셀은 `FORMULA_ERROR`(차단)
+- 수식 규칙: 열마다 대표 수식(`=ROUNDDOWN(({기본급}+{직책수당})/설정!$B$9,0)`), 값 직접 입력 `HARDCODED_VALUE`, 빈 칸 `BLANK_IN_FORMULA_COLUMN`,
+  다른 모양 `FORMULA_INCONSISTENT`, 같은 파일·같은 헤더의 다른 시트와 대표 수식이 다름 `FORMULA_DIFFERS_ACROSS_SHEETS` (모두 경고)
+- 직원명부 대조: 직원명부가 아닌 파일의 사번이 같은 작업의 직원명부에 있는지 `EMP_NOT_IN_ROSTER`, 이름이 같은지 `EMP_NAME_MISMATCH`,
+  사번 빈 칸 `EMP_KEY_MISSING`(이름으로 찾은 사번 제안). 숫자 셀이라 앞자리 0이 빠진 사번은 명부 자리수로 채워 대조하고 `EMPNO_ZERO_PADDED`
+- 코드값 오타: 직위·직급 등에서 드문 값이 흔한 값과 한글 자모 하나만 다르면 `CODE_TYPO_SUSPECTED` + 제안값
+- `REFERENCE` entity: 적재하지 않는 참고 자료(근태기록·발령대장 등)를 올려 위 검사·규칙 추출만 한다
 
 ## 대상 서비스 내부 API (user-service가 구현해야 함, 합의 필요)
 
@@ -69,4 +83,6 @@ GET    /internal/v1/hr/migration/batches/{batchId}/summary           → ApiResu
 - 인증 연동 (지금은 API가 열려 있고 `companyId`를 요청 본문으로 받음)
 - 임시 테이블(`staging_row`) 민감정보 암호화
 - 업로드·적재 비동기 처리 (지금은 동기)
-- 코드 매핑(직위·부서 값 대조), 참조 검증, 엑셀 양식 다운로드, 전환 완료
+- 대상 서비스 코드 목록과 대조하는 코드 매핑, 엑셀 양식 다운로드, 전환 완료
+- 급여·연차 등(`PAY_*`, `LEAVE_BALANCE`) 필드 정의: 대상 서비스와 합의 전이라 없음 (지금은 읽기·수식 검사·직원명부 대조만)
+- 수식 규칙의 설정 시트 참조(`설정!$B$9`)를 값·라벨로 풀어 보여 주기, 추출한 규칙으로 다시 계산해 검산, 법정 기준 비교
