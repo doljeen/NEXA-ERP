@@ -6,6 +6,7 @@ include:
   - local: /.gitlab/ci/user.yml
   - local: /.gitlab/ci/approval.yml
   - local: /.gitlab/ci/fastapi.yml
+  - local: /.gitlab/ci/eureka.yml
 
 check-ci-environment:
   stage: verify
