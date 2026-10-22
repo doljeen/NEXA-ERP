@@ -18,6 +18,12 @@ class ErrorCode(Enum):
     #노드
     NODE_NOT_FOUND = (404, "NODE_001", "존재하지 않는 노드입니다.")
 
+    # 워크플로우
+    WF_NOT_FOUND = (404, "WF_001", "존재하지 않는 워크플로우입니다.")
+    WF_VERSION_NOT_FOUND = (404, "WF_002", "존재하지 않는 버전입니다.")
+    WF_INVALID_GRAPH = (400, "WF_003", "워크플로우 흐름에 오류가 있습니다.")
+    WF_NOT_DEPLOYED = (409, "WF_004", "배포되지 않은 워크플로우입니다.")
+
     def __init__(self, status: int, code: str, message: str):
         self.status = status
         self.code = code
@@ -46,7 +52,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     # 우리가 직접 던진 에러
     @app.exception_handler(BusinessException)
     async def handle_business(request: Request, e: BusinessException):
-        return _fail(e.error_code.message)
+        return _fail(e.error_code, e.message)
 
     # 요청 값 형식 오류
     @app.exception_handler(RequestValidationError)
