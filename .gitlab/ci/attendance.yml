@@ -16,5 +16,16 @@ build-attendance:
     reports:
       junit: Backend/attendance-service/build/test-results/test/TEST-*.xml
 
-  when: manual
-  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - Backend/attendance-service/**/*
+        - .gitlab/ci/attendance.yml
+        - .gitlab/ci/testcontainers.yml
+        - .gitlab-ci.yml
+      when: on_success
+      allow_failure: false
+
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: true
