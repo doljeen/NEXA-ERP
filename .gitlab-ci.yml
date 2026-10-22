@@ -8,6 +8,8 @@ include:
   - local: /.gitlab/ci/fastapi.yml
   - local: /.gitlab/ci/eureka.yml
   - local: /.gitlab/ci/config.yml
+  - local: /.gitlab/ci/gateway.yml
+
 check-ci-environment:
   stage: verify
   image: eclipse-temurin:21-jdk

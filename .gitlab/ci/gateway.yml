@@ -1,0 +1,22 @@
+build-gateway:
+  stage: build
+  image: eclipse-temurin:21-jdk
+
+  tags:
+    - nexa-ci
+
+  variables:
+    SPRING_CONFIG_LOCATION: classpath:/gateway-ci.yml
+
+  script:
+    - cd Backend/gateway-service
+    - bash gradlew --no-daemon test bootJar
+
+  artifacts:
+    when: always
+    expire_in: 7 days
+    reports:
+      junit: Backend/gateway-service/build/test-results/test/TEST-*.xml
+
+  when: manual
+  allow_failure: true
