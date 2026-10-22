@@ -1,3 +1,10 @@
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - when: never
+
 stages:
   - verify
   - build
@@ -6,6 +13,12 @@ include:
   - local: /.gitlab/ci/user.yml
   - local: /.gitlab/ci/approval.yml
   - local: /.gitlab/ci/fastapi.yml
+  - local: /.gitlab/ci/eureka.yml
+  - local: /.gitlab/ci/config.yml
+  - local: /.gitlab/ci/gateway.yml
+  - local: /.gitlab/ci/attendance.yml
+  - local: /.gitlab/ci/testcontainers.yml
+  - local: /.gitlab/ci/leave.yml
 
 check-ci-environment:
   stage: verify

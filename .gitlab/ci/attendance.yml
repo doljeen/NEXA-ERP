@@ -1,0 +1,31 @@
+build-attendance:
+  extends: .testcontainers
+  stage: build
+  image: eclipse-temurin:21-jdk
+
+  tags:
+    - nexa-ci
+
+  script:
+    - cd Backend/attendance-service
+    - bash gradlew --no-daemon test bootJar
+
+  artifacts:
+    when: always
+    expire_in: 7 days
+    reports:
+      junit: Backend/attendance-service/build/test-results/test/TEST-*.xml
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - Backend/attendance-service/**/*
+        - .gitlab/ci/attendance.yml
+        - .gitlab/ci/testcontainers.yml
+        - .gitlab-ci.yml
+      when: on_success
+      allow_failure: false
+
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: true
