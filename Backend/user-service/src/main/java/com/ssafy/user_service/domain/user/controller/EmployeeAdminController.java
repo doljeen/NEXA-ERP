@@ -23,7 +23,6 @@ public class EmployeeAdminController {
 
     private final EmployeeService employeeService;
 
-    // 회원 가입 API
     @PostMapping
     public ResponseEntity<ApiResult<EmployeeCreateResponse>> create(@Valid @RequestBody EmployeeCreateRequest request) {
         Long employeeId = employeeService.create(request);
@@ -31,7 +30,6 @@ public class EmployeeAdminController {
                 .body(ApiResult.success(new EmployeeCreateResponse(employeeId)));
     }
 
-    // 회원 목록 조회 API
     /** 사원 목록. deptId가 있으면 해당 부서원만, 없으면 전체 */
     @GetMapping
     public ResponseEntity<ApiResult<EmployeeListResponse>> getList(@RequestParam(required = false) Long deptId) {
@@ -41,7 +39,6 @@ public class EmployeeAdminController {
         return ResponseEntity.ok(ApiResult.success(EmployeeListResponse.from(employees)));
     }
 
-    // 회원 상세 조회 API
     @GetMapping("/{employeeId}")
     public ResponseEntity<ApiResult<EmployeeInfoResponse>> getEmployeeInfo(@PathVariable Long employeeId) {
         Employee employee = employeeService.findById(employeeId)
@@ -49,7 +46,6 @@ public class EmployeeAdminController {
         return ResponseEntity.ok(ApiResult.success(EmployeeInfoResponse.from(employee)));
     }
 
-    // 회원 탈퇴 API
     @PatchMapping("/{employeeId}/terminate")
     public ResponseEntity<ApiResult<Void>> terminate(@PathVariable Long employeeId,
                                                      @Valid @RequestBody EmployeeTerminateRequest request) {

@@ -30,7 +30,7 @@ public class RedisTokenStore implements TokenStore {
             return 0
             """, Long.class);
 
-    private final StringRedisTemplate redisTemplate; // Spring Boot 자동 구성 빈 (spring.data.redis.*)
+    private final StringRedisTemplate redisTemplate;
 
     @Override
     public void saveRefreshToken(Long employeeId, String tokenId, long ttlMillis) {

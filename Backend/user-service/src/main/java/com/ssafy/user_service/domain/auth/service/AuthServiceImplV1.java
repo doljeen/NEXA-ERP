@@ -12,10 +12,13 @@ import com.ssafy.user_service.global.security.jwt.IssuedToken;
 import com.ssafy.user_service.global.security.jwt.JwtUtil;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class AuthServiceImplV1 implements AuthService {
 
     private final EmployeeService employeeService;
@@ -24,21 +27,15 @@ public class AuthServiceImplV1 implements AuthService {
     private final TokenStore tokenStore;
     private final LoginAttemptService loginAttemptService;
 
-    // 존재하지 않는 계정에도 같은 비용의 BCrypt 비교를 수행해 응답 시간으로 계정 존재가 드러나지 않게 한다
-    private final String dummyHash;
+    // 존재하지 않는 계정에 더미 암호값을 두어 BCrypt 비교를 수행해 응답 시간으로 계정 존재가 드러나지 않게 함.
+    private String dummyHash;
 
-    public AuthServiceImplV1(EmployeeService employeeService, PasswordEncoder passwordEncoder, JwtUtil jwtUtil,
-                             TokenStore tokenStore, LoginAttemptService loginAttemptService) {
-        this.employeeService = employeeService;
-        this.passwordEncoder = passwordEncoder;
-        this.jwtUtil = jwtUtil;
-        this.tokenStore = tokenStore;
-        this.loginAttemptService = loginAttemptService;
-        this.dummyHash = passwordEncoder.encode("dummy-password-for-timing");
+    @PostConstruct
+    void initDummyHash() {
+        dummyHash = passwordEncoder.encode("dummy-password-for-timing");
     }
 
     // 각 메서드는 단건 조회만 하므로 @Transactional을 두지 않는다 (BCrypt/Redis 동안 DB 커넥션을 잡지 않기 위해)
-
     @Override
     public TokenResponse login(LoginRequest request) {
         String loginId = request.email();
@@ -137,7 +134,7 @@ public class AuthServiceImplV1 implements AuthService {
     private record Issued(TokenResponse response, IssuedToken refresh) {
     }
 
-    // 토큰 생성 + 부서/직급명 조회. Redis에는 손대지 않는다.
+    // 토큰 생성 + 부서/직급명 조회. Redis에는 손대지 않는다 (reissue가 DB 조회를 끝낸 뒤 마지막에 회전하는 전제)
     private Issued issue(Employee employee) {
         EmployeeSummary summary = employeeService.summarize(employee);
         IssuedToken access = jwtUtil.generateAccessToken(employee.getEmpId(), employee.getRole());
