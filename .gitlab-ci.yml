@@ -9,6 +9,7 @@ include:
   - local: /.gitlab/ci/eureka.yml
   - local: /.gitlab/ci/config.yml
   - local: /.gitlab/ci/gateway.yml
+  - local: /.gitlab/ci/attendance.yml
 
 check-ci-environment:
   stage: verify
