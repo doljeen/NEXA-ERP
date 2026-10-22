@@ -44,8 +44,6 @@ public class SecurityConfig {
             SecurityConstants.JWKS_PATH,
             "/actuator/health",
             "/error",
-            "/swagger-ui/**",
-            "/v3/api-docs/**"
     };
 
     @Bean
@@ -63,10 +61,9 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
-                // 미인증 → 401, 권한 부족 → 403 (둘 다 ApiResult 형식)
                 .exceptionHandling(exception -> exception
-                        .authenticationEntryPoint(jwtAuthenticationEntryPoint)
-                        .accessDeniedHandler(jwtAccessDeniedHandler));
+                        .authenticationEntryPoint(jwtAuthenticationEntryPoint) // 토큰이 없거나 틀렸을 때
+                        .accessDeniedHandler(jwtAccessDeniedHandler)); // 토큰은 맞는데 권한이 부족할 때
         return http.build();
     }
 

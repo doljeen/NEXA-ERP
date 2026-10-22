@@ -36,7 +36,7 @@ public class TokenCookieManager {
                 Duration.ofMillis(jwtProperties.refreshExpiration())).toString());
     }
 
-    /** 발급 때와 같은 name/path 로 Max-Age=0 을 내려야 브라우저가 지운다 */
+    /** 발급 때와 같은 name/path 로 Max-Age=0 을 내려야 브라우저가 지움 */
     public void clearTokenCookies(HttpServletResponse response) {
         response.addHeader(HttpHeaders.SET_COOKIE, accessCookie("", Duration.ZERO).toString());
         response.addHeader(HttpHeaders.SET_COOKIE, refreshCookie("", Duration.ZERO).toString());
