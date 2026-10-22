@@ -10,6 +10,8 @@ include:
   - local: /.gitlab/ci/config.yml
   - local: /.gitlab/ci/gateway.yml
   - local: /.gitlab/ci/attendance.yml
+  - local: /.gitlab/ci/testcontainers.yml
+  - local: /.gitlab/ci/leave.yml
 
 check-ci-environment:
   stage: verify

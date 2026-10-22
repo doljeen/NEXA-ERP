@@ -1,23 +1,10 @@
 build-attendance:
+  extends: .testcontainers
   stage: build
   image: eclipse-temurin:21-jdk
 
   tags:
     - nexa-ci
-
-  services:
-    - name: postgres:17-alpine
-      alias: postgres
-
-  variables:
-    POSTGRES_DB: nexa_attendance_test
-    POSTGRES_USER: ci_user
-    POSTGRES_PASSWORD: ci_test_password
-
-    SPRING_CONFIG_LOCATION: classpath:/attendance-ci.yml
-    SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nexa_attendance_test
-    SPRING_DATASOURCE_USERNAME: ci_user
-    SPRING_DATASOURCE_PASSWORD: ci_test_password
 
   script:
     - cd Backend/attendance-service
