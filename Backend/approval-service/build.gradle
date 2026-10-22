@@ -36,6 +36,10 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
 
+	// Spring Security, Valid
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
 	// Eureka
 	implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
 
