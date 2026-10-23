@@ -1,5 +1,7 @@
 package com.ssafy.attendanceservice.domain.attendance.service;
 
+import com.ssafy.attendanceservice.domain.attendance.calculator.WorkLogEntry;
+import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeCalculator;
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceStatusResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusCodeResponse;
 import com.ssafy.attendanceservice.domain.attendance.entity.AttendanceDaily;
@@ -117,6 +119,9 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .createdBy(empId)
                 .build());
 
+        // 5. 근로시간 집계
+        recalculate(daily);
+
         return AttendanceStatusResponse.of(daily, clockOutCode, getAbleStatuses(clockOutCode));
     }
 
@@ -148,6 +153,7 @@ public class AttendanceServiceImpl implements AttendanceService {
         if (daily.isClockedOut()) {
             lastLog.changeWorkStatusCode(getStatusCode(WorkStatusCode.CLOCK_OUT_CANCEL));
             daily.cancelClockOut();
+            recalculate(daily);
         }
 
         // 5. 상태 로그
@@ -226,5 +232,22 @@ public class AttendanceServiceImpl implements AttendanceService {
         return workStatusCodeRepository.findByStatusCodeNotIn(CLOCK_STATUS_CODES).stream()
                 .filter(code -> !code.getStatusCode().equals(current.getStatusCode()))
                 .toList();
+    }
+
+    /** 그 근무일의 로그로 근로시간을 다시 계산해서 반영 (퇴근 전이면 0) */
+    private void recalculate(AttendanceDaily daily) {
+        List<WorkLogEntry> entries = workStatusLogRepository
+                .findByEmpIdAndWorkDateAndIsDeletedFalseOrderByStartAtAscLogIdAsc(daily.getEmpId(), daily.getWorkDate())
+                .stream()
+                .map(log -> new WorkLogEntry(log.getStartAt(), log.getWorkStatusCode().getCountAsWork()))
+                .toList();
+
+        WorkGroup workGroup = daily.getWorkGroup();
+        daily.applyWorkTime(WorkTimeCalculator.calculate(
+                entries,
+                daily.getClockOut(),
+                workGroup.getDailyStdMinutes(),
+                workGroup.getBreakMinutes(),
+                daily.getIsHoliday()));
     }
 }
