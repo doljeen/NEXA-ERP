@@ -12,4 +12,7 @@ public interface AttendanceDailyRepository extends JpaRepository<AttendanceDaily
 
     // 가장 최근 근무일의 근태 (퇴근 처리 대상)
     Optional<AttendanceDaily> findTopByEmpIdOrderByWorkDateDesc(Long empId);
+
+    // 특정 근무일의 근태
+    Optional<AttendanceDaily> findByEmpIdAndWorkDate(Long empId, LocalDate workDate);
 }

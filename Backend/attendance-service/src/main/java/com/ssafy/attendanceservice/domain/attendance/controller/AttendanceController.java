@@ -1,15 +1,18 @@
 package com.ssafy.attendanceservice.domain.attendance.controller;
 
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceStatusResponse;
+import com.ssafy.attendanceservice.domain.attendance.dto.DailyAttendanceResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusChangeRequest;
 import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusCodeResponse;
 import com.ssafy.attendanceservice.domain.attendance.service.AttendanceService;
 import com.ssafy.attendanceservice.global.dto.ApiResult;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /** 본인 근태 API */
@@ -48,6 +51,15 @@ public class AttendanceController {
     @GetMapping("/today")
     public ResponseEntity<ApiResult<AttendanceStatusResponse>> getToday(@RequestHeader("X-User-Id") Long empId) {
         return ResponseEntity.ok(ApiResult.success(attendanceService.getToday(empId)));
+    }
+
+    // 일별 근태 타임라인 API
+    // TODO: 인증 적용 시 @RequestHeader("X-User-Id") → @AuthenticationPrincipal AuthUser 로 교체
+    @GetMapping("/me/daily/{date}")
+    public ResponseEntity<ApiResult<DailyAttendanceResponse>> getDaily(
+            @RequestHeader("X-User-Id") Long empId,
+            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return ResponseEntity.ok(ApiResult.success(attendanceService.getDaily(empId, date)));
     }
 
     // 근무 상태 코드 목록 API

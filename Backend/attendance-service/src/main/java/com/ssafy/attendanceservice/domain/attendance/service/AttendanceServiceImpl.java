@@ -5,6 +5,7 @@ import com.ssafy.attendanceservice.domain.attendance.calculator.WorkLogEntry;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeCalculator;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeResult;
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceStatusResponse;
+import com.ssafy.attendanceservice.domain.attendance.dto.DailyAttendanceResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusCodeResponse;
 import com.ssafy.attendanceservice.domain.attendance.entity.*;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AnomalyType;
@@ -67,8 +68,7 @@ public class AttendanceServiceImpl implements AttendanceService {
 
         // 3. 적용 근무그룹, 휴일 여부
         WorkGroup workGroup = resolveWorkGroup(empId, today);
-        boolean isHoliday = holidayRepository.existsById(today)
-                || !workGroup.isWorkDay(today.getDayOfWeek());
+        boolean isHoliday = isHoliday(today, workGroup);
 
         // 4. 일일 근태 생성
         AttendanceDaily daily = attendanceDailyRepository.save(AttendanceDaily.builder()
@@ -216,6 +216,21 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .toList();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public DailyAttendanceResponse getDaily(Long empId, LocalDate date) {
+        return attendanceDailyRepository.findByEmpIdAndWorkDate(empId, date)
+                .map(daily -> DailyAttendanceResponse.of(
+                        daily,
+                        workStatusLogRepository.findByEmpIdAndWorkDateAndIsDeletedFalseOrderByStartAtAscLogIdAsc(empId, date),
+                        attendanceAnomalyRepository.findByAttendanceDailyOrderByAnomalyIdAsc(daily)))
+                .orElseGet(() -> {
+                    // 기록이 없는 날: 그날 적용될 근무그룹과 휴일 여부만 채움
+                    WorkGroup workGroup = resolveWorkGroup(empId, date);
+                    return DailyAttendanceResponse.empty(date, workGroup.getName(), isHoliday(date, workGroup));
+                });
+    }
+
     /** 해당 날짜에 배정된 근무그룹. 배정이 없으면 기본 그룹 */
     private WorkGroup resolveWorkGroup(Long empId, LocalDate date) {
         return employeeWorkGroupRepository.findEffectiveWorkGroup(empId, date)
@@ -281,5 +296,10 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .attendanceDaily(daily)
                 .anomalyType(type)
                 .build()));
+    }
+
+    /** 휴일 여부: 공휴일이거나 근무그룹의 근무 요일이 아님 */
+    private boolean isHoliday(LocalDate date, WorkGroup workGroup) {
+        return holidayRepository.existsById(date) || !workGroup.isWorkDay(date.getDayOfWeek());
     }
 }
