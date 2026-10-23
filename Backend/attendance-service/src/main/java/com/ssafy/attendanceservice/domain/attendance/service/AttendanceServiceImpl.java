@@ -248,11 +248,15 @@ public class AttendanceServiceImpl implements AttendanceService {
         LocalDate today = DateTimeUtils.now().toLocalDate();
         List<AttendanceDaySummaryResponse> days = buildDaySummaries(empId, month.atDay(1), month.atEndOfMonth());
 
-        // 근무그룹 기준일: 이번 달이면 오늘, 아니면 그 달 말일
-        LocalDate baseDate = YearMonth.from(today).equals(month) ? today : month.atEndOfMonth();
-        WorkGroup workGroup = resolveWorkGroup(empId, baseDate);
+        return MonthlyAttendanceResponse.of(month, resolveMonthlyWorkGroup(empId, month), days, today);
+    }
 
-        return MonthlyAttendanceResponse.of(month, workGroup, days, today);
+    @Override
+    @Transactional(readOnly = true)
+    public AttendanceSummaryResponse getSummary(Long empId, YearMonth month) {
+        List<AttendanceDaySummaryResponse> days = buildDaySummaries(empId, month.atDay(1), month.atEndOfMonth());
+
+        return AttendanceSummaryResponse.of(empId, month, resolveMonthlyWorkGroup(empId, month), days);
     }
 
     @Override
@@ -265,6 +269,13 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .stream()
                 .map(WorkStatusHistoryResponse::from)
                 .toList();
+    }
+
+    /** 월 단위 조회의 근무그룹. 이번 달이면 오늘, 아니면 그 달 말일 기준 */
+    private WorkGroup resolveMonthlyWorkGroup(Long empId, YearMonth month) {
+        LocalDate today = DateTimeUtils.now().toLocalDate();
+        LocalDate baseDate = YearMonth.from(today).equals(month) ? today : month.atEndOfMonth();
+        return resolveWorkGroup(empId, baseDate);
     }
 
     /** 해당 날짜에 배정된 근무그룹. 배정이 없으면 기본 그룹 */

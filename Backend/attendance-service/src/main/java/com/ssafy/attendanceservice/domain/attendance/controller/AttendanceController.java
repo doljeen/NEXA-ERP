@@ -88,6 +88,15 @@ public class AttendanceController {
         return ResponseEntity.ok(ApiResult.success(attendanceService.getHistory(empId, from, to)));
     }
 
+    // 월별 근태 집계 API (급여 서비스 연동용)
+    // TODO: 인증 적용 시 서비스 간 인증 방식 결정 필요 (사용자 토큰이 아닌 내부 호출)
+    @GetMapping("/summary")
+    public ResponseEntity<ApiResult<AttendanceSummaryResponse>> getSummary(
+            @RequestParam Long empId,
+            @RequestParam @DateTimeFormat(pattern = "yyyy-MM") YearMonth month) {
+        return ResponseEntity.ok(ApiResult.success(attendanceService.getSummary(empId, month)));
+    }
+
     // 근무 상태 코드 목록 API
     @GetMapping("/status-codes")
     public ResponseEntity<ApiResult<List<WorkStatusCodeResponse>>> getStatusCodes() {

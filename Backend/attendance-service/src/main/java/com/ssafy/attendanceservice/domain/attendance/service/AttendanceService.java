@@ -1,6 +1,7 @@
 package com.ssafy.attendanceservice.domain.attendance.service;
 
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceStatusResponse;
+import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceSummaryResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.DailyAttendanceResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.MonthlyAttendanceResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.WeeklyAttendanceResponse;
@@ -39,4 +40,7 @@ public interface AttendanceService {
 
     /** 근무상태 변경 이력 (삭제 포함). from이 to보다 늦으면 BusinessException(INVALID_INPUT) */
     List<WorkStatusHistoryResponse> getHistory(Long empId, LocalDate from, LocalDate to);
+
+    /** 급여용 월별 근태 집계 */
+    AttendanceSummaryResponse getSummary(Long empId, YearMonth month);
 }
