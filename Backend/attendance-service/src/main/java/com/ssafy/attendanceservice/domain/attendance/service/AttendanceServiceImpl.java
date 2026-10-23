@@ -242,6 +242,19 @@ public class AttendanceServiceImpl implements AttendanceService {
         return WeeklyAttendanceResponse.of(startDate, endDate, workGroup, days, DateTimeUtils.now().toLocalDate());
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public MonthlyAttendanceResponse getMonthly(Long empId, YearMonth month) {
+        LocalDate today = DateTimeUtils.now().toLocalDate();
+        List<AttendanceDaySummaryResponse> days = buildDaySummaries(empId, month.atDay(1), month.atEndOfMonth());
+
+        // 근무그룹 기준일: 이번 달이면 오늘, 아니면 그 달 말일
+        LocalDate baseDate = YearMonth.from(today).equals(month) ? today : month.atEndOfMonth();
+        WorkGroup workGroup = resolveWorkGroup(empId, baseDate);
+
+        return MonthlyAttendanceResponse.of(month, workGroup, days, today);
+    }
+
     /** 해당 날짜에 배정된 근무그룹. 배정이 없으면 기본 그룹 */
     private WorkGroup resolveWorkGroup(Long empId, LocalDate date) {
         return employeeWorkGroupRepository.findEffectiveWorkGroup(empId, date)

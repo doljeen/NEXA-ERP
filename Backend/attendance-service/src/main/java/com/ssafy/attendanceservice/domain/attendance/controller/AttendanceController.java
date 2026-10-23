@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 
 /** 본인 근태 API */
@@ -66,6 +67,15 @@ public class AttendanceController {
             @RequestHeader("X-User-Id") Long empId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         return ResponseEntity.ok(ApiResult.success(attendanceService.getWeekly(empId, date)));
+    }
+
+    // 월간 근태 조회 API
+    // TODO: 인증 적용 시 @RequestHeader("X-User-Id") → @AuthenticationPrincipal AuthUser 로 교체
+    @GetMapping("/me/monthly")
+    public ResponseEntity<ApiResult<MonthlyAttendanceResponse>> getMonthly(
+            @RequestHeader("X-User-Id") Long empId,
+            @RequestParam @DateTimeFormat(pattern = "yyyy-MM") YearMonth month) {
+        return ResponseEntity.ok(ApiResult.success(attendanceService.getMonthly(empId, month)));
     }
 
     // 근무 상태 코드 목록 API
