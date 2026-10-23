@@ -1,5 +1,7 @@
 package com.ssafy.attendanceservice.domain.attendance.calculator;
 
+import com.ssafy.attendanceservice.global.util.DateTimeUtils;
+
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
@@ -12,8 +14,6 @@ import java.util.List;
  * 1분 단위로 근무 구간을 펼쳐서 휴게 차감 → 소정/초과 → 야간/휴일 순서로 분류한다.
  */
 public final class WorkTimeCalculator {
-
-    private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
 
     private static final int HALF_BREAK_THRESHOLD = 240;   // 4시간 이상 근무 시 휴게 30분
     private static final int HALF_BREAK_MINUTES = 30;
@@ -125,7 +125,7 @@ public final class WorkTimeCalculator {
     }
 
     private static boolean isNight(OffsetDateTime t) {
-        int hour = t.atZoneSameInstant(ZONE).getHour();
+        int hour = t.atZoneSameInstant(DateTimeUtils.ZONE).getHour();
         return hour >= NIGHT_START_HOUR || hour < NIGHT_END_HOUR;
     }
 

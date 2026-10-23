@@ -4,32 +4,32 @@ import com.ssafy.attendanceservice.domain.attendance.calculator.AnomalyJudge;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkLogEntry;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeCalculator;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeResult;
-import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceStatusResponse;
-import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusCodeResponse;
+import com.ssafy.attendanceservice.domain.attendance.dto.*;
 import com.ssafy.attendanceservice.domain.attendance.entity.*;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AnomalyType;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.WorkStatusSource;
 import com.ssafy.attendanceservice.domain.attendance.repository.*;
 import com.ssafy.attendanceservice.global.exception.BusinessException;
 import com.ssafy.attendanceservice.global.exception.ErrorCode;
+import com.ssafy.attendanceservice.global.util.DateTimeUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
-import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
+import java.time.*;
 import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalAdjusters;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class AttendanceServiceImpl implements AttendanceService {
 
-    private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
     // 퇴근 후 퇴근취소(상태변경)를 허용하는 시간
     private static final Duration CLOCK_OUT_CANCEL_LIMIT = Duration.ofHours(2);
 
@@ -52,7 +52,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     @Transactional
     public AttendanceStatusResponse clockIn(Long empId) {
-        OffsetDateTime now = OffsetDateTime.now(ZONE).truncatedTo(ChronoUnit.MICROS);
+        OffsetDateTime now = DateTimeUtils.now();
         LocalDate today = now.toLocalDate();
 
         // 1. 출근은 하루 1번
@@ -67,8 +67,7 @@ public class AttendanceServiceImpl implements AttendanceService {
 
         // 3. 적용 근무그룹, 휴일 여부
         WorkGroup workGroup = resolveWorkGroup(empId, today);
-        boolean isHoliday = holidayRepository.existsById(today)
-                || !workGroup.isWorkDay(today.getDayOfWeek());
+        boolean isHoliday = isHoliday(today, workGroup);
 
         // 4. 일일 근태 생성
         AttendanceDaily daily = attendanceDailyRepository.save(AttendanceDaily.builder()
@@ -99,7 +98,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     @Transactional
     public AttendanceStatusResponse clockOut(Long empId) {
-        OffsetDateTime now = OffsetDateTime.now(ZONE).truncatedTo(ChronoUnit.MICROS);
+        OffsetDateTime now = DateTimeUtils.now();
 
         // 1. 가장 최근 근태 (자정을 넘긴 퇴근도 출근일 기록에 처리)
         AttendanceDaily daily = attendanceDailyRepository.findTopByEmpIdOrderByWorkDateDesc(empId)
@@ -134,7 +133,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     @Transactional
     public AttendanceStatusResponse changeStatus(Long empId, String statusCode) {
-        OffsetDateTime now = OffsetDateTime.now(ZONE).truncatedTo(ChronoUnit.MICROS);
+        OffsetDateTime now = DateTimeUtils.now();
 
         // 1. 가장 최근 근태와 현재 상태
         AttendanceDaily daily = attendanceDailyRepository.findTopByEmpIdOrderByWorkDateDesc(empId)
@@ -179,7 +178,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     @Transactional(readOnly = true)
     public AttendanceStatusResponse getToday(Long empId) {
-        OffsetDateTime now = OffsetDateTime.now(ZONE).truncatedTo(ChronoUnit.MICROS);
+        OffsetDateTime now = DateTimeUtils.now();
         LocalDate today = now.toLocalDate();
 
         // 1. 근태 기록이 없으면 출근 전
@@ -213,6 +212,58 @@ public class AttendanceServiceImpl implements AttendanceService {
     public List<WorkStatusCodeResponse> getStatusCodes() {
         return workStatusCodeRepository.findAll(Sort.by("statusCode")).stream()
                 .map(WorkStatusCodeResponse::from)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DailyAttendanceResponse getDaily(Long empId, LocalDate date) {
+        return attendanceDailyRepository.findByEmpIdAndWorkDate(empId, date)
+                .map(daily -> DailyAttendanceResponse.of(
+                        daily,
+                        workStatusLogRepository.findByEmpIdAndWorkDateAndIsDeletedFalseOrderByStartAtAscLogIdAsc(empId, date),
+                        attendanceAnomalyRepository.findByAttendanceDailyOrderByAnomalyIdAsc(daily)))
+                .orElseGet(() -> {
+                    // 기록이 없는 날: 그날 적용될 근무그룹과 휴일 여부만 채움
+                    WorkGroup workGroup = resolveWorkGroup(empId, date);
+                    return DailyAttendanceResponse.empty(date, workGroup.getName(), isHoliday(date, workGroup));
+                });
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public WeeklyAttendanceResponse getWeekly(Long empId, LocalDate date) {
+        LocalDate startDate = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate endDate = startDate.plusDays(6);
+
+        List<AttendanceDaySummaryResponse> days = buildDaySummaries(empId, startDate, endDate);
+        WorkGroup workGroup = resolveWorkGroup(empId, date);
+
+        return WeeklyAttendanceResponse.of(startDate, endDate, workGroup, days, DateTimeUtils.now().toLocalDate());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public MonthlyAttendanceResponse getMonthly(Long empId, YearMonth month) {
+        LocalDate today = DateTimeUtils.now().toLocalDate();
+        List<AttendanceDaySummaryResponse> days = buildDaySummaries(empId, month.atDay(1), month.atEndOfMonth());
+
+        // 근무그룹 기준일: 이번 달이면 오늘, 아니면 그 달 말일
+        LocalDate baseDate = YearMonth.from(today).equals(month) ? today : month.atEndOfMonth();
+        WorkGroup workGroup = resolveWorkGroup(empId, baseDate);
+
+        return MonthlyAttendanceResponse.of(month, workGroup, days, today);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<WorkStatusHistoryResponse> getHistory(Long empId, LocalDate from, LocalDate to) {
+        if (from.isAfter(to)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "from은 to보다 늦을 수 없습니다.");
+        }
+        return workStatusLogRepository.findByEmpIdAndWorkDateBetweenOrderByWorkDateAscStartAtAscLogIdAsc(empId, from, to)
+                .stream()
+                .map(WorkStatusHistoryResponse::from)
                 .toList();
     }
 
@@ -281,5 +332,38 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .attendanceDaily(daily)
                 .anomalyType(type)
                 .build()));
+    }
+
+    /** 휴일 여부: 공휴일이거나 근무그룹의 근무 요일이 아님 */
+    private boolean isHoliday(LocalDate date, WorkGroup workGroup) {
+        return holidayRepository.existsById(date) || !workGroup.isWorkDay(date.getDayOfWeek());
+    }
+
+    /** 기간 내 날짜별 요약. 기록이 없는 날도 빈 항목으로 채운다. */
+    private List<AttendanceDaySummaryResponse> buildDaySummaries(Long empId, LocalDate from, LocalDate to) {
+        List<AttendanceDaily> dailies =
+                attendanceDailyRepository.findByEmpIdAndWorkDateBetweenOrderByWorkDateAsc(empId, from, to);
+
+        // 날짜 → 근태
+        Map<LocalDate, AttendanceDaily> dailyByDate = dailies.stream()
+                .collect(Collectors.toMap(AttendanceDaily::getWorkDate, Function.identity()));
+
+        // 근태 ID → 근태이상 목록 (한 번에 조회 후 나눠 담기)
+        Map<Long, List<AttendanceAnomaly>> anomaliesByAttId = dailies.isEmpty()
+                ? Map.of()
+                : attendanceAnomalyRepository.findByAttendanceDailyInOrderByAnomalyIdAsc(dailies).stream()
+                .collect(Collectors.groupingBy(a -> a.getAttendanceDaily().getAttId()));
+
+        return from.datesUntil(to.plusDays(1))
+                .map(date -> {
+                    AttendanceDaily daily = dailyByDate.get(date);
+                    if (daily != null) {
+                        return AttendanceDaySummaryResponse.of(
+                                daily, anomaliesByAttId.getOrDefault(daily.getAttId(), List.of()));
+                    }
+                    WorkGroup workGroup = resolveWorkGroup(empId, date);
+                    return AttendanceDaySummaryResponse.empty(date, isHoliday(date, workGroup));
+                })
+                .toList();
     }
 }

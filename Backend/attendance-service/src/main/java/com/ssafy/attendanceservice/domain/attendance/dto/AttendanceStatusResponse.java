@@ -2,6 +2,7 @@ package com.ssafy.attendanceservice.domain.attendance.dto;
 
 import com.ssafy.attendanceservice.domain.attendance.entity.AttendanceDaily;
 import com.ssafy.attendanceservice.domain.attendance.entity.WorkStatusCode;
+import com.ssafy.attendanceservice.global.util.DateTimeUtils;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -19,8 +20,6 @@ public record AttendanceStatusResponse(
         List<WorkStatusCodeResponse> ableStatusList     // 지금 바꿀 수 있는 상태 목록
 ) {
 
-    private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
-
     public static AttendanceStatusResponse of(AttendanceDaily daily,
                                               WorkStatusCode current,
                                               List<WorkStatusCode> ableStatuses) {
@@ -29,8 +28,8 @@ public record AttendanceStatusResponse(
                 current.getStatusCode(),
                 current.getName(),
                 current.getCountAsWork(),
-                toSeoul(daily.getClockIn()),
-                toSeoul(daily.getClockOut()),
+                DateTimeUtils.toSeoul(daily.getClockIn()),
+                DateTimeUtils.toSeoul(daily.getClockOut()),
                 ableStatuses.stream().map(WorkStatusCodeResponse::from).toList()
         );
     }
@@ -46,9 +45,5 @@ public record AttendanceStatusResponse(
                 null,
                 List.of()
         );
-    }
-
-    private static OffsetDateTime toSeoul(OffsetDateTime time) {
-        return time == null ? null : time.atZoneSameInstant(ZONE).toOffsetDateTime();
     }
 }
