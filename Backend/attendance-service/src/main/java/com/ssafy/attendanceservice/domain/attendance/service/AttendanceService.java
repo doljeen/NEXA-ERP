@@ -5,6 +5,7 @@ import com.ssafy.attendanceservice.domain.attendance.dto.DailyAttendanceResponse
 import com.ssafy.attendanceservice.domain.attendance.dto.MonthlyAttendanceResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.WeeklyAttendanceResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusCodeResponse;
+import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusHistoryResponse;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -35,4 +36,7 @@ public interface AttendanceService {
 
     /** 월간 근태 (1일 ~ 말일) */
     MonthlyAttendanceResponse getMonthly(Long empId, YearMonth month);
+
+    /** 근무상태 변경 이력 (삭제 포함). from이 to보다 늦으면 BusinessException(INVALID_INPUT) */
+    List<WorkStatusHistoryResponse> getHistory(Long empId, LocalDate from, LocalDate to);
 }

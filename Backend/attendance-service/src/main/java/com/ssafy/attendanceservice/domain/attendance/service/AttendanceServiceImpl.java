@@ -255,6 +255,18 @@ public class AttendanceServiceImpl implements AttendanceService {
         return MonthlyAttendanceResponse.of(month, workGroup, days, today);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<WorkStatusHistoryResponse> getHistory(Long empId, LocalDate from, LocalDate to) {
+        if (from.isAfter(to)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "from은 to보다 늦을 수 없습니다.");
+        }
+        return workStatusLogRepository.findByEmpIdAndWorkDateBetweenOrderByWorkDateAscStartAtAscLogIdAsc(empId, from, to)
+                .stream()
+                .map(WorkStatusHistoryResponse::from)
+                .toList();
+    }
+
     /** 해당 날짜에 배정된 근무그룹. 배정이 없으면 기본 그룹 */
     private WorkGroup resolveWorkGroup(Long empId, LocalDate date) {
         return employeeWorkGroupRepository.findEffectiveWorkGroup(empId, date)

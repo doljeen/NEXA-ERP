@@ -78,6 +78,16 @@ public class AttendanceController {
         return ResponseEntity.ok(ApiResult.success(attendanceService.getMonthly(empId, month)));
     }
 
+    // 근무상태 변경 이력 조회 API
+    // TODO: 인증 적용 시 @RequestHeader("X-User-Id") → @AuthenticationPrincipal AuthUser 로 교체
+    @GetMapping("/me/history")
+    public ResponseEntity<ApiResult<List<WorkStatusHistoryResponse>>> getHistory(
+            @RequestHeader("X-User-Id") Long empId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(ApiResult.success(attendanceService.getHistory(empId, from, to)));
+    }
+
     // 근무 상태 코드 목록 API
     @GetMapping("/status-codes")
     public ResponseEntity<ApiResult<List<WorkStatusCodeResponse>>> getStatusCodes() {
