@@ -8,6 +8,7 @@ workflow:
 stages:
   - verify
   - build
+  - deploy
 
 include:
   - local: /.gitlab/ci/user.yml
