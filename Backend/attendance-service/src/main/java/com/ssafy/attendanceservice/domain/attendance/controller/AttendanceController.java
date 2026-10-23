@@ -1,9 +1,6 @@
 package com.ssafy.attendanceservice.domain.attendance.controller;
 
-import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceStatusResponse;
-import com.ssafy.attendanceservice.domain.attendance.dto.DailyAttendanceResponse;
-import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusChangeRequest;
-import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusCodeResponse;
+import com.ssafy.attendanceservice.domain.attendance.dto.*;
 import com.ssafy.attendanceservice.domain.attendance.service.AttendanceService;
 import com.ssafy.attendanceservice.global.dto.ApiResult;
 import jakarta.validation.Valid;
@@ -60,6 +57,15 @@ public class AttendanceController {
             @RequestHeader("X-User-Id") Long empId,
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         return ResponseEntity.ok(ApiResult.success(attendanceService.getDaily(empId, date)));
+    }
+
+    // 주간 근태 조회 API
+    // TODO: 인증 적용 시 @RequestHeader("X-User-Id") → @AuthenticationPrincipal AuthUser 로 교체
+    @GetMapping("/me/weekly")
+    public ResponseEntity<ApiResult<WeeklyAttendanceResponse>> getWeekly(
+            @RequestHeader("X-User-Id") Long empId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return ResponseEntity.ok(ApiResult.success(attendanceService.getWeekly(empId, date)));
     }
 
     // 근무 상태 코드 목록 API

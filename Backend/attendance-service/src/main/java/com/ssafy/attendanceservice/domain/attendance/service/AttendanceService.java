@@ -2,6 +2,7 @@ package com.ssafy.attendanceservice.domain.attendance.service;
 
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceStatusResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.DailyAttendanceResponse;
+import com.ssafy.attendanceservice.domain.attendance.dto.WeeklyAttendanceResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusCodeResponse;
 
 import java.time.LocalDate;
@@ -26,4 +27,7 @@ public interface AttendanceService {
 
     /** 일별 근태 타임라인. 기록이 없는 날은 빈 응답 */
     DailyAttendanceResponse getDaily(Long empId, LocalDate date);
+
+    /** 주간 근태 (date가 포함된 월~일) */
+    WeeklyAttendanceResponse getWeekly(Long empId, LocalDate date);
 }

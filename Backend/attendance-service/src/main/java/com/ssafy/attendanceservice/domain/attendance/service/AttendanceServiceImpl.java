@@ -4,9 +4,7 @@ import com.ssafy.attendanceservice.domain.attendance.calculator.AnomalyJudge;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkLogEntry;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeCalculator;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeResult;
-import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceStatusResponse;
-import com.ssafy.attendanceservice.domain.attendance.dto.DailyAttendanceResponse;
-import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusCodeResponse;
+import com.ssafy.attendanceservice.domain.attendance.dto.*;
 import com.ssafy.attendanceservice.domain.attendance.entity.*;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AnomalyType;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.WorkStatusSource;
@@ -19,13 +17,14 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
-import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
+import java.time.*;
 import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalAdjusters;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -231,6 +230,18 @@ public class AttendanceServiceImpl implements AttendanceService {
                 });
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public WeeklyAttendanceResponse getWeekly(Long empId, LocalDate date) {
+        LocalDate startDate = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate endDate = startDate.plusDays(6);
+
+        List<AttendanceDaySummaryResponse> days = buildDaySummaries(empId, startDate, endDate);
+        WorkGroup workGroup = resolveWorkGroup(empId, date);
+
+        return WeeklyAttendanceResponse.of(startDate, endDate, workGroup, days, DateTimeUtils.now().toLocalDate());
+    }
+
     /** 해당 날짜에 배정된 근무그룹. 배정이 없으면 기본 그룹 */
     private WorkGroup resolveWorkGroup(Long empId, LocalDate date) {
         return employeeWorkGroupRepository.findEffectiveWorkGroup(empId, date)
@@ -301,5 +312,33 @@ public class AttendanceServiceImpl implements AttendanceService {
     /** 휴일 여부: 공휴일이거나 근무그룹의 근무 요일이 아님 */
     private boolean isHoliday(LocalDate date, WorkGroup workGroup) {
         return holidayRepository.existsById(date) || !workGroup.isWorkDay(date.getDayOfWeek());
+    }
+
+    /** 기간 내 날짜별 요약. 기록이 없는 날도 빈 항목으로 채운다. */
+    private List<AttendanceDaySummaryResponse> buildDaySummaries(Long empId, LocalDate from, LocalDate to) {
+        List<AttendanceDaily> dailies =
+                attendanceDailyRepository.findByEmpIdAndWorkDateBetweenOrderByWorkDateAsc(empId, from, to);
+
+        // 날짜 → 근태
+        Map<LocalDate, AttendanceDaily> dailyByDate = dailies.stream()
+                .collect(Collectors.toMap(AttendanceDaily::getWorkDate, Function.identity()));
+
+        // 근태 ID → 근태이상 목록 (한 번에 조회 후 나눠 담기)
+        Map<Long, List<AttendanceAnomaly>> anomaliesByAttId = dailies.isEmpty()
+                ? Map.of()
+                : attendanceAnomalyRepository.findByAttendanceDailyInOrderByAnomalyIdAsc(dailies).stream()
+                .collect(Collectors.groupingBy(a -> a.getAttendanceDaily().getAttId()));
+
+        return from.datesUntil(to.plusDays(1))
+                .map(date -> {
+                    AttendanceDaily daily = dailyByDate.get(date);
+                    if (daily != null) {
+                        return AttendanceDaySummaryResponse.of(
+                                daily, anomaliesByAttId.getOrDefault(daily.getAttId(), List.of()));
+                    }
+                    WorkGroup workGroup = resolveWorkGroup(empId, date);
+                    return AttendanceDaySummaryResponse.empty(date, isHoliday(date, workGroup));
+                })
+                .toList();
     }
 }

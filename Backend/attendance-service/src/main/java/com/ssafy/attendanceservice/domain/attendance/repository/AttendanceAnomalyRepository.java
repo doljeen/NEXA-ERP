@@ -15,4 +15,7 @@ public interface AttendanceAnomalyRepository extends JpaRepository<AttendanceAno
 
     // 일일 근태의 근태이상 목록 (판정 순)
     List<AttendanceAnomaly> findByAttendanceDailyOrderByAnomalyIdAsc(AttendanceDaily attendanceDaily);
+
+    // 여러 일일 근태의 근태이상 (판정 순)
+    List<AttendanceAnomaly> findByAttendanceDailyInOrderByAnomalyIdAsc(Collection<AttendanceDaily> attendanceDailies);
 }
