@@ -12,6 +12,7 @@ import com.ssafy.attendanceservice.domain.attendance.entity.enums.WorkStatusSour
 import com.ssafy.attendanceservice.domain.attendance.repository.*;
 import com.ssafy.attendanceservice.global.exception.BusinessException;
 import com.ssafy.attendanceservice.global.exception.ErrorCode;
+import com.ssafy.attendanceservice.global.util.DateTimeUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -29,7 +30,6 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class AttendanceServiceImpl implements AttendanceService {
 
-    private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
     // 퇴근 후 퇴근취소(상태변경)를 허용하는 시간
     private static final Duration CLOCK_OUT_CANCEL_LIMIT = Duration.ofHours(2);
 
@@ -52,7 +52,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     @Transactional
     public AttendanceStatusResponse clockIn(Long empId) {
-        OffsetDateTime now = OffsetDateTime.now(ZONE).truncatedTo(ChronoUnit.MICROS);
+        OffsetDateTime now = DateTimeUtils.now();
         LocalDate today = now.toLocalDate();
 
         // 1. 출근은 하루 1번
@@ -99,7 +99,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     @Transactional
     public AttendanceStatusResponse clockOut(Long empId) {
-        OffsetDateTime now = OffsetDateTime.now(ZONE).truncatedTo(ChronoUnit.MICROS);
+        OffsetDateTime now = DateTimeUtils.now();
 
         // 1. 가장 최근 근태 (자정을 넘긴 퇴근도 출근일 기록에 처리)
         AttendanceDaily daily = attendanceDailyRepository.findTopByEmpIdOrderByWorkDateDesc(empId)
@@ -134,7 +134,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     @Transactional
     public AttendanceStatusResponse changeStatus(Long empId, String statusCode) {
-        OffsetDateTime now = OffsetDateTime.now(ZONE).truncatedTo(ChronoUnit.MICROS);
+        OffsetDateTime now = DateTimeUtils.now();
 
         // 1. 가장 최근 근태와 현재 상태
         AttendanceDaily daily = attendanceDailyRepository.findTopByEmpIdOrderByWorkDateDesc(empId)
@@ -179,7 +179,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     @Transactional(readOnly = true)
     public AttendanceStatusResponse getToday(Long empId) {
-        OffsetDateTime now = OffsetDateTime.now(ZONE).truncatedTo(ChronoUnit.MICROS);
+        OffsetDateTime now = DateTimeUtils.now();
         LocalDate today = now.toLocalDate();
 
         // 1. 근태 기록이 없으면 출근 전

@@ -1,6 +1,7 @@
 package com.ssafy.attendanceservice.domain.attendance.calculator;
 
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AnomalyType;
+import com.ssafy.attendanceservice.global.util.DateTimeUtils;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -13,8 +14,6 @@ import java.util.List;
 
 /** 근태이상 판정. DB/Spring에 의존하지 않는 순수 판정 로직. 휴일은 지각/조퇴/미달을 판정하지 않는다. */
 public final class AnomalyJudge {
-
-    private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
 
     private AnomalyJudge() {
     }
@@ -56,6 +55,6 @@ public final class AnomalyJudge {
 
     /** 분 단위로 비교 (근로시간 계산과 동일하게 초는 버림) */
     private static LocalDateTime toLocal(OffsetDateTime t) {
-        return t.atZoneSameInstant(ZONE).toLocalDateTime().truncatedTo(ChronoUnit.MINUTES);
+        return t.atZoneSameInstant(DateTimeUtils.ZONE).toLocalDateTime().truncatedTo(ChronoUnit.MINUTES);
     }
 }
