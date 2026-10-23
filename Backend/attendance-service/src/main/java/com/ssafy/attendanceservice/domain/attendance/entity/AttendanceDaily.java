@@ -1,5 +1,6 @@
 package com.ssafy.attendanceservice.domain.attendance.entity;
 
+import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeResult;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -109,6 +110,13 @@ public class AttendanceDaily {
     /** 퇴근 처리 */
     public void clockOut(OffsetDateTime clockOut) {
         this.clockOut = clockOut;
+        this.isConfirmed = true;
+    }
+
+    /** 퇴근 취소 (퇴근 시각 초기화) */
+    public void cancelClockOut() {
+        this.clockOut = null;
+        this.isConfirmed = false;
     }
 
     /** 퇴근 여부 */
@@ -116,8 +124,17 @@ public class AttendanceDaily {
         return clockOut != null;
     }
 
-    /** 퇴근 취소 (퇴근 시각 초기화) */
-    public void cancelClockOut() {
-        this.clockOut = null;
+    /** 근로시간 계산 결과 반영 */
+    public void applyWorkTime(WorkTimeResult result) {
+        this.totalMin = result.totalMin();
+        this.regularMin = result.regularMin();
+        this.breakMin = result.breakMin();
+        this.excludedMin = result.excludedMin();
+        this.nightMin = result.nightMin();
+        this.otExtendedMin = result.otExtendedMin();
+        this.otNightMin = result.otNightMin();
+        this.otHolidayMin = result.otHolidayMin();
+        this.approvedOtMin = result.approvedOtMin();
+        this.unapprovedOtMin = result.unapprovedOtMin();
     }
 }

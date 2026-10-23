@@ -1,18 +1,15 @@
 package com.ssafy.attendanceservice.domain.attendance.service;
 
+import com.ssafy.attendanceservice.domain.attendance.calculator.AnomalyJudge;
+import com.ssafy.attendanceservice.domain.attendance.calculator.WorkLogEntry;
+import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeCalculator;
+import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeResult;
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceStatusResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusCodeResponse;
-import com.ssafy.attendanceservice.domain.attendance.entity.AttendanceDaily;
-import com.ssafy.attendanceservice.domain.attendance.entity.WorkGroup;
-import com.ssafy.attendanceservice.domain.attendance.entity.WorkStatusCode;
-import com.ssafy.attendanceservice.domain.attendance.entity.WorkStatusLog;
+import com.ssafy.attendanceservice.domain.attendance.entity.*;
+import com.ssafy.attendanceservice.domain.attendance.entity.enums.AnomalyType;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.WorkStatusSource;
-import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceDailyRepository;
-import com.ssafy.attendanceservice.domain.attendance.repository.EmployeeWorkGroupRepository;
-import com.ssafy.attendanceservice.domain.attendance.repository.HolidayRepository;
-import com.ssafy.attendanceservice.domain.attendance.repository.WorkGroupRepository;
-import com.ssafy.attendanceservice.domain.attendance.repository.WorkStatusCodeRepository;
-import com.ssafy.attendanceservice.domain.attendance.repository.WorkStatusLogRepository;
+import com.ssafy.attendanceservice.domain.attendance.repository.*;
 import com.ssafy.attendanceservice.global.exception.BusinessException;
 import com.ssafy.attendanceservice.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +32,8 @@ public class AttendanceServiceImpl implements AttendanceService {
     private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
     // 퇴근 후 퇴근취소(상태변경)를 허용하는 시간
     private static final Duration CLOCK_OUT_CANCEL_LIMIT = Duration.ofHours(2);
+
+    private final AttendanceAnomalyRepository attendanceAnomalyRepository;
 
     // 버튼(출근/퇴근)으로만 처리하는 상태. 상태변경 목록에서 제외한다.
     private static final List<String> CLOCK_STATUS_CODES = List.of(
@@ -61,12 +60,17 @@ public class AttendanceServiceImpl implements AttendanceService {
             throw new BusinessException(ErrorCode.ALREADY_CLOCKED_IN);
         }
 
-        // 2. 적용 근무그룹, 휴일 여부
+        // 2. 직전 근무에 퇴근이 없으면 출퇴근 누락 (오늘 기록을 만들기 전에 판정)
+        attendanceDailyRepository.findTopByEmpIdOrderByWorkDateDesc(empId)
+                .filter(previous -> !previous.isClockedOut())
+                .ifPresent(previous -> saveAnomalies(previous, List.of(AnomalyType.MISSING_CLOCK)));
+
+        // 3. 적용 근무그룹, 휴일 여부
         WorkGroup workGroup = resolveWorkGroup(empId, today);
         boolean isHoliday = holidayRepository.existsById(today)
                 || !workGroup.isWorkDay(today.getDayOfWeek());
 
-        // 3. 일일 근태 생성
+        // 4. 일일 근태 생성
         AttendanceDaily daily = attendanceDailyRepository.save(AttendanceDaily.builder()
                 .workGroup(workGroup)
                 .empId(empId)
@@ -75,7 +79,10 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .isHoliday(isHoliday)
                 .build());
 
-        // 4. 출근 로그
+        // 5. 지각 판정
+        saveAnomalies(daily, AnomalyJudge.onClockIn(today, now, workGroup.getStartTime(), isHoliday));
+
+        // 6. 출근 로그
         WorkStatusCode clockInCode = getStatusCode(WorkStatusCode.CLOCK_IN);
         workStatusLogRepository.save(WorkStatusLog.builder()
                 .workStatusCode(clockInCode)
@@ -117,6 +124,10 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .createdBy(empId)
                 .build());
 
+        // 5. 근로시간 집계 + 근태이상 판정
+        WorkTimeResult workTime = recalculate(daily);
+        refreshClockOutAnomalies(daily, workTime);
+
         return AttendanceStatusResponse.of(daily, clockOutCode, getAbleStatuses(clockOutCode));
     }
 
@@ -144,10 +155,12 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_STATUS_CHANGE));
 
-        // 4. 퇴근 상태였다면 퇴근취소
+        // 4. 퇴근 상태였다면 퇴근취소 (집계 초기화, 퇴근 판정 근태이상 삭제)
         if (daily.isClockedOut()) {
             lastLog.changeWorkStatusCode(getStatusCode(WorkStatusCode.CLOCK_OUT_CANCEL));
             daily.cancelClockOut();
+            WorkTimeResult workTime = recalculate(daily);
+            refreshClockOutAnomalies(daily, workTime);
         }
 
         // 5. 상태 로그
@@ -226,5 +239,47 @@ public class AttendanceServiceImpl implements AttendanceService {
         return workStatusCodeRepository.findByStatusCodeNotIn(CLOCK_STATUS_CODES).stream()
                 .filter(code -> !code.getStatusCode().equals(current.getStatusCode()))
                 .toList();
+    }
+
+    /** 그 근무일의 로그로 근로시간을 다시 계산해서 반영 (퇴근 전이면 0) */
+    private WorkTimeResult recalculate(AttendanceDaily daily) {
+        List<WorkLogEntry> entries = workStatusLogRepository
+                .findByEmpIdAndWorkDateAndIsDeletedFalseOrderByStartAtAscLogIdAsc(daily.getEmpId(), daily.getWorkDate())
+                .stream()
+                .map(log -> new WorkLogEntry(log.getStartAt(), log.getWorkStatusCode().getCountAsWork()))
+                .toList();
+
+        WorkGroup workGroup = daily.getWorkGroup();
+        WorkTimeResult result = WorkTimeCalculator.calculate(
+                entries,
+                daily.getClockOut(),
+                workGroup.getDailyStdMinutes(),
+                workGroup.getBreakMinutes(),
+                daily.getIsHoliday());
+        daily.applyWorkTime(result);
+        return result;
+    }
+
+    /** 퇴근 판정 근태이상 갱신: 기존 판정분을 지우고, 퇴근 상태면 다시 판정 */
+    private void refreshClockOutAnomalies(AttendanceDaily daily, WorkTimeResult workTime) {
+        attendanceAnomalyRepository.deleteByAttendanceDailyAndAnomalyTypeIn(daily, AnomalyJudge.clockOutTypes());
+        if (!daily.isClockedOut()) {
+            return;
+        }
+        WorkGroup workGroup = daily.getWorkGroup();
+        saveAnomalies(daily, AnomalyJudge.onClockOut(
+                daily.getWorkDate(),
+                daily.getClockOut(),
+                workGroup.getEndTime(),
+                workGroup.getDailyStdMinutes(),
+                daily.getIsHoliday(),
+                workTime));
+    }
+
+    private void saveAnomalies(AttendanceDaily daily, List<AnomalyType> types) {
+        types.forEach(type -> attendanceAnomalyRepository.save(AttendanceAnomaly.builder()
+                .attendanceDaily(daily)
+                .anomalyType(type)
+                .build()));
     }
 }
