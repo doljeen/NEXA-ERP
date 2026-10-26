@@ -1,40 +1,39 @@
 package com.ssafy.attendanceservice.domain.attendance.service;
 
-import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceStatusResponse;
-import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusCodeResponse;
-import com.ssafy.attendanceservice.domain.attendance.entity.AttendanceDaily;
-import com.ssafy.attendanceservice.domain.attendance.entity.WorkGroup;
-import com.ssafy.attendanceservice.domain.attendance.entity.WorkStatusCode;
-import com.ssafy.attendanceservice.domain.attendance.entity.WorkStatusLog;
+import com.ssafy.attendanceservice.domain.attendance.calculator.AnomalyJudge;
+import com.ssafy.attendanceservice.domain.attendance.calculator.WorkLogEntry;
+import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeCalculator;
+import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeResult;
+import com.ssafy.attendanceservice.domain.attendance.dto.*;
+import com.ssafy.attendanceservice.domain.attendance.entity.*;
+import com.ssafy.attendanceservice.domain.attendance.entity.enums.AnomalyType;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.WorkStatusSource;
-import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceDailyRepository;
-import com.ssafy.attendanceservice.domain.attendance.repository.EmployeeWorkGroupRepository;
-import com.ssafy.attendanceservice.domain.attendance.repository.HolidayRepository;
-import com.ssafy.attendanceservice.domain.attendance.repository.WorkGroupRepository;
-import com.ssafy.attendanceservice.domain.attendance.repository.WorkStatusCodeRepository;
-import com.ssafy.attendanceservice.domain.attendance.repository.WorkStatusLogRepository;
+import com.ssafy.attendanceservice.domain.attendance.repository.*;
 import com.ssafy.attendanceservice.global.exception.BusinessException;
 import com.ssafy.attendanceservice.global.exception.ErrorCode;
+import com.ssafy.attendanceservice.global.util.DateTimeUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
-import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
+import java.time.*;
 import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalAdjusters;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class AttendanceServiceImpl implements AttendanceService {
 
-    private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
     // 퇴근 후 퇴근취소(상태변경)를 허용하는 시간
     private static final Duration CLOCK_OUT_CANCEL_LIMIT = Duration.ofHours(2);
+
+    private final AttendanceAnomalyRepository attendanceAnomalyRepository;
 
     // 버튼(출근/퇴근)으로만 처리하는 상태. 상태변경 목록에서 제외한다.
     private static final List<String> CLOCK_STATUS_CODES = List.of(
@@ -53,7 +52,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     @Transactional
     public AttendanceStatusResponse clockIn(Long empId) {
-        OffsetDateTime now = OffsetDateTime.now(ZONE).truncatedTo(ChronoUnit.MICROS);
+        OffsetDateTime now = DateTimeUtils.now();
         LocalDate today = now.toLocalDate();
 
         // 1. 출근은 하루 1번
@@ -61,12 +60,16 @@ public class AttendanceServiceImpl implements AttendanceService {
             throw new BusinessException(ErrorCode.ALREADY_CLOCKED_IN);
         }
 
-        // 2. 적용 근무그룹, 휴일 여부
-        WorkGroup workGroup = resolveWorkGroup(empId, today);
-        boolean isHoliday = holidayRepository.existsById(today)
-                || !workGroup.isWorkDay(today.getDayOfWeek());
+        // 2. 직전 근무에 퇴근이 없으면 출퇴근 누락 (오늘 기록을 만들기 전에 판정)
+        attendanceDailyRepository.findTopByEmpIdOrderByWorkDateDesc(empId)
+                .filter(previous -> !previous.isClockedOut())
+                .ifPresent(previous -> saveAnomalies(previous, List.of(AnomalyType.MISSING_CLOCK)));
 
-        // 3. 일일 근태 생성
+        // 3. 적용 근무그룹, 휴일 여부
+        WorkGroup workGroup = resolveWorkGroup(empId, today);
+        boolean isHoliday = isHoliday(today, workGroup);
+
+        // 4. 일일 근태 생성
         AttendanceDaily daily = attendanceDailyRepository.save(AttendanceDaily.builder()
                 .workGroup(workGroup)
                 .empId(empId)
@@ -75,7 +78,10 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .isHoliday(isHoliday)
                 .build());
 
-        // 4. 출근 로그
+        // 5. 지각 판정
+        saveAnomalies(daily, AnomalyJudge.onClockIn(today, now, workGroup.getStartTime(), isHoliday));
+
+        // 6. 출근 로그
         WorkStatusCode clockInCode = getStatusCode(WorkStatusCode.CLOCK_IN);
         workStatusLogRepository.save(WorkStatusLog.builder()
                 .workStatusCode(clockInCode)
@@ -92,7 +98,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     @Transactional
     public AttendanceStatusResponse clockOut(Long empId) {
-        OffsetDateTime now = OffsetDateTime.now(ZONE).truncatedTo(ChronoUnit.MICROS);
+        OffsetDateTime now = DateTimeUtils.now();
 
         // 1. 가장 최근 근태 (자정을 넘긴 퇴근도 출근일 기록에 처리)
         AttendanceDaily daily = attendanceDailyRepository.findTopByEmpIdOrderByWorkDateDesc(empId)
@@ -117,13 +123,17 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .createdBy(empId)
                 .build());
 
+        // 5. 근로시간 집계 + 근태이상 판정
+        WorkTimeResult workTime = recalculate(daily);
+        refreshClockOutAnomalies(daily, workTime);
+
         return AttendanceStatusResponse.of(daily, clockOutCode, getAbleStatuses(clockOutCode));
     }
 
     @Override
     @Transactional
     public AttendanceStatusResponse changeStatus(Long empId, String statusCode) {
-        OffsetDateTime now = OffsetDateTime.now(ZONE).truncatedTo(ChronoUnit.MICROS);
+        OffsetDateTime now = DateTimeUtils.now();
 
         // 1. 가장 최근 근태와 현재 상태
         AttendanceDaily daily = attendanceDailyRepository.findTopByEmpIdOrderByWorkDateDesc(empId)
@@ -144,10 +154,12 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_STATUS_CHANGE));
 
-        // 4. 퇴근 상태였다면 퇴근취소
+        // 4. 퇴근 상태였다면 퇴근취소 (집계 초기화, 퇴근 판정 근태이상 삭제)
         if (daily.isClockedOut()) {
             lastLog.changeWorkStatusCode(getStatusCode(WorkStatusCode.CLOCK_OUT_CANCEL));
             daily.cancelClockOut();
+            WorkTimeResult workTime = recalculate(daily);
+            refreshClockOutAnomalies(daily, workTime);
         }
 
         // 5. 상태 로그
@@ -166,7 +178,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     @Override
     @Transactional(readOnly = true)
     public AttendanceStatusResponse getToday(Long empId) {
-        OffsetDateTime now = OffsetDateTime.now(ZONE).truncatedTo(ChronoUnit.MICROS);
+        OffsetDateTime now = DateTimeUtils.now();
         LocalDate today = now.toLocalDate();
 
         // 1. 근태 기록이 없으면 출근 전
@@ -203,6 +215,69 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .toList();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public DailyAttendanceResponse getDaily(Long empId, LocalDate date) {
+        return attendanceDailyRepository.findByEmpIdAndWorkDate(empId, date)
+                .map(daily -> DailyAttendanceResponse.of(
+                        daily,
+                        workStatusLogRepository.findByEmpIdAndWorkDateAndIsDeletedFalseOrderByStartAtAscLogIdAsc(empId, date),
+                        attendanceAnomalyRepository.findByAttendanceDailyOrderByAnomalyIdAsc(daily)))
+                .orElseGet(() -> {
+                    // 기록이 없는 날: 그날 적용될 근무그룹과 휴일 여부만 채움
+                    WorkGroup workGroup = resolveWorkGroup(empId, date);
+                    return DailyAttendanceResponse.empty(date, workGroup.getName(), isHoliday(date, workGroup));
+                });
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public WeeklyAttendanceResponse getWeekly(Long empId, LocalDate date) {
+        LocalDate startDate = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate endDate = startDate.plusDays(6);
+
+        List<AttendanceDaySummaryResponse> days = buildDaySummaries(empId, startDate, endDate);
+        WorkGroup workGroup = resolveWorkGroup(empId, date);
+
+        return WeeklyAttendanceResponse.of(startDate, endDate, workGroup, days, DateTimeUtils.now().toLocalDate());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public MonthlyAttendanceResponse getMonthly(Long empId, YearMonth month) {
+        LocalDate today = DateTimeUtils.now().toLocalDate();
+        List<AttendanceDaySummaryResponse> days = buildDaySummaries(empId, month.atDay(1), month.atEndOfMonth());
+
+        return MonthlyAttendanceResponse.of(month, resolveMonthlyWorkGroup(empId, month), days, today);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AttendanceSummaryResponse getSummary(Long empId, YearMonth month) {
+        List<AttendanceDaySummaryResponse> days = buildDaySummaries(empId, month.atDay(1), month.atEndOfMonth());
+
+        return AttendanceSummaryResponse.of(empId, month, resolveMonthlyWorkGroup(empId, month), days);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<WorkStatusHistoryResponse> getHistory(Long empId, LocalDate from, LocalDate to) {
+        if (from.isAfter(to)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "from은 to보다 늦을 수 없습니다.");
+        }
+        return workStatusLogRepository.findByEmpIdAndWorkDateBetweenOrderByWorkDateAscStartAtAscLogIdAsc(empId, from, to)
+                .stream()
+                .map(WorkStatusHistoryResponse::from)
+                .toList();
+    }
+
+    /** 월 단위 조회의 근무그룹. 이번 달이면 오늘, 아니면 그 달 말일 기준 */
+    private WorkGroup resolveMonthlyWorkGroup(Long empId, YearMonth month) {
+        LocalDate today = DateTimeUtils.now().toLocalDate();
+        LocalDate baseDate = YearMonth.from(today).equals(month) ? today : month.atEndOfMonth();
+        return resolveWorkGroup(empId, baseDate);
+    }
+
     /** 해당 날짜에 배정된 근무그룹. 배정이 없으면 기본 그룹 */
     private WorkGroup resolveWorkGroup(Long empId, LocalDate date) {
         return employeeWorkGroupRepository.findEffectiveWorkGroup(empId, date)
@@ -225,6 +300,81 @@ public class AttendanceServiceImpl implements AttendanceService {
         // 그 외: 출퇴근 버튼 상태와 현재 상태 제외
         return workStatusCodeRepository.findByStatusCodeNotIn(CLOCK_STATUS_CODES).stream()
                 .filter(code -> !code.getStatusCode().equals(current.getStatusCode()))
+                .toList();
+    }
+
+    /** 그 근무일의 로그로 근로시간을 다시 계산해서 반영 (퇴근 전이면 0) */
+    private WorkTimeResult recalculate(AttendanceDaily daily) {
+        List<WorkLogEntry> entries = workStatusLogRepository
+                .findByEmpIdAndWorkDateAndIsDeletedFalseOrderByStartAtAscLogIdAsc(daily.getEmpId(), daily.getWorkDate())
+                .stream()
+                .map(log -> new WorkLogEntry(log.getStartAt(), log.getWorkStatusCode().getCountAsWork()))
+                .toList();
+
+        WorkGroup workGroup = daily.getWorkGroup();
+        WorkTimeResult result = WorkTimeCalculator.calculate(
+                entries,
+                daily.getClockOut(),
+                workGroup.getDailyStdMinutes(),
+                workGroup.getBreakMinutes(),
+                daily.getIsHoliday());
+        daily.applyWorkTime(result);
+        return result;
+    }
+
+    /** 퇴근 판정 근태이상 갱신: 기존 판정분을 지우고, 퇴근 상태면 다시 판정 */
+    private void refreshClockOutAnomalies(AttendanceDaily daily, WorkTimeResult workTime) {
+        attendanceAnomalyRepository.deleteByAttendanceDailyAndAnomalyTypeIn(daily, AnomalyJudge.clockOutTypes());
+        if (!daily.isClockedOut()) {
+            return;
+        }
+        WorkGroup workGroup = daily.getWorkGroup();
+        saveAnomalies(daily, AnomalyJudge.onClockOut(
+                daily.getWorkDate(),
+                daily.getClockOut(),
+                workGroup.getEndTime(),
+                workGroup.getDailyStdMinutes(),
+                daily.getIsHoliday(),
+                workTime));
+    }
+
+    private void saveAnomalies(AttendanceDaily daily, List<AnomalyType> types) {
+        types.forEach(type -> attendanceAnomalyRepository.save(AttendanceAnomaly.builder()
+                .attendanceDaily(daily)
+                .anomalyType(type)
+                .build()));
+    }
+
+    /** 휴일 여부: 공휴일이거나 근무그룹의 근무 요일이 아님 */
+    private boolean isHoliday(LocalDate date, WorkGroup workGroup) {
+        return holidayRepository.existsById(date) || !workGroup.isWorkDay(date.getDayOfWeek());
+    }
+
+    /** 기간 내 날짜별 요약. 기록이 없는 날도 빈 항목으로 채운다. */
+    private List<AttendanceDaySummaryResponse> buildDaySummaries(Long empId, LocalDate from, LocalDate to) {
+        List<AttendanceDaily> dailies =
+                attendanceDailyRepository.findByEmpIdAndWorkDateBetweenOrderByWorkDateAsc(empId, from, to);
+
+        // 날짜 → 근태
+        Map<LocalDate, AttendanceDaily> dailyByDate = dailies.stream()
+                .collect(Collectors.toMap(AttendanceDaily::getWorkDate, Function.identity()));
+
+        // 근태 ID → 근태이상 목록 (한 번에 조회 후 나눠 담기)
+        Map<Long, List<AttendanceAnomaly>> anomaliesByAttId = dailies.isEmpty()
+                ? Map.of()
+                : attendanceAnomalyRepository.findByAttendanceDailyInOrderByAnomalyIdAsc(dailies).stream()
+                .collect(Collectors.groupingBy(a -> a.getAttendanceDaily().getAttId()));
+
+        return from.datesUntil(to.plusDays(1))
+                .map(date -> {
+                    AttendanceDaily daily = dailyByDate.get(date);
+                    if (daily != null) {
+                        return AttendanceDaySummaryResponse.of(
+                                daily, anomaliesByAttId.getOrDefault(daily.getAttId(), List.of()));
+                    }
+                    WorkGroup workGroup = resolveWorkGroup(empId, date);
+                    return AttendanceDaySummaryResponse.empty(date, isHoliday(date, workGroup));
+                })
                 .toList();
     }
 }

@@ -42,7 +42,7 @@ class EmployeeAdminIntegrationTest extends AbstractIntegrationTest {
     }
 
     private long createEmployee(Cookie[] admin, String email) throws Exception {
-        MvcResult created = mvc.perform(post("/api/v1/admin/employees").cookie(admin)
+        MvcResult created = mvc.perform(post("/api/v1/employees").cookie(admin)
                         .contentType(MediaType.APPLICATION_JSON).content(employeeJson(email, 1)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.employeeId").isNumber())
@@ -54,7 +54,7 @@ class EmployeeAdminIntegrationTest extends AbstractIntegrationTest {
     @Test
     void 필수값_누락은_400_필드별_메시지() throws Exception {
         Cookie[] admin = login(ADMIN_LOGIN);
-        mvc.perform(post("/api/v1/admin/employees").cookie(admin).contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/api/v1/employees").cookie(admin).contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"email":"x","password":"short"}"""))
                 .andExpect(status().isBadRequest())
@@ -64,7 +64,7 @@ class EmployeeAdminIntegrationTest extends AbstractIntegrationTest {
     @Test
     void 없는_직위는_400_EMP_005() throws Exception {
         Cookie[] admin = login(ADMIN_LOGIN);
-        mvc.perform(post("/api/v1/admin/employees").cookie(admin).contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/api/v1/employees").cookie(admin).contentType(MediaType.APPLICATION_JSON)
                         .content(employeeJson("pos@local.dev", 99)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("EMP_005"));
@@ -74,7 +74,7 @@ class EmployeeAdminIntegrationTest extends AbstractIntegrationTest {
     void 등록_성공_후_같은_이메일은_409() throws Exception {
         Cookie[] admin = login(ADMIN_LOGIN);
         createEmployee(admin, "dup@local.dev");
-        mvc.perform(post("/api/v1/admin/employees").cookie(admin)
+        mvc.perform(post("/api/v1/employees").cookie(admin)
                         .contentType(MediaType.APPLICATION_JSON).content(employeeJson("dup@local.dev", 1)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("EMP_002"));
@@ -85,7 +85,10 @@ class EmployeeAdminIntegrationTest extends AbstractIntegrationTest {
         Cookie[] admin = login(ADMIN_LOGIN);
         createEmployee(admin, "plain@local.dev");
         Cookie[] user = login(loginJson("plain@local.dev", "user12345"));
-        mvc.perform(post("/api/v1/admin/employees").cookie(user).contentType(MediaType.APPLICATION_JSON).content("{}"))
+        mvc.perform(post("/api/v1/employees").cookie(user).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("AUTH_009"));
+        mvc.perform(patch("/api/v1/employees/1/terminate").cookie(user).contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("AUTH_009"));
     }
@@ -96,7 +99,7 @@ class EmployeeAdminIntegrationTest extends AbstractIntegrationTest {
         long employeeId = createEmployee(admin, "quit@local.dev");
         Cookie[] user = login(loginJson("quit@local.dev", "user12345"));
 
-        mvc.perform(patch("/api/v1/admin/employees/" + employeeId + "/terminate").cookie(admin)
+        mvc.perform(patch("/api/v1/employees/" + employeeId + "/terminate").cookie(admin)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"resignDate":"2026-10-19","resignReason":"이직"}"""))
@@ -110,7 +113,7 @@ class EmployeeAdminIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("AUTH_006"));
 
-        mvc.perform(patch("/api/v1/admin/employees/" + employeeId + "/terminate").cookie(admin)
+        mvc.perform(patch("/api/v1/employees/" + employeeId + "/terminate").cookie(admin)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"resignDate":"2026-10-19"}"""))
@@ -121,7 +124,7 @@ class EmployeeAdminIntegrationTest extends AbstractIntegrationTest {
     @Test
     void 없는_사원_퇴직처리는_404() throws Exception {
         Cookie[] admin = login(ADMIN_LOGIN);
-        mvc.perform(patch("/api/v1/admin/employees/999999/terminate").cookie(admin)
+        mvc.perform(patch("/api/v1/employees/999999/terminate").cookie(admin)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"resignDate":"2026-10-19"}"""))

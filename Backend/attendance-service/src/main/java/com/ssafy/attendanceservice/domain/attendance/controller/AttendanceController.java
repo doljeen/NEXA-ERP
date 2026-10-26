@@ -1,15 +1,16 @@
 package com.ssafy.attendanceservice.domain.attendance.controller;
 
-import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceStatusResponse;
-import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusChangeRequest;
-import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusCodeResponse;
+import com.ssafy.attendanceservice.domain.attendance.dto.*;
 import com.ssafy.attendanceservice.domain.attendance.service.AttendanceService;
 import com.ssafy.attendanceservice.global.dto.ApiResult;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 
 /** 본인 근태 API */
@@ -48,6 +49,52 @@ public class AttendanceController {
     @GetMapping("/today")
     public ResponseEntity<ApiResult<AttendanceStatusResponse>> getToday(@RequestHeader("X-User-Id") Long empId) {
         return ResponseEntity.ok(ApiResult.success(attendanceService.getToday(empId)));
+    }
+
+    // 일별 근태 타임라인 API
+    // TODO: 인증 적용 시 @RequestHeader("X-User-Id") → @AuthenticationPrincipal AuthUser 로 교체
+    @GetMapping("/me/daily/{date}")
+    public ResponseEntity<ApiResult<DailyAttendanceResponse>> getDaily(
+            @RequestHeader("X-User-Id") Long empId,
+            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return ResponseEntity.ok(ApiResult.success(attendanceService.getDaily(empId, date)));
+    }
+
+    // 주간 근태 조회 API
+    // TODO: 인증 적용 시 @RequestHeader("X-User-Id") → @AuthenticationPrincipal AuthUser 로 교체
+    @GetMapping("/me/weekly")
+    public ResponseEntity<ApiResult<WeeklyAttendanceResponse>> getWeekly(
+            @RequestHeader("X-User-Id") Long empId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return ResponseEntity.ok(ApiResult.success(attendanceService.getWeekly(empId, date)));
+    }
+
+    // 월간 근태 조회 API
+    // TODO: 인증 적용 시 @RequestHeader("X-User-Id") → @AuthenticationPrincipal AuthUser 로 교체
+    @GetMapping("/me/monthly")
+    public ResponseEntity<ApiResult<MonthlyAttendanceResponse>> getMonthly(
+            @RequestHeader("X-User-Id") Long empId,
+            @RequestParam @DateTimeFormat(pattern = "yyyy-MM") YearMonth month) {
+        return ResponseEntity.ok(ApiResult.success(attendanceService.getMonthly(empId, month)));
+    }
+
+    // 근무상태 변경 이력 조회 API
+    // TODO: 인증 적용 시 @RequestHeader("X-User-Id") → @AuthenticationPrincipal AuthUser 로 교체
+    @GetMapping("/me/history")
+    public ResponseEntity<ApiResult<List<WorkStatusHistoryResponse>>> getHistory(
+            @RequestHeader("X-User-Id") Long empId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(ApiResult.success(attendanceService.getHistory(empId, from, to)));
+    }
+
+    // 월별 근태 집계 API (급여 서비스 연동용)
+    // TODO: 인증 적용 시 서비스 간 인증 방식 결정 필요 (사용자 토큰이 아닌 내부 호출)
+    @GetMapping("/summary")
+    public ResponseEntity<ApiResult<AttendanceSummaryResponse>> getSummary(
+            @RequestParam Long empId,
+            @RequestParam @DateTimeFormat(pattern = "yyyy-MM") YearMonth month) {
+        return ResponseEntity.ok(ApiResult.success(attendanceService.getSummary(empId, month)));
     }
 
     // 근무 상태 코드 목록 API

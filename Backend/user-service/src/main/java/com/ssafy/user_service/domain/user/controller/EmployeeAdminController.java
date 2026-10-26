@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-/** 사원 관리 API. /api/v1/admin/** 는 SecurityConfig에서 ROLE_ADMIN 전용으로 묶인다. */
+/** 사원 관리 API. 조회는 인증 사용자 모두, 등록(POST)/퇴직 처리(PATCH)는 SecurityConfig에서 ROLE_ADMIN 전용으로 묶인다. */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping(SecurityConstants.EMPLOYEE_BASE_PATH)
