@@ -10,3 +10,13 @@ spring:
     config:
       username: config-client
       password: ${CONFIG_SERVER_PASSWORD}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      show-components: never

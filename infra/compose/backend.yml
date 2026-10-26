@@ -109,6 +109,13 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "3", "http://localhost:8084/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
         
 
   leave-service:
@@ -142,6 +149,13 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "3", "http://localhost:8082/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
 
 
   migration-service:
