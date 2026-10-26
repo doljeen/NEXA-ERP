@@ -3,12 +3,14 @@ from contextlib import asynccontextmanager
 import py_eureka_client.eureka_client as eureka_client
 from fastapi import FastAPI
 
+import runs.models
 import workflows.models  # noqa: F401  테이블 등록용
 from core.config import settings
 from core.database import Base, engine
 from core.exceptions import register_exception_handlers
 from nodes.routers import router as nodes_router
 from workflows.routers import router as workflows_router
+
 
 API_PREFIX = "/api/v1/ai"
 SERVICE_NAME = "ai-service"
