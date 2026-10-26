@@ -5,6 +5,7 @@ public final class SecurityConstants {
 
     public static final String AUTH_BASE_PATH = "/api/v1/auth";
     public static final String ADMIN_BASE_PATH = "/api/v1/admin";
+    public static final String EMPLOYEE_BASE_PATH = "/api/v1/employees";
     public static final String JWKS_PATH = "/.well-known/jwks.json";
 
     public static final String ACCESS_COOKIE = "accessToken";

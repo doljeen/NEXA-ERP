@@ -23,6 +23,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -93,6 +94,17 @@ public class EmployeeServiceImplV1 implements EmployeeService {
     @Override
     public Optional<Employee> findById(Long employeeId) {
         return employeeRepository.findById(employeeId);
+    }
+
+    @Override
+    public List<Employee> findAll() {
+        return employeeRepository.findAll();
+    }
+
+    @Override
+    public List<Employee> findByDeptId(Long deptId) {
+        if (!departmentRepository.existsById(deptId)) throw new BusinessException(ErrorCode.DEPARTMENT_NOT_FOUND);
+        return employeeRepository.findByJobDeptId(deptId);
     }
 
     @Override

@@ -1,0 +1,33 @@
+build-config:
+  stage: build
+  image: eclipse-temurin:21-jdk
+
+  tags:
+    - nexa-ci
+
+  variables:
+    SPRING_PROFILES_ACTIVE: native
+    CONFIG_SERVER_PASSWORD: ci_test_password
+
+  script:
+    - cd Backend/config-server
+    - bash gradlew --no-daemon test bootJar
+
+  artifacts:
+    when: always
+    expire_in: 7 days
+    reports:
+      junit: Backend/config-server/build/test-results/test/TEST-*.xml
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - Backend/config-server/**/*
+        - .gitlab/ci/config.yml
+        - .gitlab-ci.yml
+      when: on_success
+      allow_failure: false
+
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: true

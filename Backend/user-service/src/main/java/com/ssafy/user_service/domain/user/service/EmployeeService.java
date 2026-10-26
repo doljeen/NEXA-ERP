@@ -5,6 +5,7 @@ import com.ssafy.user_service.domain.user.dto.EmployeeSummary;
 import com.ssafy.user_service.domain.user.dto.EmployeeTerminateRequest;
 import com.ssafy.user_service.domain.user.entity.Employee;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface EmployeeService {
@@ -20,4 +21,9 @@ public interface EmployeeService {
 
     /** 부서명/직급명을 포함한 요약. 참조가 깨져 있으면 BusinessException */
     EmployeeSummary summarize(Employee employee);
+
+    List<Employee> findAll();
+
+    /** 부서 기준 사원 목록. 존재하지 않는 부서면 BusinessException */
+    List<Employee> findByDeptId(Long deptId);
 }

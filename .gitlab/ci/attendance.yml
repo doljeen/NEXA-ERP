@@ -1,0 +1,87 @@
+build-attendance:
+  extends: .testcontainers
+  stage: build
+  image: eclipse-temurin:21-jdk
+
+  tags:
+    - nexa-ci
+
+  script:
+    - cd Backend/attendance-service
+    - bash gradlew --no-daemon test bootJar
+
+  artifacts:
+    when: always
+    expire_in: 7 days
+    reports:
+      junit: Backend/attendance-service/build/test-results/test/TEST-*.xml
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: &attendance_changes
+        - Backend/attendance-service/**/*
+        - .gitlab/ci/attendance.yml
+        - .gitlab/ci/testcontainers.yml
+        - .gitlab-ci.yml
+        - compose.dev.yml
+        - infra/compose/**/*
+      when: on_success
+      allow_failure: false
+
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes: *attendance_changes
+      when: on_success
+      allow_failure: false
+
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: true
+
+deploy-attendance-dev:
+  stage: deploy
+  tags:
+    - nexa-dev-deploy
+
+  needs:
+    - build-attendance
+
+  resource_group: nexa-development
+  interruptible: false
+  timeout: 20m
+
+  environment:
+    name: development
+    url: https://k15d107.p.ssafy.io
+
+  variables:
+    GIT_STRATEGY: clone
+
+  script:
+    - |
+      set -euo pipefail
+      cd "$CI_PROJECT_DIR"
+
+      test -r /opt/nexa-dev/.env
+
+      compose() {
+        docker compose \
+          --env-file /opt/nexa-dev/.env \
+          -p nexa \
+          -f compose.dev.yml "$@"
+      }
+
+      compose config --quiet
+      compose build attendance-service
+      compose up -d --no-deps --no-build \
+        --wait --wait-timeout 180 attendance-service
+
+      timeout 120 bash -c \
+        'until (echo > /dev/tcp/127.0.0.1/8084) >/dev/null 2>&1; do sleep 3; done'
+
+      compose ps attendance-service
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes: *attendance_changes
+      when: on_success
+      allow_failure: false

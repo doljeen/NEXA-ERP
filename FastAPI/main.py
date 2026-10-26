@@ -1,10 +1,46 @@
+from contextlib import asynccontextmanager
+
+import py_eureka_client.eureka_client as eureka_client
 from fastapi import FastAPI
 
+import workflows.models  # noqa: F401  테이블 등록용
+from core.config import settings
+from core.database import Base, engine
+from core.exceptions import register_exception_handlers
 from nodes.routers import router as nodes_router
+from workflows.routers import router as workflows_router
 
-app = FastAPI( title="업무 자동화")
+API_PREFIX = "/api/v1/ai"
+SERVICE_NAME = "ai-service"
 
-app.include_router(nodes_router)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 서버 켤 때
+    Base.metadata.create_all(engine)
+    if settings.eureka_server_url:
+        options = {}
+        if settings.instance_host:
+            options["instance_host"] = settings.instance_host
+        await eureka_client.init_async(
+            eureka_server=settings.eureka_server_url,
+            app_name=SERVICE_NAME,
+            instance_port=settings.instance_port,
+            **options,
+        )
+    yield
+    # 서버 끌 때
+    if settings.eureka_server_url:
+        await eureka_client.stop_async()
+
+
+app = FastAPI(title="업무 자동화", lifespan=lifespan)
+
+register_exception_handlers(app)
+
+app.include_router(nodes_router, prefix=API_PREFIX)
+app.include_router(workflows_router, prefix=API_PREFIX)
+
 
 @app.get("/health")
 def health():

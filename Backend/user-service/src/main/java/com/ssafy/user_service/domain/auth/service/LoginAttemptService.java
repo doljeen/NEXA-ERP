@@ -24,7 +24,7 @@ public class LoginAttemptService {
         return Boolean.TRUE.equals(redisTemplate.hasKey(LOCK_PREFIX + loginId));
     }
 
-    /** 실패를 기록하고, 한도에 도달하면 잠근다. */
+    /** 실패를 기록하고, 한도에 도달하면 잠금. */
     public void recordFailure(String loginId) {
         AppProperties.Login login = appProperties.login();
         String failKey = FAIL_PREFIX + loginId;
