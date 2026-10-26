@@ -6,6 +6,7 @@ import com.ssafy.approval_service.domain.document.model.dto.DocumentInfoResponse
 import com.ssafy.approval_service.domain.document.model.dto.DocumentListResponse;
 import com.ssafy.approval_service.domain.document.service.DocumentService;
 import com.ssafy.approval_service.global.dto.ApiResult;
+import com.ssafy.approval_service.global.security.CurrentEmployeeId;
 import com.ssafy.approval_service.global.security.SecurityConstants;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +16,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -50,10 +50,10 @@ public class DocumentController {
         return ResponseEntity.ok(ApiResult.success(response));
     }
 
-    /** 문서 생성 + 상신. 기안자는 게이트웨이가 넣어주는 X-User-Id 헤더로 식별 */
+    /** 문서 생성 + 상신. 기안자는 access 토큰의 sub(사원 ID)로 식별 */
     @PostMapping
     public ResponseEntity<ApiResult<DocumentCreateResponse>> createDocument(
-            @RequestHeader(SecurityConstants.USER_ID_HEADER) Long drafterId,
+            @CurrentEmployeeId Long drafterId,
             @Valid @RequestBody DocumentCreateRequest request
     ) {
         DocumentCreateResponse response = documentService.create(request, drafterId);

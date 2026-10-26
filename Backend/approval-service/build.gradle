@@ -45,6 +45,10 @@ dependencies {
 
 	// Actuator 추가
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+	// JWT 검증 (user-service JWKS 공개키로 access 토큰 서명 확인)
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+
 }
 
 tasks.named('test') {

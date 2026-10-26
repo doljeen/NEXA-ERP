@@ -8,7 +8,6 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -41,13 +40,6 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResult<Void>> handleNotReadable(HttpMessageNotReadableException e) {
         return ResponseEntity.status(ErrorCode.INVALID_INPUT.getStatus())
                 .body(ApiResult.fail(ErrorCode.INVALID_INPUT));
-    }
-
-    // X-User-Id 등 필수 헤더 누락 → 인증 필요
-    @ExceptionHandler(MissingRequestHeaderException.class)
-    public ResponseEntity<ApiResult<Void>> handleMissingHeader(MissingRequestHeaderException e) {
-        return ResponseEntity.status(ErrorCode.UNAUTHORIZED.getStatus())
-                .body(ApiResult.fail(ErrorCode.UNAUTHORIZED, e.getHeaderName() + " 헤더가 없습니다."));
     }
 
     // 컨트롤러 내부에서 발생한 Security 예외 (필터 단계는 EntryPoint/AccessDeniedHandler가 처리)
