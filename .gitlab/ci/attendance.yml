@@ -25,6 +25,7 @@ build-attendance:
         - .gitlab-ci.yml
         - compose.dev.yml
         - infra/compose/**/*
+        - .gitlab/ci/deploy.yml
       when: on_success
       allow_failure: false
 
@@ -38,47 +39,15 @@ build-attendance:
       allow_failure: true
 
 deploy-attendance-dev:
-  stage: deploy
-  tags:
-    - nexa-dev-deploy
+  extends: .deploy-dev
 
   needs:
-    - build-attendance
-
-  resource_group: nexa-development
-  interruptible: false
-  timeout: 20m
-
-  environment:
-    name: development
-    url: https://k15d107.p.ssafy.io
+    - job: build-attendance
+    - job: deploy-eureka-dev
+      optional: true
 
   variables:
-    GIT_STRATEGY: clone
-
-  script:
-    - |
-      set -euo pipefail
-      cd "$CI_PROJECT_DIR"
-
-      test -r /opt/nexa-dev/.env
-
-      compose() {
-        docker compose \
-          --env-file /opt/nexa-dev/.env \
-          -p nexa \
-          -f compose.dev.yml "$@"
-      }
-
-      compose config --quiet
-      compose build attendance-service
-      compose up -d --no-deps --no-build \
-        --wait --wait-timeout 180 attendance-service
-
-      timeout 120 bash -c \
-        'until (echo > /dev/tcp/127.0.0.1/8084) >/dev/null 2>&1; do sleep 3; done'
-
-      compose ps attendance-service
+    DEPLOY_SERVICE: attendance-service
 
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'

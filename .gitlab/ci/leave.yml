@@ -18,14 +18,39 @@ build-leave:
 
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
+      changes: &leave_changes
         - Backend/leave-service/**/*
         - .gitlab/ci/leave.yml
         - .gitlab/ci/testcontainers.yml
+        - .gitlab/ci/deploy.yml
         - .gitlab-ci.yml
+        - compose.dev.yml
+        - infra/compose/**/*
+      when: on_success
+      allow_failure: false
+
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes: *leave_changes
       when: on_success
       allow_failure: false
 
     - if: '$CI_PIPELINE_SOURCE == "web"'
       when: manual
       allow_failure: true
+
+deploy-leave-dev:
+  extends: .deploy-dev
+
+  needs:
+    - job: build-leave
+    - job: deploy-eureka-dev
+      optional: true
+
+  variables:
+    DEPLOY_SERVICE: leave-service
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes: *leave_changes
+      when: on_success
+      allow_failure: false

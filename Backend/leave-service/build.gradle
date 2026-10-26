@@ -47,6 +47,9 @@ dependencies {
 
     // 테스트 코드 실행 시 자동으로 임시 DB생성 및 삭제하는 컨테이너 의존성
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+
+    // 헬스체크 의존성
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
 }
 
 dependencyManagement {

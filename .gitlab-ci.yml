@@ -20,7 +20,7 @@ include:
   - local: /.gitlab/ci/attendance.yml
   - local: /.gitlab/ci/testcontainers.yml
   - local: /.gitlab/ci/leave.yml
-
+  - local: /.gitlab/ci/deploy.yml
 check-ci-environment:
   stage: verify
   image: eclipse-temurin:21-jdk
