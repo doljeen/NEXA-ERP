@@ -76,4 +76,27 @@ public class Document {
         this.status = DocumentStatus.CANCEL;
         this.completedAt = OffsetDateTime.now();
     }
+
+    /** 반려된 문서를 다시 상신. 제목을 바꾸고 진행 중으로 되돌린다 */
+    public void resubmit(String title) {
+        this.title = title;
+        this.status = DocumentStatus.INPROGRESS;
+        this.draftedAt = OffsetDateTime.now();
+        this.completedAt = null;
+    }
+
+    /** 반려된 문서인지 (재기안 가능 여부) */
+    public boolean isRejected() {
+        return this.status == DocumentStatus.REJECTED;
+    }
+
+    /** 해당 사원이 기안자인지 */
+    public boolean isDraftedBy(Long employeeId) {
+        return this.drafterId.equals(employeeId);
+    }
+
+    /** 결재 진행 중인지 (결재선 변경/결재 처리 가능 여부) */
+    public boolean isInProgress() {
+        return this.status == DocumentStatus.INPROGRESS;
+    }
 }

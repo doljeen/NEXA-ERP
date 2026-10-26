@@ -72,4 +72,20 @@ public class ApprovalLine {
         this.action = LineAction.DISAGREE;
         this.actedAt = OffsetDateTime.now();
     }
+
+    /** 앞 결재자의 전결로 결재 없이 넘어감 */
+    public void skip() {
+        this.action = LineAction.SKIPPED;
+        this.actedAt = OffsetDateTime.now();
+    }
+
+    /** 결재 순서 변경. 결재가 끝난 결재선인지는 서비스에서 확인한다 */
+    public void changeStep(Short step) {
+        this.step = step;
+    }
+
+    /** 아직 결재하지 않은 결재선인지 */
+    public boolean isPending() {
+        return this.action == LineAction.PENDING;
+    }
 }

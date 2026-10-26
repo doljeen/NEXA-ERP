@@ -5,7 +5,7 @@ import com.ssafy.approval_service.domain.approval.model.entity.ApprovalLine;
 import com.ssafy.approval_service.domain.approval.model.entity.enums.HistoryAction;
 import com.ssafy.approval_service.domain.approval.repository.ApprovalHistoryRepository;
 import com.ssafy.approval_service.domain.approval.repository.ApprovalLineRepository;
-import com.ssafy.approval_service.domain.document.model.dto.ApprovalLineRequest;
+import com.ssafy.approval_service.domain.approval.service.ApprovalLineValidator;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateRequest;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentInfoResponse;
@@ -20,9 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -34,6 +32,7 @@ public class DocumentServiceImplV1 implements DocumentService {
     private final DocumentRepository documentRepository;
     private final ApprovalLineRepository approvalLineRepository;
     private final ApprovalHistoryRepository approvalHistoryRepository;
+    private final ApprovalLineValidator approvalLineValidator;
 
     @Override
     public DocumentListResponse findByStatusAndType(String approvalStatus, String formType) {
@@ -51,7 +50,7 @@ public class DocumentServiceImplV1 implements DocumentService {
     @Transactional
     public DocumentCreateResponse create(DocumentCreateRequest request, Long drafterId) {
         // 결재선 검증
-        validateApprovalLines(request.approvalLines(), drafterId);
+        approvalLineValidator.validate(request.approvalLines(), drafterId);
 
         // 문서 생성
         Document document = documentRepository.save(Document.builder()
@@ -87,8 +86,7 @@ public class DocumentServiceImplV1 implements DocumentService {
 
     @Override
     public DocumentInfoResponse findById(Long documentId) {
-        Document document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND));
+        Document document = getDocument(documentId);
 
         List<ApprovalLine> lines = approvalLineRepository.findByDocumentDocIdOrderByStepAsc(documentId);
         List<ApprovalHistory> histories = approvalHistoryRepository.findByDocumentDocIdOrderByOccurredAtAsc(documentId);
@@ -96,22 +94,11 @@ public class DocumentServiceImplV1 implements DocumentService {
         return DocumentInfoResponse.of(document, lines, histories);
     }
 
-    /** 결재선 검증: 기안자 본인 제외, 사원 중복 금지, step 중복 금지 */
-    private void validateApprovalLines(List<ApprovalLineRequest> lines, Long drafterId) {
-        Set<Long> empIds = new HashSet<>();
-        Set<Short> steps = new HashSet<>();
-
-        for (ApprovalLineRequest line : lines) {
-            if (line.empId().equals(drafterId)) {
-                throw new BusinessException(ErrorCode.DRAFTER_IN_APPROVAL_LINE);
-            }
-            if (!empIds.add(line.empId())) {
-                throw new BusinessException(ErrorCode.DUPLICATE_APPROVER, "중복된 결재자: " + line.empId());
-            }
-            if (!steps.add(line.step())) {
-                throw new BusinessException(ErrorCode.DUPLICATE_APPROVAL_STEP, "중복된 결재 순서: " + line.step());
-            }
-        }
+    /** 다른 도메인 서비스용 엔티티 조회. 없으면 404 */
+    @Override
+    public Document getDocument(Long documentId) {
+        return documentRepository.findById(documentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND));
     }
 
     /** 쿼리 파라미터 문자열을 enum으로 변환. null/빈 문자열은 null, 잘못된 값은 400 */

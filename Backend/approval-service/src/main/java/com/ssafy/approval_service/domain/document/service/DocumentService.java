@@ -4,6 +4,7 @@ import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateReques
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentInfoResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentListResponse;
+import com.ssafy.approval_service.domain.document.model.entity.Document;
 
 public interface DocumentService {
 
@@ -15,4 +16,6 @@ public interface DocumentService {
 
     /** 문서 상세 (문서 + 결재선 + 이력) */
     DocumentInfoResponse findById(Long documentId);
+
+    Document getDocument(Long documentId);
 }
