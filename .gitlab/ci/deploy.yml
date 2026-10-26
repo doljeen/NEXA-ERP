@@ -1,0 +1,37 @@
+.deploy-dev:
+  stage: deploy
+  tags:
+    - nexa-dev-deploy
+
+  resource_group: nexa-development
+  interruptible: false
+  timeout: 20m
+
+  environment:
+    name: development
+    url: https://k15d107.p.ssafy.io
+
+  variables:
+    GIT_STRATEGY: clone
+
+  script:
+    - |
+      set -euo pipefail
+      cd "$CI_PROJECT_DIR"
+
+      test -r /opt/nexa-dev/.env
+      : "${DEPLOY_SERVICE:?DEPLOY_SERVICE is required}"
+
+      compose() {
+        docker compose \
+          --env-file /opt/nexa-dev/.env \
+          -p nexa \
+          -f compose.dev.yml "$@"
+      }
+
+      compose config --quiet
+      compose build "$DEPLOY_SERVICE"
+      compose up -d --no-deps --no-build \
+        --wait --wait-timeout 180 "$DEPLOY_SERVICE"
+
+      compose ps "$DEPLOY_SERVICE"

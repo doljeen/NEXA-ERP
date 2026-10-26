@@ -21,13 +21,36 @@ build-eureka:
 
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
+      changes: &eureka_changes
         - Backend/eureka-server/**/*
         - .gitlab/ci/eureka.yml
+        - .gitlab/ci/deploy.yml
         - .gitlab-ci.yml
+        - compose.dev.yml
+        - infra/compose/**/*
+      when: on_success
+      allow_failure: false
+
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes: *eureka_changes
       when: on_success
       allow_failure: false
 
     - if: '$CI_PIPELINE_SOURCE == "web"'
       when: manual
       allow_failure: true
+
+deploy-eureka-dev:
+  extends: .deploy-dev
+
+  needs:
+    - build-eureka
+
+  variables:
+    DEPLOY_SERVICE: eureka-server
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes: *eureka_changes
+      when: on_success
+      allow_failure: false
