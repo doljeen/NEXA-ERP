@@ -1,8 +1,8 @@
 from collections import deque
 
-from nodes.catalog import NODES
+from nodes.registry import catalog
 
-NODE_DEFS = {n["node_type"]: n for n in NODES}
+NODE_DEFS = {n["node_type"]: n for n in catalog()}
 
 
 def validate_graph(graph: dict) -> list[dict]:
