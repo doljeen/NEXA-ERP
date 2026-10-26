@@ -42,7 +42,9 @@ deploy-attendance-dev:
   extends: .deploy-dev
 
   needs:
-    - build-attendance
+    - job: build-attendance
+    - job: deploy-eureka-dev
+      optional: true
 
   variables:
     DEPLOY_SERVICE: attendance-service

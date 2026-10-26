@@ -42,7 +42,9 @@ deploy-leave-dev:
   extends: .deploy-dev
 
   needs:
-    - build-leave
+    - job: build-leave
+    - job: deploy-eureka-dev
+      optional: true
 
   variables:
     DEPLOY_SERVICE: leave-service
