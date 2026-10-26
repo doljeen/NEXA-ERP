@@ -7,6 +7,7 @@ import com.ssafy.user_service.global.security.SecurityConstants;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -58,6 +59,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PERMIT_URLS).permitAll()
                         .requestMatchers(ADMIN_URLS).hasRole("ADMIN")
+                        // 사원 API는 조회만 인증 사용자에게 열고, 등록/퇴직 처리 등 쓰기는 관리자 전용
+                        .requestMatchers(HttpMethod.POST, SecurityConstants.EMPLOYEE_BASE_PATH + "/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PATCH, SecurityConstants.EMPLOYEE_BASE_PATH + "/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
