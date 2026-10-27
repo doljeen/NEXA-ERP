@@ -25,6 +25,9 @@ public enum ErrorCode {
     INVALID_STATUS_CHANGE(HttpStatus.CONFLICT, "ATTN_007", "변경할 수 없는 근무 상태입니다."),
     DUPLICATE_CLOCK_LOG(HttpStatus.CONFLICT, "ATTN_008", "해당 근무일에 이미 출근 또는 퇴근 기록이 있습니다."),
     WORK_STATUS_LOG_NOT_FOUND(HttpStatus.NOT_FOUND, "ATTN_009", "근무 상태 기록을 찾을 수 없습니다."),
+    DUPLICATE_PENDING_REQUEST(HttpStatus.CONFLICT, "ATTN_010", "같은 날짜에 결재 대기 중인 신청이 있습니다."),
+    WEEKLY_MAX_HOURS_EXCEEDED(HttpStatus.CONFLICT, "ATTN_011", "주 최대 근로시간을 초과합니다."),
+    ATTENDANCE_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "ATTN_012", "근태 신청서를 찾을 수 없습니다."),
 
     // 공통 (user-service와 동일)
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),

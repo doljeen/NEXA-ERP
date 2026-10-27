@@ -13,7 +13,6 @@ import com.ssafy.attendanceservice.domain.attendance.repository.WorkStatusCodeRe
 import com.ssafy.attendanceservice.domain.attendance.repository.WorkStatusLogRepository;
 import com.ssafy.attendanceservice.global.exception.BusinessException;
 import com.ssafy.attendanceservice.global.exception.ErrorCode;
-import com.ssafy.attendanceservice.global.util.DateTimeUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,7 +40,7 @@ public class AdminAttendanceServiceImpl implements AdminAttendanceService {
         WorkStatusCode statusCode = getRegistrableStatusCode(request.statusCode());
 
         // 2. 시각은 근무일 당일 또는 다음 날 (야간 근무 퇴근)
-        validateStartAt(workDate, request.startAt());
+        processor.validateStartAt(workDate, request.startAt());
 
         // 3. 출근/퇴근은 하루에 하나 (고치려면 수정 API 사용)
         if (isClockCode(statusCode)) {
@@ -71,7 +70,7 @@ public class AdminAttendanceServiceImpl implements AdminAttendanceService {
 
         // 3. 변경할 상태코드, 시각 검증
         WorkStatusCode statusCode = getRegistrableStatusCode(request.statusCode());
-        validateStartAt(workDate, request.startAt());
+        processor.validateStartAt(workDate, request.startAt());
 
         // 4. 다른 상태를 출근/퇴근으로 바꾸는 경우 중복 확인 (같은 출근/퇴근의 시각만 고치는 건 허용)
         if (isClockCode(statusCode)
@@ -147,13 +146,6 @@ public class AdminAttendanceServiceImpl implements AdminAttendanceService {
         }
         return workStatusCodeRepository.findById(statusCode)
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_STATUS_CHANGE));
-    }
-
-    private void validateStartAt(LocalDate workDate, OffsetDateTime startAt) {
-        LocalDate startDate = startAt.atZoneSameInstant(DateTimeUtils.ZONE).toLocalDate();
-        if (!startDate.equals(workDate) && !startDate.equals(workDate.plusDays(1))) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "startAt은 근무일 당일 또는 다음 날이어야 합니다.");
-        }
     }
 
     private boolean isClockCode(WorkStatusCode statusCode) {
