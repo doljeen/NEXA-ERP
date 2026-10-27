@@ -137,4 +137,11 @@ public class AttendanceDaily {
         this.approvedOtMin = result.approvedOtMin();
         this.unapprovedOtMin = result.unapprovedOtMin();
     }
+
+    /** 로그 기준으로 출퇴근 시각 동기화 (관리자 수정, 결재 반영 후) */
+    public void syncClock(OffsetDateTime clockIn, OffsetDateTime clockOut) {
+        this.clockIn = clockIn;
+        this.clockOut = clockOut;
+        this.isConfirmed = clockOut != null;
+    }
 }

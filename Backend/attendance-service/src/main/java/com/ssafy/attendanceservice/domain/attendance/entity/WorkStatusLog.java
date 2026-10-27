@@ -80,4 +80,9 @@ public class WorkStatusLog {
     public void changeWorkStatusCode(WorkStatusCode workStatusCode) {
         this.workStatusCode = workStatusCode;
     }
+
+    /** 삭제 처리 (실제 삭제하지 않고 이력으로 남김) */
+    public void delete() {
+        this.isDeleted = true;
+    }
 }
