@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.temporal.TemporalAdjusters;
@@ -58,10 +59,95 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
 
         return switch (request.reqType()) {
             case TIME_FIX -> previewTimeFix(empId, request);
-            // TODO: 다음 커밋에서 구현
-            case OVERTIME, HOLIDAY_SUBST ->
-                    throw new BusinessException(ErrorCode.INVALID_INPUT, "준비 중인 신청 유형입니다.");
+            case OVERTIME -> previewOvertime(empId, request);
+            case HOLIDAY_SUBST -> previewHolidaySubst(empId, request);
         };
+    }
+
+    // ===== 휴일대체 =====
+
+    // 휴일대체 중복으로 보는 상태 (결재 대기, 승인)
+    private static final List<AttendanceRequestStatus> ACTIVE_STATUSES =
+            List.of(AttendanceRequestStatus.PENDING, AttendanceRequestStatus.APPROVED);
+
+    private AttendanceRequestPreviewResponse previewHolidaySubst(Long empId, AttendanceRequestPreviewRequest request) {
+        LocalDate targetDate = request.targetDate();
+        LocalDate substDate = request.substDate();
+        if (substDate == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "substDate는 필수입니다.");
+        }
+
+        // 1. 대상일은 휴일 (공휴일 또는 근무 요일 아님)
+        if (!processor.isHoliday(targetDate, processor.resolveWorkGroup(empId, targetDate))) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "대상일(targetDate)은 휴일이어야 합니다.");
+        }
+
+        // 2. 대체일은 근무일
+        if (processor.isHoliday(substDate, processor.resolveWorkGroup(empId, substDate))) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "대체일(substDate)은 근무일이어야 합니다.");
+        }
+
+        // 3. 같은 휴일이나 같은 대체일로 진행 중/승인된 휴일대체가 있으면 불가
+        if (attendanceRequestRepository.existsByEmpIdAndReqTypeAndTargetDateAndStatusIn(
+                empId, AttendanceRequestType.HOLIDAY_SUBST, targetDate, ACTIVE_STATUSES)
+                || attendanceRequestRepository.existsByEmpIdAndReqTypeAndSubstDateAndStatusIn(
+                empId, AttendanceRequestType.HOLIDAY_SUBST, substDate, ACTIVE_STATUSES)) {
+            throw new BusinessException(ErrorCode.DUPLICATE_PENDING_REQUEST);
+        }
+
+        return AttendanceRequestPreviewResponse.ofHolidaySubst(targetDate,
+                new AttendanceRequestPreviewResponse.HolidaySubst(targetDate, substDate));
+    }
+
+    // ===== 초과근무 =====
+
+    private AttendanceRequestPreviewResponse previewOvertime(Long empId, AttendanceRequestPreviewRequest request) {
+        LocalDate targetDate = request.targetDate();
+        if (request.itemsOrEmpty().isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "초과근무 시간(items)이 없습니다.");
+        }
+
+        // 1. 신청 시간 합계 (항목별 시작 < 종료, 근로 상태)
+        int requestedMin = 0;
+        for (AttendanceRequestPreviewRequest.Item item : request.itemsOrEmpty()) {
+            validateOvertimeItem(item, targetDate);
+            requestedMin += (int) Duration.between(item.startAt(), item.endAt()).toMinutes();
+        }
+
+        // 2. 그날 근태와 근무그룹
+        Optional<AttendanceDaily> daily = attendanceDailyRepository.findByEmpIdAndWorkDate(empId, targetDate);
+        WorkGroup workGroup = daily.map(AttendanceDaily::getWorkGroup)
+                .orElseGet(() -> processor.resolveWorkGroup(empId, targetDate));
+
+        // 3. 주간 근로시간: 다른 날 + 그날(이미 일한 초과분 제외) + 신청 시간
+        int targetDayBaseMin = daily
+                .map(d -> d.getTotalMin() - d.getApprovedOtMin() - d.getUnapprovedOtMin())
+                .orElse(0);
+        int weeklyTotalMin = weeklyTotalMinExcept(empId, targetDate) + targetDayBaseMin + requestedMin;
+        int weeklyMaxMin = workGroup.getWeeklyMaxHours() * 60;
+
+        // 4. 주 최대 근로시간 초과 불가
+        if (weeklyTotalMin > weeklyMaxMin) {
+            throw new BusinessException(ErrorCode.WEEKLY_MAX_HOURS_EXCEEDED);
+        }
+
+        return AttendanceRequestPreviewResponse.ofOvertime(targetDate, new AttendanceRequestPreviewResponse.Overtime(
+                requestedMin, weeklyTotalMin, weeklyMaxMin, weeklyMaxMin - weeklyTotalMin));
+    }
+
+    private void validateOvertimeItem(AttendanceRequestPreviewRequest.Item item, LocalDate workDate) {
+        if (item.endAt() == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "endAt은 필수입니다.");
+        }
+        validateStartAt(workDate, item.startAt());
+        if (!item.startAt().isBefore(item.endAt())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "초과근무 종료 시각은 시작 시각보다 늦어야 합니다.");
+        }
+        WorkStatusCode statusCode = workStatusCodeRepository.findById(String.valueOf(item.statusCode()))
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_INPUT, "존재하지 않는 근무 상태입니다."));
+        if (!statusCode.getCountAsWork()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "초과근무는 근로시간에 포함되는 상태로만 신청할 수 있습니다.");
+        }
     }
 
     // ===== 근무시간 수정 =====
