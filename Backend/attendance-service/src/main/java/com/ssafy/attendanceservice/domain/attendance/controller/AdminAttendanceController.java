@@ -1,6 +1,7 @@
 package com.ssafy.attendanceservice.domain.attendance.controller;
 
 import com.ssafy.attendanceservice.domain.attendance.dto.AdminWorkStatusLogRequest;
+import com.ssafy.attendanceservice.domain.attendance.dto.AdminWorkStatusLogUpdateRequest;
 import com.ssafy.attendanceservice.domain.attendance.dto.DailyAttendanceResponse;
 import com.ssafy.attendanceservice.domain.attendance.service.AdminAttendanceService;
 import com.ssafy.attendanceservice.domain.attendance.service.AttendanceService;
@@ -41,5 +42,21 @@ public class AdminAttendanceController {
             @Valid @RequestBody AdminWorkStatusLogRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResult.success(adminAttendanceService.registerLog(adminId, request)));
+    }
+
+    // 근무 상태 로그 수정 API
+    // TODO: 인증 적용 시 @RequestHeader("X-User-Id") → @AuthenticationPrincipal AuthUser 로 교체
+    @PutMapping("/logs/{logId}")
+    public ResponseEntity<ApiResult<DailyAttendanceResponse>> updateLog(
+            @RequestHeader("X-User-Id") Long adminId,
+            @PathVariable Long logId,
+            @Valid @RequestBody AdminWorkStatusLogUpdateRequest request) {
+        return ResponseEntity.ok(ApiResult.success(adminAttendanceService.updateLog(adminId, logId, request)));
+    }
+
+    // 근무 상태 로그 삭제 API
+    @DeleteMapping("/logs/{logId}")
+    public ResponseEntity<ApiResult<DailyAttendanceResponse>> deleteLog(@PathVariable Long logId) {
+        return ResponseEntity.ok(ApiResult.success(adminAttendanceService.deleteLog(logId)));
     }
 }

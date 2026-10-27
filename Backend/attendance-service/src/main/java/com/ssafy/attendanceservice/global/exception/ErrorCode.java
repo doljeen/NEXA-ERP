@@ -24,6 +24,7 @@ public enum ErrorCode {
     ALREADY_CLOCKED_OUT(HttpStatus.CONFLICT, "ATTN_006", "이미 퇴근 처리되었습니다."),
     INVALID_STATUS_CHANGE(HttpStatus.CONFLICT, "ATTN_007", "변경할 수 없는 근무 상태입니다."),
     DUPLICATE_CLOCK_LOG(HttpStatus.CONFLICT, "ATTN_008", "해당 근무일에 이미 출근 또는 퇴근 기록이 있습니다."),
+    WORK_STATUS_LOG_NOT_FOUND(HttpStatus.NOT_FOUND, "ATTN_009", "근무 상태 기록을 찾을 수 없습니다."),
 
     // 공통 (user-service와 동일)
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),
