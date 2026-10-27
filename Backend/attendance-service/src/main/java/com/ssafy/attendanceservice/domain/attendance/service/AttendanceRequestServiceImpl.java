@@ -3,8 +3,11 @@ package com.ssafy.attendanceservice.domain.attendance.service;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkLogEntry;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeCalculator;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeResult;
+import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceRequestDetailResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceRequestPreviewRequest;
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceRequestPreviewResponse;
+import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceRequestSummaryResponse;
+import com.ssafy.attendanceservice.domain.attendance.entity.AttendanceRequest;
 import com.ssafy.attendanceservice.domain.attendance.dto.WorkTimeResponse;
 import com.ssafy.attendanceservice.domain.attendance.entity.AttendanceDaily;
 import com.ssafy.attendanceservice.domain.attendance.entity.WorkGroup;
@@ -62,6 +65,33 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
             case OVERTIME -> previewOvertime(empId, request);
             case HOLIDAY_SUBST -> previewHolidaySubst(empId, request);
         };
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AttendanceRequestSummaryResponse> getMyRequests(Long empId, int year, AttendanceRequestType requestType) {
+        // 상신 일시 기준 연도 범위 (Asia/Seoul): [year-01-01 00:00, year+1-01-01 00:00)
+        OffsetDateTime from = LocalDate.of(year, 1, 1).atStartOfDay(DateTimeUtils.ZONE).toOffsetDateTime();
+        OffsetDateTime to = LocalDate.of(year + 1, 1, 1).atStartOfDay(DateTimeUtils.ZONE).toOffsetDateTime();
+
+        List<AttendanceRequest> requests = requestType == null
+                ? attendanceRequestRepository
+                        .findByEmpIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(empId, from, to)
+                : attendanceRequestRepository
+                        .findByEmpIdAndReqTypeAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+                                empId, requestType, from, to);
+
+        return requests.stream().map(AttendanceRequestSummaryResponse::from).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AttendanceRequestDetailResponse getMyRequest(Long empId, Long requestId) {
+        // 없는 신청서와 다른 사람 신청서를 같은 404로 응답 (존재 여부 노출 방지)
+        return attendanceRequestRepository.findById(requestId)
+                .filter(request -> request.getEmpId().equals(empId))
+                .map(AttendanceRequestDetailResponse::from)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ATTENDANCE_REQUEST_NOT_FOUND));
     }
 
     // ===== 휴일대체 =====

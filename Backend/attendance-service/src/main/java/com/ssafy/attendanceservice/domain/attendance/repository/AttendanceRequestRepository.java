@@ -6,7 +6,9 @@ import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequ
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.Collection;
+import java.util.List;
 
 public interface AttendanceRequestRepository extends JpaRepository<AttendanceRequest, Long> {
 
@@ -21,4 +23,12 @@ public interface AttendanceRequestRepository extends JpaRepository<AttendanceReq
     // 같은 대체일로 진행 중/승인된 신청이 있는지 (휴일대체 중복 방지)
     boolean existsByEmpIdAndReqTypeAndSubstDateAndStatusIn(
             Long empId, AttendanceRequestType reqType, LocalDate substDate, Collection<AttendanceRequestStatus> statuses);
+
+    // 상신 일시 기간 내 내 신청 (최신순, 전체 유형)
+    List<AttendanceRequest> findByEmpIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+            Long empId, OffsetDateTime from, OffsetDateTime to);
+
+    // 상신 일시 기간 내 내 신청 (최신순, 특정 유형)
+    List<AttendanceRequest> findByEmpIdAndReqTypeAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+            Long empId, AttendanceRequestType reqType, OffsetDateTime from, OffsetDateTime to);
 }
