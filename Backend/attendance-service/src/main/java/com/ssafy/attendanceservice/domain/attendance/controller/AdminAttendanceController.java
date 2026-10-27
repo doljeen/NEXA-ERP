@@ -1,15 +1,16 @@
 package com.ssafy.attendanceservice.domain.attendance.controller;
 
+import com.ssafy.attendanceservice.domain.attendance.dto.AdminWorkStatusLogRequest;
 import com.ssafy.attendanceservice.domain.attendance.dto.DailyAttendanceResponse;
+import com.ssafy.attendanceservice.domain.attendance.service.AdminAttendanceService;
 import com.ssafy.attendanceservice.domain.attendance.service.AttendanceService;
 import com.ssafy.attendanceservice.global.dto.ApiResult;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 
@@ -22,6 +23,7 @@ import java.time.LocalDate;
 public class AdminAttendanceController {
 
     private final AttendanceService attendanceService;
+    private final AdminAttendanceService adminAttendanceService;
 
     // 직원 일별 타임라인 조회 API
     @GetMapping("/employees/{empId}/daily/{date}")
@@ -29,5 +31,15 @@ public class AdminAttendanceController {
             @PathVariable Long empId,
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         return ResponseEntity.ok(ApiResult.success(attendanceService.getDaily(empId, date)));
+    }
+
+    // 근무 상태 직접 등록 API
+    // TODO: 인증 적용 시 @RequestHeader("X-User-Id") → @AuthenticationPrincipal AuthUser 로 교체
+    @PostMapping("/logs")
+    public ResponseEntity<ApiResult<DailyAttendanceResponse>> registerLog(
+            @RequestHeader("X-User-Id") Long adminId,
+            @Valid @RequestBody AdminWorkStatusLogRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResult.success(adminAttendanceService.registerLog(adminId, request)));
     }
 }

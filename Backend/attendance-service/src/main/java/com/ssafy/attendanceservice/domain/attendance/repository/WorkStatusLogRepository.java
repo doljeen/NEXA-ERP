@@ -20,4 +20,8 @@ public interface WorkStatusLogRepository extends JpaRepository<WorkStatusLog, Lo
     // 기간 내 상태 로그 전체 (삭제 포함, 변경 이력 조회용)
     List<WorkStatusLog> findByEmpIdAndWorkDateBetweenOrderByWorkDateAscStartAtAscLogIdAsc(
             Long empId, LocalDate from, LocalDate to);
+
+    // 해당 근무일에 특정 상태(출근/퇴근) 로그가 있는지 (삭제 제외)
+    boolean existsByEmpIdAndWorkDateAndWorkStatusCode_StatusCodeAndIsDeletedFalse(
+            Long empId, LocalDate workDate, String statusCode);
 }
