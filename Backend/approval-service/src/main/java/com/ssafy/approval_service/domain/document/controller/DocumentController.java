@@ -7,6 +7,8 @@ import com.ssafy.approval_service.domain.document.model.dto.DocumentListResponse
 import com.ssafy.approval_service.domain.document.service.DocumentService;
 import com.ssafy.approval_service.global.dto.ApiResult;
 import com.ssafy.approval_service.global.security.CurrentEmployeeId;
+import com.ssafy.approval_service.global.security.CurrentRequester;
+import com.ssafy.approval_service.global.security.Requester;
 import com.ssafy.approval_service.global.security.SecurityConstants;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -34,19 +36,21 @@ public class DocumentController {
      */
     @GetMapping
     public ResponseEntity<ApiResult<DocumentListResponse>> getDocumentList(
+            @CurrentRequester Requester requester,
             @RequestParam(required = false) String approvalStatus,
             @RequestParam(required = false) String formType
     ) {
-        DocumentListResponse response = documentService.findByStatusAndType(approvalStatus, formType);
+        DocumentListResponse response = documentService.findByStatusAndType(approvalStatus, formType, requester);
         return ResponseEntity.ok(ApiResult.success(response));
     }
 
     /** 문서 상세 (문서 + 결재선 + 이력) */
     @GetMapping("/{documentId}")
     public ResponseEntity<ApiResult<DocumentInfoResponse>> getDocumentInfo(
+            @CurrentRequester Requester requester,
             @PathVariable Long documentId
     ) {
-        DocumentInfoResponse response = documentService.findById(documentId);
+        DocumentInfoResponse response = documentService.findById(documentId, requester);
         return ResponseEntity.ok(ApiResult.success(response));
     }
 

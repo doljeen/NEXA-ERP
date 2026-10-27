@@ -6,6 +6,8 @@ import com.ssafy.approval_service.domain.approval.model.dto.ResubmitRequest;
 import com.ssafy.approval_service.domain.approval.service.ApprovalService;
 import com.ssafy.approval_service.global.dto.ApiResult;
 import com.ssafy.approval_service.global.security.CurrentEmployeeId;
+import com.ssafy.approval_service.global.security.CurrentRequester;
+import com.ssafy.approval_service.global.security.Requester;
 import com.ssafy.approval_service.global.security.SecurityConstants;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -28,9 +30,10 @@ public class ApprovalController {
     /** 문서의 결재 이력 (발생 순) */
     @GetMapping("/histories")
     public ResponseEntity<ApiResult<List<ApprovalHistoryResponse>>> getApprovalHistories(
+            @CurrentRequester Requester requester,
             @PathVariable Long documentId
     ) {
-        List<ApprovalHistoryResponse> response = approvalService.getHistories(documentId);
+        List<ApprovalHistoryResponse> response = approvalService.getHistories(documentId, requester);
         return ResponseEntity.ok(ApiResult.success(response));
     }
 

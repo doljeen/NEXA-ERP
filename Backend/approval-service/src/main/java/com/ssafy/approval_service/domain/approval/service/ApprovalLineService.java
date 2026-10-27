@@ -2,14 +2,15 @@ package com.ssafy.approval_service.domain.approval.service;
 
 import com.ssafy.approval_service.domain.approval.model.dto.ApprovalLineResponse;
 import com.ssafy.approval_service.domain.document.model.dto.ApprovalLineRequest;
+import com.ssafy.approval_service.global.security.Requester;
 
 import java.util.List;
 
-/** 문서 참여자(결재자/참조자/열람자) 관리. 모두 approval_line에 role로 구분해 저장한다 */
+/** 문서 참여자(결재자/참조자/열람자) 관리. 모두 approval_line에 role로 구분해 저장한다. 조회는 문서 조회 권한이 있어야 한다 */
 public interface ApprovalLineService {
 
     /** 결재자 조회 (APPROVER/AGREEMENT, step 순) */
-    List<ApprovalLineResponse> getApprovers(Long documentId);
+    List<ApprovalLineResponse> getApprovers(Long documentId, Requester requester);
 
     /** 결재자 추가 (기안자) */
     void addApprover(Long employeeId, Long documentId, ApprovalLineRequest request);
@@ -21,7 +22,7 @@ public interface ApprovalLineService {
     void reorderApprovers(Long employeeId, Long documentId, List<Long> approverIds);
 
     /** 참조자 조회 */
-    List<ApprovalLineResponse> getReferrers(Long documentId);
+    List<ApprovalLineResponse> getReferrers(Long documentId, Requester requester);
 
     /** 참조자 추가 (기안자) */
     void addReferrer(Long employeeId, Long documentId, Long referrerId);
@@ -30,7 +31,7 @@ public interface ApprovalLineService {
     void removeReferrer(Long employeeId, Long documentId, Long referrerId);
 
     /** 열람자 조회 */
-    List<ApprovalLineResponse> getViewers(Long documentId);
+    List<ApprovalLineResponse> getViewers(Long documentId, Requester requester);
 
     /** 열람자 추가 (기안자) */
     void addViewer(Long employeeId, Long documentId, Long viewerId);
