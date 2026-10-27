@@ -16,6 +16,7 @@ import com.ssafy.approval_service.domain.document.model.entity.enums.FormType;
 import com.ssafy.approval_service.domain.document.repository.DocumentRepository;
 import com.ssafy.approval_service.global.exception.BusinessException;
 import com.ssafy.approval_service.global.exception.ErrorCode;
+import com.ssafy.approval_service.global.security.Requester;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,11 +36,12 @@ public class DocumentServiceImplV1 implements DocumentService {
     private final ApprovalLineValidator approvalLineValidator;
 
     @Override
-    public DocumentListResponse findByStatusAndType(String approvalStatus, String formType) {
+    public DocumentListResponse findByStatusAndType(String approvalStatus, String formType, Requester requester) {
         DocumentStatus status = parseEnum(DocumentStatus.class, approvalStatus, "approvalStatus");
         FormType type = parseEnum(FormType.class, formType, "formType");
 
-        List<Document> documents = documentRepository.findByStatusAndFormType(status, type);
+        List<Document> documents = documentRepository.findReadableByStatusAndFormType(
+                status, type, requester.employeeId(), requester.admin());
         return DocumentListResponse.from(documents);
     }
 
@@ -85,8 +87,8 @@ public class DocumentServiceImplV1 implements DocumentService {
     }
 
     @Override
-    public DocumentInfoResponse findById(Long documentId) {
-        Document document = getDocument(documentId);
+    public DocumentInfoResponse findById(Long documentId, Requester requester) {
+        Document document = getReadableDocument(documentId, requester);
 
         List<ApprovalLine> lines = approvalLineRepository.findByDocumentDocIdOrderByStepAsc(documentId);
         List<ApprovalHistory> histories = approvalHistoryRepository.findByDocumentDocIdOrderByOccurredAtAsc(documentId);
@@ -99,6 +101,22 @@ public class DocumentServiceImplV1 implements DocumentService {
     public Document getDocument(Long documentId) {
         return documentRepository.findById(documentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND));
+    }
+
+    /**
+     * 조회 가능: 관리자, 기안자, 현재 결재선 참여자(결재자/합의자/참조자/열람자).
+     * 권한이 없으면 문서 존재 여부도 드러나지 않게 없는 문서와 같은 404로 응답한다
+     */
+    @Override
+    public Document getReadableDocument(Long documentId, Requester requester) {
+        Document document = getDocument(documentId);
+        if (requester.admin() || document.isDraftedBy(requester.employeeId())) {
+            return document;
+        }
+        if (!approvalLineRepository.existsByDocumentDocIdAndEmpId(documentId, requester.employeeId())) {
+            throw new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND);
+        }
+        return document;
     }
 
     /** 쿼리 파라미터 문자열을 enum으로 변환. null/빈 문자열은 null, 잘못된 값은 400 */

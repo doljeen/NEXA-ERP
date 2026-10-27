@@ -12,6 +12,7 @@ import com.ssafy.approval_service.domain.document.model.entity.Document;
 import com.ssafy.approval_service.domain.document.service.DocumentService;
 import com.ssafy.approval_service.global.exception.BusinessException;
 import com.ssafy.approval_service.global.exception.ErrorCode;
+import com.ssafy.approval_service.global.security.Requester;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,7 +37,8 @@ public class ApprovalServiceImplV1 implements ApprovalService {
     private final ApprovalLineValidator approvalLineValidator;
 
     @Override
-    public List<ApprovalHistoryResponse> getHistories(Long documentId) {
+    public List<ApprovalHistoryResponse> getHistories(Long documentId, Requester requester) {
+        documentService.getReadableDocument(documentId, requester);
         return approvalHistoryRepository.findByDocumentDocIdOrderByOccurredAtAsc(documentId).stream()
                 .map(ApprovalHistoryResponse::from)
                 .toList();

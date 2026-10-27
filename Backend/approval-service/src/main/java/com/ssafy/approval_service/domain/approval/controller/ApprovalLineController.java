@@ -7,6 +7,8 @@ import com.ssafy.approval_service.domain.approval.service.ApprovalLineService;
 import com.ssafy.approval_service.domain.document.model.dto.ApprovalLineRequest;
 import com.ssafy.approval_service.global.dto.ApiResult;
 import com.ssafy.approval_service.global.security.CurrentEmployeeId;
+import com.ssafy.approval_service.global.security.CurrentRequester;
+import com.ssafy.approval_service.global.security.Requester;
 import com.ssafy.approval_service.global.security.SecurityConstants;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -32,9 +34,10 @@ public class ApprovalLineController {
     /** 결재자 조회 (결재 순서대로) */
     @GetMapping("/approvers")
     public ResponseEntity<ApiResult<List<ApprovalLineResponse>>> getApprovers(
+            @CurrentRequester Requester requester,
             @PathVariable Long documentId
     ) {
-        return ResponseEntity.ok(ApiResult.success(approvalLineService.getApprovers(documentId)));
+        return ResponseEntity.ok(ApiResult.success(approvalLineService.getApprovers(documentId, requester)));
     }
 
     /** 결재자 추가 */
@@ -75,9 +78,10 @@ public class ApprovalLineController {
     /** 참조자 조회 */
     @GetMapping("/referrers")
     public ResponseEntity<ApiResult<List<ApprovalLineResponse>>> getReferrers(
+            @CurrentRequester Requester requester,
             @PathVariable Long documentId
     ) {
-        return ResponseEntity.ok(ApiResult.success(approvalLineService.getReferrers(documentId)));
+        return ResponseEntity.ok(ApiResult.success(approvalLineService.getReferrers(documentId, requester)));
     }
 
     /** 참조자 추가 */
@@ -107,9 +111,10 @@ public class ApprovalLineController {
     /** 열람자 조회 */
     @GetMapping("/viewers")
     public ResponseEntity<ApiResult<List<ApprovalLineResponse>>> getViewers(
+            @CurrentRequester Requester requester,
             @PathVariable Long documentId
     ) {
-        return ResponseEntity.ok(ApiResult.success(approvalLineService.getViewers(documentId)));
+        return ResponseEntity.ok(ApiResult.success(approvalLineService.getViewers(documentId, requester)));
     }
 
     /** 열람자 추가 */

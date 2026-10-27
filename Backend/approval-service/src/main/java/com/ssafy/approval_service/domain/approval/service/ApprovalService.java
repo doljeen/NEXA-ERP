@@ -2,11 +2,13 @@ package com.ssafy.approval_service.domain.approval.service;
 
 import com.ssafy.approval_service.domain.approval.model.dto.ApprovalHistoryResponse;
 import com.ssafy.approval_service.domain.approval.model.dto.ResubmitRequest;
+import com.ssafy.approval_service.global.security.Requester;
 
 import java.util.List;
 
 public interface ApprovalService {
-    List<ApprovalHistoryResponse> getHistories(Long documentId);
+    /** 결재 이력 (조회 권한이 있는 요청자만) */
+    List<ApprovalHistoryResponse> getHistories(Long documentId, Requester requester);
 
     /** 결재자: 승인 */
     void approve(Long employeeId, Long documentId);
