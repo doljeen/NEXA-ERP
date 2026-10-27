@@ -169,7 +169,7 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
         if (item.endAt() == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "endAt은 필수입니다.");
         }
-        validateStartAt(workDate, item.startAt());
+        processor.validateStartAt(workDate, item.startAt());
         if (!item.startAt().isBefore(item.endAt())) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "초과근무 종료 시각은 시작 시각보다 늦어야 합니다.");
         }
@@ -276,18 +276,8 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
         }
         WorkStatusCode statusCode = workStatusCodeRepository.findById(item.statusCode())
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_INPUT, "존재하지 않는 근무 상태입니다."));
-        validateStartAt(workDate, item.startAt());
+        processor.validateStartAt(workDate, item.startAt());
         return new SimulatedLog(statusCode.getStatusCode(), item.startAt(), statusCode.getCountAsWork());
-    }
-
-    private void validateStartAt(LocalDate workDate, OffsetDateTime startAt) {
-        if (startAt == null) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "startAt은 필수입니다.");
-        }
-        LocalDate startDate = startAt.atZoneSameInstant(DateTimeUtils.ZONE).toLocalDate();
-        if (!startDate.equals(workDate) && !startDate.equals(workDate.plusDays(1))) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "startAt은 근무일 당일 또는 다음 날이어야 합니다.");
-        }
     }
 
     private long countByCode(List<SimulatedLog> logs, String statusCode) {

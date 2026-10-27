@@ -14,6 +14,7 @@ import com.ssafy.attendanceservice.domain.attendance.repository.WorkStatusCodeRe
 import com.ssafy.attendanceservice.domain.attendance.repository.WorkStatusLogRepository;
 import com.ssafy.attendanceservice.global.exception.BusinessException;
 import com.ssafy.attendanceservice.global.exception.ErrorCode;
+import com.ssafy.attendanceservice.global.util.DateTimeUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -46,6 +47,17 @@ public class AttendanceDailyProcessor {
     /** 휴일 여부: 공휴일이거나 근무그룹의 근무 요일이 아님 */
     public boolean isHoliday(LocalDate date, WorkGroup workGroup) {
         return holidayRepository.existsById(date) || !workGroup.isWorkDay(date.getDayOfWeek());
+    }
+
+    /** 로그 시각은 근무일 당일 또는 다음 날(야간 근무 퇴근)만 허용 */
+    public void validateStartAt(LocalDate workDate, OffsetDateTime startAt) {
+        if (startAt == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "startAt은 필수입니다.");
+        }
+        LocalDate startDate = startAt.atZoneSameInstant(DateTimeUtils.ZONE).toLocalDate();
+        if (!startDate.equals(workDate) && !startDate.equals(workDate.plusDays(1))) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "startAt은 근무일 당일 또는 다음 날이어야 합니다.");
+        }
     }
 
     public WorkStatusCode getStatusCode(String statusCode) {
