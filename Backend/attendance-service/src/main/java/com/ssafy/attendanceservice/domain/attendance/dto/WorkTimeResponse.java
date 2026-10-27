@@ -1,5 +1,6 @@
 package com.ssafy.attendanceservice.domain.attendance.dto;
 
+import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeResult;
 import com.ssafy.attendanceservice.domain.attendance.entity.AttendanceDaily;
 
 /** 근로시간 상세 (단위: 분) */
@@ -27,6 +28,22 @@ public record WorkTimeResponse(
                 daily.getExcludedMin(),
                 daily.getApprovedOtMin(),
                 daily.getUnapprovedOtMin()
+        );
+    }
+
+    /** 계산 결과로 생성 (저장하지 않은 시뮬레이션 결과용) */
+    public static WorkTimeResponse from(WorkTimeResult result) {
+        return new WorkTimeResponse(
+                result.totalMin(),
+                result.regularMin(),
+                result.nightMin(),
+                result.otExtendedMin(),
+                result.otNightMin(),
+                result.otHolidayMin(),
+                result.breakMin(),
+                result.excludedMin(),
+                result.approvedOtMin(),
+                result.unapprovedOtMin()
         );
     }
 
