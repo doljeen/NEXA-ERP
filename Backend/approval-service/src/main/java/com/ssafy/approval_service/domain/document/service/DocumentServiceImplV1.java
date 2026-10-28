@@ -96,10 +96,20 @@ public class DocumentServiceImplV1 implements DocumentService {
         return DocumentInfoResponse.of(document, lines, histories);
     }
 
-    /** 다른 도메인 서비스용 엔티티 조회. 없으면 404 */
-    @Override
-    public Document getDocument(Long documentId) {
+    /** 잠금 없는 내부 조회 (조회 권한 검사용). 다른 도메인은 getReadableDocument / getDocumentForUpdate 를 쓴다. 없으면 404 */
+    private Document getDocument(Long documentId) {
         return documentRepository.findById(documentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND));
+    }
+
+    /**
+     * 결재 처리와 결재선 변경용. 잠금은 호출한 쪽 트랜잭션이 끝날 때 풀리므로,
+     * 같은 문서의 다음 요청은 기다렸다가 바뀐 상태로 다시 검증된다. 없으면 404
+     */
+    @Override
+    @Transactional
+    public Document getDocumentForUpdate(Long documentId) {
+        return documentRepository.findByIdForUpdate(documentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND));
     }
 

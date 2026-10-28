@@ -177,9 +177,9 @@ public class ApprovalLineServiceImplV1 implements ApprovalLineService {
         approvalLineRepository.delete(getLine(documentId, empId, List.of(role)));
     }
 
-    /** 변경 가능한 문서: 기안자 본인 + 진행 중 */
+    /** 변경 가능한 문서: 기안자 본인 + 진행 중. 잠가서 조회하므로 같은 문서의 동시 변경은 순서대로 처리된다 */
     private Document getEditableDocument(Long employeeId, Long documentId) {
-        Document document = documentService.getDocument(documentId);
+        Document document = documentService.getDocumentForUpdate(documentId);
         if (!document.isDraftedBy(employeeId)) {
             throw new BusinessException(ErrorCode.NOT_DRAFTER);
         }
