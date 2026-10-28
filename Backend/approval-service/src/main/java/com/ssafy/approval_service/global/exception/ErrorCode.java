@@ -35,6 +35,9 @@ public enum ErrorCode {
     NOT_YOUR_TURN(HttpStatus.FORBIDDEN, "APPROVAL_012", "현재 결재 차례가 아닙니다."),
     FINAL_APPROVE_NOT_ALLOWED(HttpStatus.FORBIDDEN, "APPROVAL_013", "전결은 결재자(APPROVER)만 할 수 있습니다."),
     DOCUMENT_NOT_REJECTED(HttpStatus.CONFLICT, "APPROVAL_014", "반려된 문서만 재기안할 수 있습니다."),
+    EMPLOYEE_NOT_FOUND(HttpStatus.BAD_REQUEST, "APPROVAL_015", "존재하지 않는 사원입니다."),
+    EMPLOYEE_NOT_ACTIVE(HttpStatus.BAD_REQUEST, "APPROVAL_016", "재직 중인 사원만 결재선에 지정할 수 있습니다."),
+    EMPLOYEE_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "APPROVAL_017", "사원 정보를 확인할 수 없습니다. 잠시 후 다시 시도하세요."),
 
     // 공통
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),

@@ -110,12 +110,13 @@ public class ApprovalServiceImplV1 implements ApprovalService {
     @Override
     @Transactional
     public void resubmit(Long employeeId, Long documentId, ResubmitRequest request) {
+        // 새 결재선 검증(user-service 호출 포함)은 문서를 잠그기 전에 한다. 잠근 채로 외부 응답을 기다리지 않도록
+        approvalLineValidator.validate(request.approvalLines(), employeeId);
         Document document = documentService.getDocumentForUpdate(documentId);
         validateDrafter(document, employeeId);
         if (!document.isRejected()) {
             throw new BusinessException(ErrorCode.DOCUMENT_NOT_REJECTED);
         }
-        approvalLineValidator.validate(request.approvalLines(), employeeId);
 
         // 이전 차수의 결재 기록은 이력에 남아 있으므로 결재선은 새로 지정
         approvalLineRepository.deleteByDocumentDocId(documentId);

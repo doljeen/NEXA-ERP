@@ -39,6 +39,7 @@ public class ApprovalLineServiceImplV1 implements ApprovalLineService {
     private final ApprovalLineRepository approvalLineRepository;
     private final ApprovalHistoryRepository approvalHistoryRepository;
     private final DocumentService documentService;
+    private final EmployeeVerifier employeeVerifier;
 
     // ===== 결재자 =====
 
@@ -50,6 +51,8 @@ public class ApprovalLineServiceImplV1 implements ApprovalLineService {
     @Override
     @Transactional
     public void addApprover(Long employeeId, Long documentId, ApprovalLineRequest request) {
+        // user-service 확인은 문서를 잠그기 전에 (잠근 채로 외부 응답을 기다리지 않도록)
+        employeeVerifier.verifyActive(request.empId());
         Document document = getEditableDocument(employeeId, documentId);
         if (!APPROVER_ROLES.contains(request.role())) {
             throw new BusinessException(ErrorCode.INVALID_APPROVER_ROLE);
@@ -163,6 +166,7 @@ public class ApprovalLineServiceImplV1 implements ApprovalLineService {
 
     /** 순서가 없는 참여자(참조자/열람자) 추가. step은 비워 둔다 */
     private void addParticipant(Long employeeId, Long documentId, Long empId, LineRole role) {
+        employeeVerifier.verifyActive(empId);   // 잠금 전에 확인 (addApprover와 같은 이유)
         Document document = getEditableDocument(employeeId, documentId);
         validateNewParticipant(document, empId);
         approvalLineRepository.save(ApprovalLine.builder()
