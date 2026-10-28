@@ -16,6 +16,8 @@ build-eureka:
   artifacts:
     when: always
     expire_in: 7 days
+    paths:
+      - Backend/eureka-server/build/libs/*.jar
     reports:
       junit: Backend/eureka-server/build/test-results/test/TEST-*.xml
 
@@ -28,6 +30,7 @@ build-eureka:
         - .gitlab-ci.yml
         - compose.dev.yml
         - infra/compose/**/*
+        - infra/docker/**/*
       when: on_success
       allow_failure: false
 
