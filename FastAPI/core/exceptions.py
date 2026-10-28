@@ -23,6 +23,13 @@ class ErrorCode(Enum):
     WF_VERSION_NOT_FOUND = (404, "WF_002", "존재하지 않는 버전입니다.")
     WF_INVALID_GRAPH = (400, "WF_003", "워크플로우 흐름에 오류가 있습니다.")
     WF_NOT_DEPLOYED = (409, "WF_004", "배포되지 않은 워크플로우입니다.")
+    WF_HAS_RUNS = (409, "WF_005", "실행 기록이 있는 워크플로우는 삭제할 수 없습니다.")
+
+    # 워크플로우 실행
+    RUN_NOT_FOUND = (404, "RUN_001", "존재하지 않는 실행입니다.")
+    RUN_ALREADY_FINISHED = (409, "RUN_002", "이미 끝난 실행입니다.")
+    RUN_MISSING_INPUT = (400, "RUN_003", "필수 입력값이 비어 있습니다.")
+
 
     def __init__(self, status: int, code: str, message: str):
         self.status = status
