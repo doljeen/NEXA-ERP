@@ -1,22 +1,13 @@
 build-approval:
+  extends: .testcontainers
   stage: build
   image: eclipse-temurin:21-jdk
 
   tags:
     - nexa-ci
 
-  services:
-    - name: postgres:17-alpine
-      alias: postgres
-
   variables:
-    POSTGRES_DB: nexa_approval_test
-    POSTGRES_USER: ci_user
-    POSTGRES_PASSWORD: ci_test_password
-
-    SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nexa_approval_test
-    SPRING_DATASOURCE_USERNAME: ci_user
-    SPRING_DATASOURCE_PASSWORD: ci_test_password
+    EUREKA_CLIENT_ENABLED: "false"
 
   script:
     - cd Backend/approval-service
@@ -28,5 +19,43 @@ build-approval:
     reports:
       junit: Backend/approval-service/build/test-results/test/TEST-*.xml
 
-  when: manual
-  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: &approval_changes
+        - Backend/approval-service/**/*
+        - .gitlab/ci/approval.yml
+        - .gitlab/ci/testcontainers.yml
+        - .gitlab/ci/deploy.yml
+        - .gitlab-ci.yml
+        - compose.dev.yml
+        - infra/compose/**/*
+      when: on_success
+      allow_failure: false
+
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes: *approval_changes
+      when: on_success
+      allow_failure: false
+
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: true
+
+deploy-approval-dev:
+  extends: .deploy-dev
+
+  needs:
+    - job: build-approval
+    - job: deploy-eureka-dev
+      optional: true
+    - job: deploy-user-dev
+      optional: true
+
+  variables:
+    DEPLOY_SERVICE: approval-service
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes: *approval_changes
+      when: on_success
+      allow_failure: false
