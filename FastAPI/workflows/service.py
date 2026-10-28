@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from core.exceptions import BusinessException, ErrorCode
+from runs.models import Run
 from workflows.models import Workflow, WorkflowVersion
 from workflows.schemas import (
     Graph,
@@ -66,6 +67,9 @@ def update_workflow(db: Session, workflow_id: int, req: WorkflowUpdateRequest) -
 # 6. 삭제
 def delete_workflow(db: Session, workflow_id: int) -> None:
     workflow = _get(db, workflow_id)
+    has_runs = db.scalars(select(Run.id).where(Run.workflow_id == workflow_id).limit(1)).first()
+    if has_runs:
+        raise BusinessException(ErrorCode.WF_HAS_RUNS)
     db.delete(workflow)
     db.commit()
 
