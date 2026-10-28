@@ -16,6 +16,8 @@ build-user:
   artifacts:
     when: always
     expire_in: 7 days
+    paths:
+      - Backend/user-service/build/libs/*.jar
     reports:
       junit: Backend/user-service/build/test-results/test/TEST-*.xml
 
@@ -29,6 +31,7 @@ build-user:
         - .gitlab-ci.yml
         - compose.dev.yml
         - infra/compose/**/*
+        - infra/docker/**/*
       when: on_success
       allow_failure: false
 
