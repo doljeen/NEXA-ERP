@@ -55,7 +55,7 @@ public class GlobalExceptionHandler {
                 .body(ApiResult.fail(ErrorCode.ACCESS_DENIED));
     }
 
-    // FK/UNIQUE 위반 등 DB 제약. 서비스 검증을 통과했지만 동시 요청 등으로 걸린 경우 → 409
+    // FK 등 DB 제약 위반 대비 → 409. 동시 요청은 문서 행 잠금으로 막으므로 정상 흐름에서는 걸리지 않는다
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiResult<Void>> handleDataIntegrity(DataIntegrityViolationException e) {
         log.warn("Data integrity violation: {}", e.getMostSpecificCause().getMessage());

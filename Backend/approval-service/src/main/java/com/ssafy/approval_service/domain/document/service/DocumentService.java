@@ -18,7 +18,8 @@ public interface DocumentService {
     /** 문서 상세 (문서 + 결재선 + 이력) */
     DocumentInfoResponse findById(Long documentId, Requester requester);
 
-    Document getDocument(Long documentId);
+    /** 변경용 엔티티 조회. 문서 행을 잠가 동시 변경을 막는다. 없으면 404 */
+    Document getDocumentForUpdate(Long documentId);
 
     /** 조회 권한까지 확인한 문서. 없거나 권한이 없으면 404 */
     Document getReadableDocument(Long documentId, Requester requester);

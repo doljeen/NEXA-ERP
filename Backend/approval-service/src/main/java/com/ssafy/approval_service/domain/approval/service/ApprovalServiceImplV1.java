@@ -110,7 +110,7 @@ public class ApprovalServiceImplV1 implements ApprovalService {
     @Override
     @Transactional
     public void resubmit(Long employeeId, Long documentId, ResubmitRequest request) {
-        Document document = documentService.getDocument(documentId);
+        Document document = documentService.getDocumentForUpdate(documentId);
         validateDrafter(document, employeeId);
         if (!document.isRejected()) {
             throw new BusinessException(ErrorCode.DOCUMENT_NOT_REJECTED);
@@ -134,8 +134,9 @@ public class ApprovalServiceImplV1 implements ApprovalService {
 
     // ===== 공통 =====
 
+    /** 진행 중인 문서를 잠가서 조회. 같은 문서의 동시 요청은 순서대로 처리된다 */
     private Document getInProgressDocument(Long documentId) {
-        Document document = documentService.getDocument(documentId);
+        Document document = documentService.getDocumentForUpdate(documentId);
         if (!document.isInProgress()) {
             throw new BusinessException(ErrorCode.DOCUMENT_NOT_IN_PROGRESS);
         }
