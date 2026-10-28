@@ -21,7 +21,9 @@ import java.time.Duration;
 @Configuration
 public class UserServiceClientConfig {
 
-    @Bean
+    // defaultCandidate = false: Eureka 클라이언트 등 다른 곳이 이 빌더를 주입받으면
+    // Eureka 서버 주소(localhost)까지 서비스 이름으로 찾다가 등록에 실패한다. @LoadBalanced 로 요청한 곳만 받는다
+    @Bean(defaultCandidate = false)
     @LoadBalanced
     RestClient.Builder loadBalancedRestClientBuilder() {
         return RestClient.builder();
