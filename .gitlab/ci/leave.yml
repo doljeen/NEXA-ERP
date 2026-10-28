@@ -1,5 +1,7 @@
 build-leave:
-  extends: .testcontainers
+  extends:
+    - .testcontainers
+    - .gradle-cache
   stage: build
   image: eclipse-temurin:21-jdk
 

@@ -1,4 +1,5 @@
 build-eureka:
+  extends: .gradle-cache
   stage: build
   image: eclipse-temurin:21-jdk
 
