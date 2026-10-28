@@ -91,3 +91,4 @@ def build_graph(graph_json: dict, recorder: StepRecorder | None = None, checkpoi
     builder.add_edge(START, start_ids[0])
 
     return builder.compile(checkpointer=checkpointer)
+    
