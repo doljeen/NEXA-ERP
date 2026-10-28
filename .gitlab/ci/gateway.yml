@@ -48,6 +48,8 @@ deploy-gateway-dev:
       optional: true
     - job: deploy-eureka-dev
       optional: true
+    - job: deploy-user-dev
+      optional: true
 
   variables:
     DEPLOY_SERVICE: gateway-service
