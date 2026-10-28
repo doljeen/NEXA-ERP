@@ -30,12 +30,24 @@ public class EmployeeAdminController {
                 .body(ApiResult.success(new EmployeeCreateResponse(employeeId)));
     }
 
-    /** 사원 목록. deptId가 있으면 해당 부서원만, 없으면 전체 */
+    /**
+     * 사원 목록. ids가 있으면 그 사원들만(없는 ID는 빠짐), deptId가 있으면 해당 부서원만, 둘 다 없으면 전체.
+     * ids는 결재선 검증·이름 표시처럼 여러 사원을 한 번에 확인할 때 쓴다 (approval-service, 프런트엔드)
+     */
     @GetMapping
-    public ResponseEntity<ApiResult<EmployeeListResponse>> getList(@RequestParam(required = false) Long deptId) {
-        List<Employee> employees = deptId == null
-                ? employeeService.findAll()
-                : employeeService.findByDeptId(deptId);
+    public ResponseEntity<ApiResult<EmployeeListResponse>> getList(@RequestParam(required = false) Long deptId,
+                                                                   @RequestParam(required = false) List<Long> ids) {
+        if (ids != null && deptId != null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "ids와 deptId는 함께 쓸 수 없습니다.");
+        }
+        List<Employee> employees;
+        if (ids != null) {
+            employees = employeeService.findAllByIds(ids);
+        } else if (deptId != null) {
+            employees = employeeService.findByDeptId(deptId);
+        } else {
+            employees = employeeService.findAll();
+        }
         return ResponseEntity.ok(ApiResult.success(EmployeeListResponse.from(employees)));
     }
 

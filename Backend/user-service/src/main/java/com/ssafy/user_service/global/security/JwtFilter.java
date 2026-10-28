@@ -10,6 +10,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -20,7 +21,7 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * accessToken 쿠키를 검증해 SecurityContext에 인증을 등록한다.
+ * accessToken 쿠키(없으면 Authorization: Bearer 헤더)를 검증해 SecurityContext에 인증을 등록한다.
  * 토큰이 없거나 유효하지 않으면 인증을 등록하지 않고 다음 필터로 넘긴다.
  * 보호된 경로라면 이후 AuthorizationFilter가 401을 발생시키고 JwtAuthenticationEntryPoint가
  * 응답을 작성하며, 그때 이 필터가 request attribute에 남긴 ErrorCode를 사용한다.
@@ -31,6 +32,7 @@ import java.util.List;
 public class JwtFilter extends OncePerRequestFilter {
 
     public static final String JWT_ERROR_ATTRIBUTE = "jwtError";
+    private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtUtil jwtUtil;
     private final TokenStore tokenStore;
@@ -39,7 +41,7 @@ public class JwtFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-        String token = cookieManager.readAccessToken(request);
+        String token = resolveToken(request);
 
         // 토큰이 없는 경우는 오류가 아니라 미인증 상태 → 그대로 통과
         if (token == null) {
@@ -76,6 +78,22 @@ public class JwtFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * 브라우저 요청은 accessToken 쿠키, 서비스 간 호출(approval-service 등)은 Authorization: Bearer 헤더.
+     * 쿠키가 우선이며, 어느 쪽이든 아래의 type/블랙리스트 검사를 똑같이 거친다
+     */
+    private String resolveToken(HttpServletRequest request) {
+        String cookieToken = cookieManager.readAccessToken(request);
+        if (cookieToken != null && !cookieToken.isBlank()) {
+            return cookieToken;
+        }
+        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (header != null && header.startsWith(BEARER_PREFIX) && header.length() > BEARER_PREFIX.length()) {
+            return header.substring(BEARER_PREFIX.length());
+        }
+        return null;
     }
 
     private void reject(HttpServletRequest request, ErrorCode errorCode) {

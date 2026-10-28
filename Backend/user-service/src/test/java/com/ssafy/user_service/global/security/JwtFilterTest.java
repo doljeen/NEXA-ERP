@@ -55,6 +55,13 @@ class JwtFilterTest {
         return req;
     }
 
+    private MockHttpServletRequest runWithHeader(String authorization) throws Exception {
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/x");
+        req.addHeader("Authorization", authorization);
+        filter.doFilter(req, new MockHttpServletResponse(), new MockFilterChain());
+        return req;
+    }
+
     private static Object errorOf(MockHttpServletRequest req) {
         return req.getAttribute(JwtFilter.JWT_ERROR_ATTRIBUTE);
     }
@@ -88,6 +95,43 @@ class JwtFilterTest {
         when(tokenStore.isBlacklisted(token.id())).thenReturn(true);
         MockHttpServletRequest req = run(token.value());
         assertThat(errorOf(req)).isEqualTo(ErrorCode.TOKEN_BLACKLISTED);
+    }
+
+    // ===== Authorization: Bearer 헤더 (서비스 간 호출) =====
+
+    @Test
+    void 쿠키가_없으면_Bearer_헤더의_access로_인증() throws Exception {
+        runWithHeader("Bearer " + jwtUtil.generateAccessToken(7L, Role.USER).value());
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(((AuthUser) auth.getPrincipal()).employeeId()).isEqualTo(7L);
+        assertThat(auth.getAuthorities()).extracting("authority").containsExactly("ROLE_USER");
+    }
+
+    @Test
+    void Bearer_헤더도_블랙리스트와_type_검사를_거침() throws Exception {
+        var token = jwtUtil.generateAccessToken(7L, Role.USER);
+        when(tokenStore.isBlacklisted(token.id())).thenReturn(true);
+        assertThat(errorOf(runWithHeader("Bearer " + token.value()))).isEqualTo(ErrorCode.TOKEN_BLACKLISTED);
+        assertThat(errorOf(runWithHeader("Bearer " + jwtUtil.generateRefreshToken(7L).value())))
+                .isEqualTo(ErrorCode.TOKEN_INVALID);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void Bearer_형식이_아닌_헤더는_토큰_없음으로_통과() throws Exception {
+        MockHttpServletRequest req = runWithHeader("Basic dXNlcjpwYXNz");
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        assertThat(errorOf(req)).isNull();
+    }
+
+    @Test
+    void 쿠키와_헤더가_모두_있으면_쿠키가_우선() throws Exception {
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/x");
+        req.setCookies(new Cookie(SecurityConstants.ACCESS_COOKIE, jwtUtil.generateAccessToken(1L, Role.USER).value()));
+        req.addHeader("Authorization", "Bearer " + jwtUtil.generateAccessToken(2L, Role.ADMIN).value());
+        filter.doFilter(req, new MockHttpServletResponse(), new MockFilterChain());
+        assertThat(((AuthUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).employeeId())
+                .isEqualTo(1L);
     }
 
     @Test

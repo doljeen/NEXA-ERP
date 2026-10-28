@@ -5,6 +5,7 @@ import com.ssafy.user_service.domain.user.dto.EmployeeSummary;
 import com.ssafy.user_service.domain.user.dto.EmployeeTerminateRequest;
 import com.ssafy.user_service.domain.user.entity.Employee;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,6 +24,9 @@ public interface EmployeeService {
     EmployeeSummary summarize(Employee employee);
 
     List<Employee> findAll();
+
+    /** 여러 사원을 한 번에 조회. 없는 ID는 결과에서 빠진다. 최대 개수를 넘으면 BusinessException */
+    List<Employee> findAllByIds(Collection<Long> employeeIds);
 
     /** 부서 기준 사원 목록. 존재하지 않는 부서면 BusinessException */
     List<Employee> findByDeptId(Long deptId);

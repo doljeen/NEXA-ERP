@@ -23,12 +23,17 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 public class EmployeeServiceImplV1 implements EmployeeService {
+
+    /** 일괄 조회 최대 개수. 결재선 인원보다 넉넉하게 두고, 전체 조회 우회는 막는다 */
+    private static final int MAX_BULK_IDS = 100;
 
     private final EmployeeRepository employeeRepository;
     private final DepartmentRepository departmentRepository;
@@ -99,6 +104,17 @@ public class EmployeeServiceImplV1 implements EmployeeService {
     @Override
     public List<Employee> findAll() {
         return employeeRepository.findAll();
+    }
+
+    @Override
+    public List<Employee> findAllByIds(Collection<Long> employeeIds) {
+        if (employeeIds.size() > MAX_BULK_IDS) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "ids는 최대 " + MAX_BULK_IDS + "개까지 조회할 수 있습니다.");
+        }
+        if (employeeIds.isEmpty()) {
+            return List.of();
+        }
+        return employeeRepository.findAllById(new HashSet<>(employeeIds));
     }
 
     @Override
