@@ -17,6 +17,9 @@ public enum ErrorCode {
 
     // 급여 (단계 진행하면서 추가)
     ATTENDANCE_CALL_FAILED(HttpStatus.BAD_GATEWAY, "PAY_001", "근태 서비스 호출에 실패했습니다."),
+    PAY_GRADE_NOT_FOUND(HttpStatus.NOT_FOUND, "PAY_002", "직급별 기본급이 등록되지 않았습니다."),
+    PAYSLIP_ALREADY_EXISTS(HttpStatus.CONFLICT, "PAY_003", "해당 월의 급여명세서가 이미 있습니다."),
+    PAY_ITEM_NOT_FOUND(HttpStatus.INTERNAL_SERVER_ERROR, "PAY_004", "급여 항목이 설정되지 않았습니다."),
 
     // 공통 (user-service와 동일)
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),
