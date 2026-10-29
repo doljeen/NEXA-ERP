@@ -3,12 +3,8 @@ package com.ssafy.approval_service.domain.approval;
 import com.jayway.jsonpath.JsonPath;
 import com.ssafy.approval_service.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.RequestBuilder;
-import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,8 +16,11 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static com.ssafy.approval_service.support.ApprovalTestFixtures.admin;
+import static com.ssafy.approval_service.support.ApprovalTestFixtures.line;
+import static com.ssafy.approval_service.support.ApprovalTestFixtures.path;
+import static com.ssafy.approval_service.support.ApprovalTestFixtures.user;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -33,44 +32,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class ApprovalConcurrencyIntegrationTest extends AbstractIntegrationTest {
 
-    private static final String BASE = "/api/v1/documents";
     private static final AtomicLong EMP_SEQ = new AtomicLong(200_000);
     private static final int ROUNDS = 5;
 
-    @Autowired
-    MockMvc mvc;
-
     private static long newEmployee() {
         return EMP_SEQ.incrementAndGet();
-    }
-
-    private static RequestPostProcessor user(long empId) {
-        return jwt().jwt(j -> j.subject(String.valueOf(empId)).claim("type", "access").claim("role", "USER"));
-    }
-
-    private static RequestPostProcessor admin() {
-        return jwt().jwt(j -> j.subject(String.valueOf(newEmployee())).claim("type", "access").claim("role", "ADMIN"));
-    }
-
-    private static String line(long empId, int step, String role) {
-        return """
-                {"empId":%d,"step":%d,"role":"%s"}""".formatted(empId, step, role);
-    }
-
-    private static String path(long documentId, String sub) {
-        return BASE + "/" + documentId + sub;
-    }
-
-    private long createDocument(long drafter, String... lines) throws Exception {
-        String body = """
-                {"docNo":"DOC-%d","title":"동시성 테스트","formType":"GENERAL","approvalLines":[%s]}"""
-                .formatted(drafter, String.join(",", lines));
-        MvcResult created = mvc.perform(post(BASE).with(user(drafter))
-                        .contentType(MediaType.APPLICATION_JSON).content(body))
-                .andExpect(status().isCreated())
-                .andReturn();
-        Number id = JsonPath.read(created.getResponse().getContentAsString(), "$.data.documentId");
-        return id.longValue();
     }
 
     /** 요청들을 동시에 출발시키고 응답 상태 코드를 요청 순서대로 반환 */
@@ -100,7 +66,7 @@ class ApprovalConcurrencyIntegrationTest extends AbstractIntegrationTest {
     }
 
     private String read(String path) throws Exception {
-        return mvc.perform(get(path).with(admin()))
+        return mvc.perform(get(path).with(admin(newEmployee())))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
     }

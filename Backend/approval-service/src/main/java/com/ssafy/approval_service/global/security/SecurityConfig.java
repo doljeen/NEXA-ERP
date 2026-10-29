@@ -1,6 +1,5 @@
 package com.ssafy.approval_service.global.security;
 
-import jakarta.servlet.http.Cookie;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -20,10 +19,7 @@ import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
-import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
-import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.web.util.WebUtils;
 
 import java.time.Duration;
 
@@ -34,8 +30,6 @@ public class SecurityConfig {
 
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
     private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
-
-    private final BearerTokenResolver headerResolver = new DefaultBearerTokenResolver();
 
     private static final String[] PERMIT_URLS = {
             "/actuator/health",
@@ -52,8 +46,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PERMIT_URLS).permitAll()
                         .anyRequest().authenticated())
+                // 토큰은 Authorization: Bearer 헤더로만 받는다 (브라우저 쿠키는 gateway 가 Bearer 로 바꿔 넘긴다)
                 .oauth2ResourceServer(o -> o
-                        .bearerTokenResolver(cookieOrHeaderResolver())
                         .authenticationEntryPoint(jwtAuthenticationEntryPoint) // 토큰이 틀렸을 때
                         .accessDeniedHandler(jwtAccessDeniedHandler)
                         .jwt(j -> j.jwtAuthenticationConverter(roleConverter())))
@@ -61,16 +55,6 @@ public class SecurityConfig {
                         .authenticationEntryPoint(jwtAuthenticationEntryPoint) // 토큰이 없을 때
                         .accessDeniedHandler(jwtAccessDeniedHandler))          // 토큰은 맞는데 권한이 부족할 때
                 .build();
-    }
-
-    // 브라우저 요청은 accessToken 쿠키, 서비스 간 호출은 Authorization 헤더
-    BearerTokenResolver cookieOrHeaderResolver() {
-        return request -> {
-          Cookie cookie = WebUtils.getCookie(request, SecurityConstants.ACCESS_TOKEN_COOKIE);
-          return (cookie != null && !cookie.getValue().isBlank())
-                  ? cookie.getValue()
-                  : headerResolver.resolve(request);
-        };
     }
 
     private JwtAuthenticationConverter roleConverter() {

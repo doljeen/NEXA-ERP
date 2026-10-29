@@ -2,16 +2,19 @@ package com.ssafy.approval_service.domain.document;
 
 import com.jayway.jsonpath.JsonPath;
 import com.ssafy.approval_service.support.AbstractIntegrationTest;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static com.ssafy.approval_service.support.ApprovalTestFixtures.BASE;
+import static com.ssafy.approval_service.support.ApprovalTestFixtures.admin;
+import static com.ssafy.approval_service.support.ApprovalTestFixtures.line;
+import static com.ssafy.approval_service.support.ApprovalTestFixtures.user;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -26,11 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class DocumentReadPermissionIntegrationTest extends AbstractIntegrationTest {
 
-    private static final String BASE = "/api/v1/documents";
     private static final AtomicLong EMP_SEQ = new AtomicLong(1_000);
-
-    @Autowired
-    MockMvc mvc;
 
     /** 기안자 1명 + 결재자/합의자/참조자/열람자 1명씩인 문서 */
     private record Fixture(long documentId, long drafter, long approver, long agreement, long referrer, long viewer) {
@@ -40,33 +39,8 @@ class DocumentReadPermissionIntegrationTest extends AbstractIntegrationTest {
         return EMP_SEQ.incrementAndGet();
     }
 
-    private static RequestPostProcessor user(long empId) {
-        return jwt().jwt(j -> j.subject(String.valueOf(empId)).claim("type", "access").claim("role", "USER"));
-    }
-
-    private static RequestPostProcessor admin(long empId) {
-        return jwt().jwt(j -> j.subject(String.valueOf(empId)).claim("type", "access").claim("role", "ADMIN"));
-    }
-
     private static RequestPostProcessor withoutRole(long empId) {
         return jwt().jwt(j -> j.subject(String.valueOf(empId)).claim("type", "access"));
-    }
-
-    private static String line(long empId, int step, String role) {
-        return """
-                {"empId":%d,"step":%d,"role":"%s"}""".formatted(empId, step, role);
-    }
-
-    private long createDocument(long drafter, String... lines) throws Exception {
-        String body = """
-                {"docNo":"DOC-%d","title":"권한 테스트","formType":"GENERAL","approvalLines":[%s]}"""
-                .formatted(drafter, String.join(",", lines));
-        MvcResult created = mvc.perform(post(BASE).with(user(drafter))
-                        .contentType(MediaType.APPLICATION_JSON).content(body))
-                .andExpect(status().isCreated())
-                .andReturn();
-        Number id = JsonPath.read(created.getResponse().getContentAsString(), "$.data.documentId");
-        return id.longValue();
     }
 
     private Fixture createFixture() throws Exception {
@@ -172,6 +146,15 @@ class DocumentReadPermissionIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.error.code").value("AUTH_001"));
     }
 
+    @Test
+    void 쿠키만_있고_Bearer_헤더가_없으면_401() throws Exception {
+        // 쿠키 → Bearer 변환은 gateway 가 한다. 하위 서비스는 쿠키를 읽지 않는다
+        Fixture f = createFixture();
+        mvc.perform(get(BASE + "/" + f.documentId()).cookie(new Cookie("accessToken", "any-token")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("AUTH_001"));
+    }
+
     // ===== 결재선에서 빠진 사람 =====
 
     @Test
@@ -255,5 +238,48 @@ class DocumentReadPermissionIntegrationTest extends AbstractIntegrationTest {
         assertThat(listedIds(user(drafter), "?approvalStatus=APPROVED")).containsExactly(approvedDoc);
         assertThat(listedIds(user(drafter), "?approvalStatus=INPROGRESS")).containsExactly(inProgressDoc);
         assertThat(listedIds(user(newEmployee()), "?approvalStatus=APPROVED")).isEmpty();
+    }
+
+    // ===== 기안함 (box=DRAFTED) =====
+
+    @Test
+    void 기안함은_내가_기안한_문서만_결재선에_있는_문서는_제외() throws Exception {
+        long me = newEmployee();
+        long drafted = createDocument(me, line(newEmployee(), 1, "APPROVER"));
+        long assigned = createDocument(newEmployee(), line(me, 1, "APPROVER"));
+
+        assertThat(listedIds(user(me), "")).contains(drafted, assigned);
+        assertThat(listedIds(user(me), "?box=DRAFTED")).containsExactly(drafted);
+        assertThat(listedIds(user(me), "?box=drafted")).containsExactly(drafted);   // 다른 필터처럼 대소문자 무시
+    }
+
+    @Test
+    void 관리자도_기안함에는_본인_기안만() throws Exception {
+        long adminId = newEmployee();
+        long mine = createDocument(adminId, line(newEmployee(), 1, "APPROVER"));
+        Fixture other = createFixture();
+
+        assertThat(listedIds(admin(adminId), "?box=DRAFTED"))
+                .containsExactly(mine).doesNotContain(other.documentId());
+    }
+
+    @Test
+    void 기안함과_상태_필터를_함께_적용() throws Exception {
+        long drafter = newEmployee();
+        long approver = newEmployee();
+        long approvedDoc = createDocument(drafter, line(approver, 1, "APPROVER"));
+        long inProgressDoc = createDocument(drafter, line(approver, 1, "APPROVER"));
+        mvc.perform(post(BASE + "/" + approvedDoc + "/approve").with(user(approver)))
+                .andExpect(status().isOk());
+
+        assertThat(listedIds(user(drafter), "?box=DRAFTED&approvalStatus=INPROGRESS")).containsExactly(inProgressDoc);
+        assertThat(listedIds(user(approver), "?box=DRAFTED")).isEmpty();
+    }
+
+    @Test
+    void 잘못된_문서함_값은_400() throws Exception {
+        mvc.perform(get(BASE + "?box=INBOX").with(user(newEmployee())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("COMMON_001"));
     }
 }

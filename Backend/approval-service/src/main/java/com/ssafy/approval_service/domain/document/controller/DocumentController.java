@@ -33,14 +33,16 @@ public class DocumentController {
      * 문서 목록 조회
      * approvalStatus = 결재상태 (INPROGRESS/APPROVED/REJECTED/CANCEL)
      * formType = 문서양식
+     * box = 문서함 (DRAFTED: 기안함). 없으면 조회할 수 있는 문서 전체
      */
     @GetMapping
     public ResponseEntity<ApiResult<DocumentListResponse>> getDocumentList(
             @CurrentRequester Requester requester,
             @RequestParam(required = false) String approvalStatus,
-            @RequestParam(required = false) String formType
+            @RequestParam(required = false) String formType,
+            @RequestParam(required = false) String box
     ) {
-        DocumentListResponse response = documentService.findByStatusAndType(approvalStatus, formType, requester);
+        DocumentListResponse response = documentService.findByStatusAndType(approvalStatus, formType, box, requester);
         return ResponseEntity.ok(ApiResult.success(response));
     }
 

@@ -9,8 +9,8 @@ import com.ssafy.approval_service.global.security.Requester;
 
 public interface DocumentService {
 
-    /** 결재상태/문서양식으로 목록 조회. 둘 다 null 허용. 요청자가 조회할 수 있는 문서만 */
-    DocumentListResponse findByStatusAndType(String approvalStatus, String formType, Requester requester);
+    /** 결재상태/문서양식/문서함으로 목록 조회. 모두 null 허용. 요청자가 조회할 수 있는 문서만 */
+    DocumentListResponse findByStatusAndType(String approvalStatus, String formType, String box, Requester requester);
 
     /** 문서 생성 + 상신. 결재선 저장과 SUBMIT 이력 기록까지 한 트랜잭션 */
     DocumentCreateResponse create(DocumentCreateRequest request, Long drafterId);
