@@ -3,6 +3,9 @@ package com.ssafy.payrollservice.domain.payroll.service;
 import com.ssafy.payrollservice.domain.payroll.dto.ContractResponse;
 import com.ssafy.payrollservice.domain.payroll.dto.PayslipDetailResponse;
 import com.ssafy.payrollservice.domain.payroll.dto.PayslipListResponse;
+import com.ssafy.payrollservice.domain.payroll.dto.RetirementEstimateResponse;
+
+import java.time.LocalDate;
 
 public interface PayslipService {
 
@@ -14,4 +17,7 @@ public interface PayslipService {
 
     /** 내 급여 정보. 가장 최근 명세서의 사원 정보와 기본급 기준, 명세서가 없으면 404 */
     ContractResponse getMyContract(Long empId);
+
+    /** 예상 퇴직금. 퇴직월 이전 최근 명세서 3건 기준, 명세서가 없으면 404 */
+    RetirementEstimateResponse getRetirementEstimate(Long empId, LocalDate resignDate);
 }
