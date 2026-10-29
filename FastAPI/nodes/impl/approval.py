@@ -1,5 +1,6 @@
 import time
-import uuid
+
+from langgraph.types import interrupt
 
 from nodes.base import BaseNode, NodeContext, NodeResult
 
@@ -16,9 +17,19 @@ class ApprovalNode(BaseNode):
     branches = ["승인", "반려"]
     output_vars = [
         {"key": "approval_id", "label": "결재 번호", "type": "text"},
+        {"key": "comment", "label": "결재 의견", "type": "text"},
     ]
 
     def run(self, ctx: NodeContext) -> NodeResult:
         time.sleep(1)
-        approval_id = f"TEMP-{uuid.uuid4().hex[:8]}"
-        return NodeResult(output={"approval_id": approval_id}, branch="승인")
+        approval_id = f"TEMP-{ctx.run_id}-{ctx.node_id}"
+        print("결재 상신", approval_id)
+
+        decision = interrupt({"approval_id": approval_id, "form_code": ctx.config["form_code"]})
+
+        branch = "승인" if decision.get("approved") else "반려"
+
+        return NodeResult(
+            output={"approval_id": approval_id, "comment": decision.get("comment")},
+            branch=branch,
+        )

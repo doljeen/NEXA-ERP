@@ -7,6 +7,7 @@ import runs.models
 import workflows.models  # noqa: F401  테이블 등록용
 from core.config import settings
 from core.database import Base, engine
+from engine.checkpointer import close_checkpointer, init_checkpointer
 from core.exceptions import register_exception_handlers
 from nodes.routers import router as nodes_router
 from runs.routers import router as runs_router
@@ -21,6 +22,7 @@ SERVICE_NAME = "ai-service"
 async def lifespan(app: FastAPI):
     # 서버 켤 때
     Base.metadata.create_all(engine)
+    init_checkpointer()
     if settings.eureka_server_url:
         options = {}
         if settings.instance_host:
@@ -33,6 +35,7 @@ async def lifespan(app: FastAPI):
         )
     yield
     # 서버 끌 때
+    close_checkpointer()
     if settings.eureka_server_url:
         await eureka_client.stop_async()
 

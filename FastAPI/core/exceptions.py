@@ -29,6 +29,7 @@ class ErrorCode(Enum):
     RUN_NOT_FOUND = (404, "RUN_001", "존재하지 않는 실행입니다.")
     RUN_ALREADY_FINISHED = (409, "RUN_002", "이미 끝난 실행입니다.")
     RUN_MISSING_INPUT = (400, "RUN_003", "필수 입력값이 비어 있습니다.")
+    RUN_NOT_WAITING = (409, "RUN_004", "확인 대기 중인 실행이 아닙니다.")
 
 
     def __init__(self, status: int, code: str, message: str):
