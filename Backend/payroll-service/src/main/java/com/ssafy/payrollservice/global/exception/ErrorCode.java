@@ -21,6 +21,7 @@ public enum ErrorCode {
     PAYSLIP_ALREADY_EXISTS(HttpStatus.CONFLICT, "PAY_003", "해당 월의 급여명세서가 이미 있습니다."),
     PAY_ITEM_NOT_FOUND(HttpStatus.INTERNAL_SERVER_ERROR, "PAY_004", "급여 항목이 설정되지 않았습니다."),
     PAYSLIP_NOT_FOUND(HttpStatus.NOT_FOUND, "PAY_005", "급여명세서를 찾을 수 없습니다."),
+    CONTRACT_NOT_FOUND(HttpStatus.NOT_FOUND, "PAY_006", "급여 정보가 없습니다. 급여명세서가 생성된 뒤 조회할 수 있습니다."),
 
     // 공통 (다른 서비스 코드와 동일)
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),

@@ -1,5 +1,6 @@
 package com.ssafy.payrollservice.domain.payroll.service;
 
+import com.ssafy.payrollservice.domain.payroll.dto.ContractResponse;
 import com.ssafy.payrollservice.domain.payroll.dto.PayslipDetailResponse;
 import com.ssafy.payrollservice.domain.payroll.dto.PayslipListResponse;
 import com.ssafy.payrollservice.domain.payroll.entity.Payslip;
@@ -34,5 +35,18 @@ public class PayslipServiceImpl implements PayslipService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYSLIP_NOT_FOUND));
 
         return PayslipDetailResponse.of(payslip, payslipItemRepository.findWithPayItemByPayslipId(payslipId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ContractResponse getMyContract(Long empId) {
+        // TODO: user-service 연동 후 현재 직급(pay_grade)과 사원 정보로 교체
+        Payslip latest = payslipRepository.findFirstByEmpIdOrderByPayYearDescPayMonthDesc(empId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONTRACT_NOT_FOUND));
+
+        int basePay = payslipItemRepository.findAmount(latest.getPayslipId(), "BASE_PAY")
+                .orElseThrow(() -> new BusinessException(ErrorCode.PAY_ITEM_NOT_FOUND));
+
+        return ContractResponse.of(latest, basePay);
     }
 }

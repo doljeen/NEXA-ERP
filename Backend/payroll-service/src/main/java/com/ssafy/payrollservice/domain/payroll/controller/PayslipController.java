@@ -1,5 +1,6 @@
 package com.ssafy.payrollservice.domain.payroll.controller;
 
+import com.ssafy.payrollservice.domain.payroll.dto.ContractResponse;
 import com.ssafy.payrollservice.domain.payroll.dto.PayslipDetailResponse;
 import com.ssafy.payrollservice.domain.payroll.dto.PayslipListResponse;
 import com.ssafy.payrollservice.domain.payroll.service.PayslipService;
@@ -33,5 +34,12 @@ public class PayslipController {
             @RequestHeader("X-User-Id") Long empId,
             @PathVariable Long payslipId) {
         return ResponseEntity.ok(ApiResult.success(payslipService.getMyPayslip(empId, payslipId)));
+    }
+
+    // 내 급여 정보 API
+    // TODO: 인증 적용 시 @RequestHeader("X-User-Id") → @AuthenticationPrincipal AuthUser 로 교체
+    @GetMapping("/contract")
+    public ResponseEntity<ApiResult<ContractResponse>> getMyContract(@RequestHeader("X-User-Id") Long empId) {
+        return ResponseEntity.ok(ApiResult.success(payslipService.getMyContract(empId)));
     }
 }

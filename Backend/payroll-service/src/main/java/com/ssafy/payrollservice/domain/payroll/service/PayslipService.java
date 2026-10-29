@@ -1,5 +1,6 @@
 package com.ssafy.payrollservice.domain.payroll.service;
 
+import com.ssafy.payrollservice.domain.payroll.dto.ContractResponse;
 import com.ssafy.payrollservice.domain.payroll.dto.PayslipDetailResponse;
 import com.ssafy.payrollservice.domain.payroll.dto.PayslipListResponse;
 
@@ -10,4 +11,7 @@ public interface PayslipService {
 
     /** 내 급여명세서 상세. 없거나 다른 사람 명세서면 404 */
     PayslipDetailResponse getMyPayslip(Long empId, Long payslipId);
+
+    /** 내 급여 정보. 가장 최근 명세서의 사원 정보와 기본급 기준, 명세서가 없으면 404 */
+    ContractResponse getMyContract(Long empId);
 }
