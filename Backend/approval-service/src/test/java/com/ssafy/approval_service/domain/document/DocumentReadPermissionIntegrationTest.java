@@ -3,15 +3,17 @@ package com.ssafy.approval_service.domain.document;
 import com.jayway.jsonpath.JsonPath;
 import com.ssafy.approval_service.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static com.ssafy.approval_service.support.ApprovalTestFixtures.BASE;
+import static com.ssafy.approval_service.support.ApprovalTestFixtures.admin;
+import static com.ssafy.approval_service.support.ApprovalTestFixtures.line;
+import static com.ssafy.approval_service.support.ApprovalTestFixtures.user;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -26,11 +28,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class DocumentReadPermissionIntegrationTest extends AbstractIntegrationTest {
 
-    private static final String BASE = "/api/v1/documents";
     private static final AtomicLong EMP_SEQ = new AtomicLong(1_000);
-
-    @Autowired
-    MockMvc mvc;
 
     /** 기안자 1명 + 결재자/합의자/참조자/열람자 1명씩인 문서 */
     private record Fixture(long documentId, long drafter, long approver, long agreement, long referrer, long viewer) {
@@ -40,33 +38,8 @@ class DocumentReadPermissionIntegrationTest extends AbstractIntegrationTest {
         return EMP_SEQ.incrementAndGet();
     }
 
-    private static RequestPostProcessor user(long empId) {
-        return jwt().jwt(j -> j.subject(String.valueOf(empId)).claim("type", "access").claim("role", "USER"));
-    }
-
-    private static RequestPostProcessor admin(long empId) {
-        return jwt().jwt(j -> j.subject(String.valueOf(empId)).claim("type", "access").claim("role", "ADMIN"));
-    }
-
     private static RequestPostProcessor withoutRole(long empId) {
         return jwt().jwt(j -> j.subject(String.valueOf(empId)).claim("type", "access"));
-    }
-
-    private static String line(long empId, int step, String role) {
-        return """
-                {"empId":%d,"step":%d,"role":"%s"}""".formatted(empId, step, role);
-    }
-
-    private long createDocument(long drafter, String... lines) throws Exception {
-        String body = """
-                {"docNo":"DOC-%d","title":"권한 테스트","formType":"GENERAL","approvalLines":[%s]}"""
-                .formatted(drafter, String.join(",", lines));
-        MvcResult created = mvc.perform(post(BASE).with(user(drafter))
-                        .contentType(MediaType.APPLICATION_JSON).content(body))
-                .andExpect(status().isCreated())
-                .andReturn();
-        Number id = JsonPath.read(created.getResponse().getContentAsString(), "$.data.documentId");
-        return id.longValue();
     }
 
     private Fixture createFixture() throws Exception {

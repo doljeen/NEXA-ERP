@@ -7,16 +7,16 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
-import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static com.ssafy.approval_service.support.ApprovalTestFixtures.BASE;
+import static com.ssafy.approval_service.support.ApprovalTestFixtures.line;
+import static com.ssafy.approval_service.support.ApprovalTestFixtures.path;
+import static com.ssafy.approval_service.support.ApprovalTestFixtures.user;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -28,11 +28,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class EmployeeVerificationIntegrationTest extends AbstractIntegrationTest {
 
-    private static final String BASE = "/api/v1/documents";
     private static final AtomicLong EMP_SEQ = new AtomicLong(300_000);
-
-    @Autowired
-    MockMvc mvc;
 
     @Autowired
     FakeUserServiceClient userService;
@@ -44,31 +40,6 @@ class EmployeeVerificationIntegrationTest extends AbstractIntegrationTest {
 
     private static long newEmployee() {
         return EMP_SEQ.incrementAndGet();
-    }
-
-    private static RequestPostProcessor user(long empId) {
-        return jwt().jwt(j -> j.subject(String.valueOf(empId)).claim("type", "access").claim("role", "USER"));
-    }
-
-    private static String line(long empId, int step, String role) {
-        return """
-                {"empId":%d,"step":%d,"role":"%s"}""".formatted(empId, step, role);
-    }
-
-    private static String path(long documentId, String sub) {
-        return BASE + "/" + documentId + sub;
-    }
-
-    private ResultActions submit(long drafter, String... lines) throws Exception {
-        return mvc.perform(post(BASE).with(user(drafter)).contentType(MediaType.APPLICATION_JSON).content("""
-                {"docNo":"DOC-%d","title":"사원 확인 테스트","formType":"GENERAL","approvalLines":[%s]}"""
-                .formatted(drafter, String.join(",", lines))));
-    }
-
-    private long createDocument(long drafter, String... lines) throws Exception {
-        MvcResult created = submit(drafter, lines).andExpect(status().isCreated()).andReturn();
-        Number id = JsonPath.read(created.getResponse().getContentAsString(), "$.data.documentId");
-        return id.longValue();
     }
 
     private ResultActions addApprover(long documentId, long drafter, String line) throws Exception {
