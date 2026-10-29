@@ -256,4 +256,47 @@ class DocumentReadPermissionIntegrationTest extends AbstractIntegrationTest {
         assertThat(listedIds(user(drafter), "?approvalStatus=INPROGRESS")).containsExactly(inProgressDoc);
         assertThat(listedIds(user(newEmployee()), "?approvalStatus=APPROVED")).isEmpty();
     }
+
+    // ===== 기안함 (box=DRAFTED) =====
+
+    @Test
+    void 기안함은_내가_기안한_문서만_결재선에_있는_문서는_제외() throws Exception {
+        long me = newEmployee();
+        long drafted = createDocument(me, line(newEmployee(), 1, "APPROVER"));
+        long assigned = createDocument(newEmployee(), line(me, 1, "APPROVER"));
+
+        assertThat(listedIds(user(me), "")).contains(drafted, assigned);
+        assertThat(listedIds(user(me), "?box=DRAFTED")).containsExactly(drafted);
+        assertThat(listedIds(user(me), "?box=drafted")).containsExactly(drafted);   // 다른 필터처럼 대소문자 무시
+    }
+
+    @Test
+    void 관리자도_기안함에는_본인_기안만() throws Exception {
+        long adminId = newEmployee();
+        long mine = createDocument(adminId, line(newEmployee(), 1, "APPROVER"));
+        Fixture other = createFixture();
+
+        assertThat(listedIds(admin(adminId), "?box=DRAFTED"))
+                .containsExactly(mine).doesNotContain(other.documentId());
+    }
+
+    @Test
+    void 기안함과_상태_필터를_함께_적용() throws Exception {
+        long drafter = newEmployee();
+        long approver = newEmployee();
+        long approvedDoc = createDocument(drafter, line(approver, 1, "APPROVER"));
+        long inProgressDoc = createDocument(drafter, line(approver, 1, "APPROVER"));
+        mvc.perform(post(BASE + "/" + approvedDoc + "/approve").with(user(approver)))
+                .andExpect(status().isOk());
+
+        assertThat(listedIds(user(drafter), "?box=DRAFTED&approvalStatus=INPROGRESS")).containsExactly(inProgressDoc);
+        assertThat(listedIds(user(approver), "?box=DRAFTED")).isEmpty();
+    }
+
+    @Test
+    void 잘못된_문서함_값은_400() throws Exception {
+        mvc.perform(get(BASE + "?box=INBOX").with(user(newEmployee())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("COMMON_001"));
+    }
 }

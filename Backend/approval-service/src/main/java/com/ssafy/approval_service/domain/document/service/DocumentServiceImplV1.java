@@ -6,6 +6,7 @@ import com.ssafy.approval_service.domain.approval.model.entity.enums.HistoryActi
 import com.ssafy.approval_service.domain.approval.repository.ApprovalHistoryRepository;
 import com.ssafy.approval_service.domain.approval.repository.ApprovalLineRepository;
 import com.ssafy.approval_service.domain.approval.service.ApprovalLineValidator;
+import com.ssafy.approval_service.domain.document.model.dto.DocumentBox;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateRequest;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentInfoResponse;
@@ -36,12 +37,16 @@ public class DocumentServiceImplV1 implements DocumentService {
     private final ApprovalLineValidator approvalLineValidator;
 
     @Override
-    public DocumentListResponse findByStatusAndType(String approvalStatus, String formType, Requester requester) {
+    public DocumentListResponse findByStatusAndType(String approvalStatus, String formType, String box,
+                                                    Requester requester) {
         DocumentStatus status = parseEnum(DocumentStatus.class, approvalStatus, "approvalStatus");
         FormType type = parseEnum(FormType.class, formType, "formType");
+        Long drafterId = parseEnum(DocumentBox.class, box, "box") == DocumentBox.DRAFTED
+                ? requester.employeeId()
+                : null;
 
         List<Document> documents = documentRepository.findReadableByStatusAndFormType(
-                status, type, requester.employeeId(), requester.admin());
+                status, type, drafterId, requester.employeeId(), requester.admin());
         return DocumentListResponse.from(documents);
     }
 
