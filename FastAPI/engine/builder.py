@@ -1,4 +1,6 @@
 from typing import Annotated, TypedDict
+
+from langgraph.errors import GraphInterrupt
 from langgraph.graph import END, START, StateGraph
 
 from nodes.base import NodeContext
@@ -10,6 +12,7 @@ def merge_dict(left: dict, right: dict) -> dict:
 
 
 class RunState(TypedDict):
+    run_id: int
     inputs: dict
     outputs: Annotated[dict, merge_dict]
     branches: Annotated[dict, merge_dict]
@@ -25,6 +28,9 @@ class StepRecorder:
     def fail(self, node_id: str, error: Exception) -> None:
         pass
 
+    def wait(self, node_id: str) -> None:
+        pass
+
 
 def _make_node_fn(node_id: str, node_type: str, config: dict, recorder: StepRecorder):
     node = get_node_impl(node_type)
@@ -34,6 +40,7 @@ def _make_node_fn(node_id: str, node_type: str, config: dict, recorder: StepReco
     def node_fn(state: RunState) -> dict:
         recorder.start(node_id, node_type)
         ctx = NodeContext(
+            run_id=state["run_id"],
             node_id=node_id,
             config=config,
             inputs=state["inputs"],
@@ -41,6 +48,9 @@ def _make_node_fn(node_id: str, node_type: str, config: dict, recorder: StepReco
         )
         try:
             result = node.run(ctx)
+        except GraphInterrupt:
+            recorder.wait(node_id)
+            raise
         except Exception as e:
             recorder.fail(node_id, e)
             raise

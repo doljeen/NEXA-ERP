@@ -7,6 +7,11 @@ class RunCreateRequest(CamelModel):
     inputs: dict = {}
 
 
+class ResumeRequest(CamelModel):
+    approved: bool
+    comment: str | None = None
+
+
 class RunCreated(CamelModel):
     run_id: int
     status: str

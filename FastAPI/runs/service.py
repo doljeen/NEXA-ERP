@@ -98,3 +98,22 @@ def cancel_run(db: Session, run_id: int) -> Run:
     db.commit()
     db.refresh(run)
     return run
+
+
+# 재개 가능한지 확인
+def get_waiting_run(db: Session, run_id: int) -> Run:
+    run = _get(db, run_id)
+    if run.status != RunStatus.WAITING:
+        raise BusinessException(ErrorCode.RUN_NOT_WAITING)
+    return run
+
+
+# 내 확인 대기 목록
+def list_my_pending(db: Session, user_id: str | None) -> list[Run]:
+    stmt = (
+        select(Run)
+        .where(Run.requested_by == user_id)
+        .where(Run.status == RunStatus.WAITING)
+        .order_by(Run.id.desc())
+    )
+    return list(db.scalars(stmt).all())

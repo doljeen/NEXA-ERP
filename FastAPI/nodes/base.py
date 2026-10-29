@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class NodeContext:
+    run_id: int
     node_id: str
     config: dict
     inputs: dict

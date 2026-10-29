@@ -4,9 +4,9 @@ from sqlalchemy.orm import Session
 from core.auth import get_user_id
 from core.database import get_db
 from core.response import ApiResult, ok
-from engine.runner import execute_run
+from engine.runner import execute_run, resume_run
 from runs import service
-from runs.schemas import RunCreated, RunCreateRequest, RunDetail, RunStepResponse, RunSummary
+from runs.schemas import ResumeRequest, RunCreated, RunCreateRequest, RunDetail, RunStepResponse, RunSummary
 
 
 router = APIRouter(tags=["실행"])
@@ -48,6 +48,15 @@ def list_my_run(
     return ok([RunSummary.model_validate(r) for r in runs])
 
 
+@router.get("/runs/me/pending", response_model=ApiResult[list[RunSummary]])
+def list_my_pending(
+    db: Session = Depends(get_db),
+    user_id: str | None = Depends(get_user_id), 
+):
+    runs = service.list_my_pending(db, user_id)
+    return ok([RunSummary.model_validate(r) for r in runs])
+
+
 @router.get("/runs/{run_id}", response_model=ApiResult[RunDetail])
 def get_run(run_id: int, db: Session = Depends(get_db)):
     run = service.get_run(db, run_id)
@@ -64,3 +73,15 @@ def list_steps(run_id: int, db: Session = Depends(get_db)):
 def cancel_run(run_id: int, db: Session = Depends(get_db)):
     run = service.cancel_run(db, run_id)
     return ok(RunDetail.model_validate(run))
+
+
+@router.post("/runs/{run_id}/resume", response_model=ApiResult[RunCreated], status_code=202)
+def resume(
+    run_id: int,
+    req: ResumeRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    run = service.get_waiting_run(db, run_id)
+    background_tasks.add_task(resume_run, run.id, req.model_dump())
+    return ok({"run_id": run.id, "status": run.status})
