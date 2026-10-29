@@ -16,6 +16,7 @@ public enum ErrorCode {
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "AUTH_009", "접근 권한이 없습니다."),
 
     // 급여 (단계 진행하면서 추가)
+    ATTENDANCE_CALL_FAILED(HttpStatus.BAD_GATEWAY, "PAY_001", "근태 서비스 호출에 실패했습니다."),
 
     // 공통 (user-service와 동일)
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),
