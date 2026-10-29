@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface PayslipItemRepository extends JpaRepository<PayslipItem, Long> {
 
@@ -17,4 +18,12 @@ public interface PayslipItemRepository extends JpaRepository<PayslipItem, Long> 
             order by pi.sortOrder
             """)
     List<PayslipItem> findWithPayItemByPayslipId(@Param("payslipId") Long payslipId);
+
+    // 명세서의 특정 항목 금액
+    @Query("""
+            select psi.amount from PayslipItem psi
+            where psi.payslip.payslipId = :payslipId
+              and psi.payItem.itemCode = :itemCode
+            """)
+    Optional<Integer> findAmount(@Param("payslipId") Long payslipId, @Param("itemCode") String itemCode);
 }
