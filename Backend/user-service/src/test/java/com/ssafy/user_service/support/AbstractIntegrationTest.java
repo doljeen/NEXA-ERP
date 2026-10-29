@@ -1,11 +1,17 @@
 package com.ssafy.user_service.support;
 
+import com.ssafy.user_service.global.security.SecurityConstants;
+import jakarta.servlet.http.Cookie;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import java.util.Arrays;
 
 /**
  * Postgres + Redis 컨테이너를 띄우는 통합 테스트 베이스. Docker 가 필요하다.
@@ -28,5 +34,20 @@ public abstract class AbstractIntegrationTest {
     static {
         POSTGRES.start();
         REDIS.start();
+    }
+
+    /**
+     * gateway 를 거친 요청처럼 보낸다: 쿠키는 그대로 두고, accessToken 쿠키 값을 Authorization: Bearer 로 붙인다.
+     * (인증 API 인 /auth/** 는 gateway 가 헤더를 지우므로 .cookie(...) 만 쓴다)
+     */
+    protected static RequestPostProcessor viaGateway(Cookie[] cookies) {
+        return request -> {
+            request.setCookies(cookies);
+            Arrays.stream(cookies)
+                    .filter(c -> c.getName().equals(SecurityConstants.ACCESS_COOKIE))
+                    .findFirst()
+                    .ifPresent(c -> request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + c.getValue()));
+            return request;
+        };
     }
 }

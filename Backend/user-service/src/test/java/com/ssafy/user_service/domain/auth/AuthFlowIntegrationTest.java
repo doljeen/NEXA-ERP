@@ -9,6 +9,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -69,7 +70,7 @@ class AuthFlowIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("AUTH_008"));
         // 교체된 이전 access 는 즉시 차단
-        mvc.perform(post("/api/v1/nothing").cookie(first))
+        mvc.perform(post("/api/v1/nothing").with(viaGateway(first)))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("AUTH_004"));
         // 재사용 탐지로 새 refresh 도 무효
@@ -85,7 +86,7 @@ class AuthFlowIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(cookie().maxAge("accessToken", 0))
                 .andExpect(cookie().maxAge("refreshToken", 0));
-        mvc.perform(post("/api/v1/nothing").cookie(c))
+        mvc.perform(post("/api/v1/nothing").with(viaGateway(c)))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("AUTH_004"));
         mvc.perform(post("/api/v1/auth/reissue").cookie(c))
@@ -111,8 +112,19 @@ class AuthFlowIntegrationTest extends AbstractIntegrationTest {
     @Test
     void 매핑되지_않은_URL은_404() throws Exception {
         Cookie[] admin = login(ADMIN_LOGIN);
-        mvc.perform(post("/api/v1/nothing").cookie(admin))
+        mvc.perform(post("/api/v1/nothing").with(viaGateway(admin)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("COMMON_003"));
+    }
+
+    @Test
+    void 보호된_API는_쿠키만으로는_401_Bearer_헤더가_필요() throws Exception {
+        // 쿠키 → Bearer 변환은 gateway 가 한다. gateway 를 거치지 않고 직접 호출하면 헤더를 붙여야 한다
+        Cookie[] admin = login(ADMIN_LOGIN);
+        mvc.perform(get("/api/v1/employees").cookie(admin))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("AUTH_001"));
+        mvc.perform(get("/api/v1/employees").with(viaGateway(admin)))
+                .andExpect(status().isOk());
     }
 }

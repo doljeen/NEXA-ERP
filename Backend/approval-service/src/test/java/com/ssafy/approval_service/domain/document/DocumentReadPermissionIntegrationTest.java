@@ -2,6 +2,7 @@ package com.ssafy.approval_service.domain.document;
 
 import com.jayway.jsonpath.JsonPath;
 import com.ssafy.approval_service.support.AbstractIntegrationTest;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
@@ -141,6 +142,15 @@ class DocumentReadPermissionIntegrationTest extends AbstractIntegrationTest {
     void 토큰이_없으면_401() throws Exception {
         Fixture f = createFixture();
         mvc.perform(get(BASE + "/" + f.documentId()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("AUTH_001"));
+    }
+
+    @Test
+    void 쿠키만_있고_Bearer_헤더가_없으면_401() throws Exception {
+        // 쿠키 → Bearer 변환은 gateway 가 한다. 하위 서비스는 쿠키를 읽지 않는다
+        Fixture f = createFixture();
+        mvc.perform(get(BASE + "/" + f.documentId()).cookie(new Cookie("accessToken", "any-token")))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("AUTH_001"));
     }
