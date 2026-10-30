@@ -2,6 +2,7 @@ package com.ssafy.leaveservice.domain.leavetype.controller;
 
 import com.ssafy.leaveservice.domain.leavetype.dto.LeaveTypeResponse;
 import com.ssafy.leaveservice.domain.leavetype.dto.LeaveTypeCreateRequest;
+import com.ssafy.leaveservice.domain.leavetype.dto.LeaveTypeUpdateRequest;
 import com.ssafy.leaveservice.domain.leavetype.service.LeaveTypeService;
 import com.ssafy.leaveservice.global.dto.ApiResult;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +11,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -34,5 +37,14 @@ public class AdminLeaveTypeController {
     ) {
         LeaveTypeResponse response = leaveTypeService.createType(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResult.success(response));
+    }
+
+    @PatchMapping("/{leaveTypeId}")
+    public ResponseEntity<ApiResult<LeaveTypeResponse>> updateType(
+            @PathVariable Long leaveTypeId,
+            @Valid @RequestBody LeaveTypeUpdateRequest request
+    ) {
+        LeaveTypeResponse response = leaveTypeService.updateType(leaveTypeId, request);
+        return ResponseEntity.ok(ApiResult.success(response));
     }
 }

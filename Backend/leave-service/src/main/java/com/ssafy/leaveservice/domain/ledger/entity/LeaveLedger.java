@@ -1,0 +1,105 @@
+package com.ssafy.leaveservice.domain.ledger.entity;
+
+import com.ssafy.leaveservice.domain.account.entity.LeaveAccount;
+import com.ssafy.leaveservice.domain.request.entity.LeaveRequestAllocation;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.time.OffsetDateTime;
+
+@Entity
+@Table(name = "leave_ledger")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class LeaveLedger {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "entry_id")
+    private Long entryId;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "account_id", nullable = false)
+    private LeaveAccount account;
+
+    @Column(name = "grant_id", nullable = false)
+    private Long grantId;
+
+    @Column(name = "leave_req_id")
+    private Long leaveReqId;
+
+    @Column(name = "allocation_id")
+    private Long allocationId;
+
+    @Column(name = "reverses_entry_id")
+    private Long reversesEntryId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "event_type", nullable = false, length = 20)
+    private LedgerEventType eventType;
+
+    @Column(name = "quantity_delta", nullable = false)
+    private int quantityDelta;
+
+    @Column(name = "reserved_delta", nullable = false)
+    private int reservedDelta;
+
+    @Column(name = "reason", length = 500)
+    private String reason;
+
+    @Column(name = "created_at", nullable = false)
+    private OffsetDateTime createdAt;
+
+    @Column(name = "idempotency_key", nullable = false, length = 120)
+    private String idempotencyKey;
+
+    public static LeaveLedger reserve(
+            LeaveAccount account,
+            LeaveRequestAllocation allocation,
+            OffsetDateTime asOf
+    ) {
+        LeaveLedger ledger = new LeaveLedger();
+        ledger.account = account;
+        ledger.grantId = allocation.getGrantId();
+        ledger.leaveReqId = allocation.getRequestId();
+        ledger.allocationId = allocation.getAllocationId();
+        ledger.eventType = LedgerEventType.RESERVE;
+        ledger.quantityDelta = 0;
+        ledger.reservedDelta = allocation.getAllocatedMinutes();
+        ledger.reason = "휴가 신청 배분 예약";
+        ledger.createdAt = asOf;
+        ledger.idempotencyKey = "leave:reserve:allocation:" + allocation.getAllocationId();
+        return ledger;
+    }
+
+    public static LeaveLedger release(
+            LeaveAccount account,
+            LeaveRequestAllocation allocation,
+            OffsetDateTime asOf
+    ) {
+        LeaveLedger ledger = new LeaveLedger();
+        ledger.account = account;
+        ledger.grantId = allocation.getGrantId();
+        ledger.leaveReqId = allocation.getRequestId();
+        ledger.allocationId = allocation.getAllocationId();
+        ledger.eventType = LedgerEventType.RELEASE;
+        ledger.quantityDelta = 0;
+        ledger.reservedDelta = -allocation.getAllocatedMinutes();
+        ledger.reason = "결재 문서 미생성 확정에 따른 예약 해제";
+        ledger.createdAt = asOf;
+        ledger.idempotencyKey = "leave:release:allocation:" + allocation.getAllocationId();
+        return ledger;
+    }
+}

@@ -40,6 +40,25 @@ public class LeaveType {
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 
+    // TODO: 향후 신규 휴가 신청 API는 이 활성 상태를 검사해야 한다. 기존 신청·원장 조회는 유지한다.
+    public void updateDetails(
+            String name,
+            boolean paid,
+            BalanceMode balanceMode,
+            LeaveBalanceType balanceType,
+            RequestUnit requestUnit,
+            Integer maxMinutes,
+            boolean active
+    ) {
+        this.name = name;
+        this.paid = paid;
+        this.balanceMode = balanceMode;
+        this.balanceType = balanceType;
+        this.requestUnit = requestUnit;
+        this.maxMinutes = maxMinutes;
+        this.active = active;
+    }
+
     @Builder
     private LeaveType(
             LeaveBalanceType balanceType,
