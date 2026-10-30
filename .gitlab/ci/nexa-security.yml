@@ -44,8 +44,8 @@ publish-nexa-security:
 
   script:
     - cd Backend/nexa-security
-    - version="$(bash gradlew --no-daemon -q properties | sed -n 's/^version: //p')"
     - |
+      version="$(bash gradlew --no-daemon -q properties | sed -n 's/^version: //p')"
       if [ "nexa-security-v$version" != "$CI_COMMIT_TAG" ]; then
         echo "태그($CI_COMMIT_TAG)와 build.gradle 버전($version)이 다릅니다"
         exit 1
