@@ -7,6 +7,7 @@ import java.util.Map;
  * 이관 대상 필드 정의.
  * synonyms: 원본 엑셀에서 흔히 쓰는 컬럼명 (자동 매핑에 사용)
  * enumValues: 허용 값 → 저장 코드 (한글 표기도 받는다. 예: "정규직" → REGULAR)
+ * codeLike: 정해진 몇 가지 값만 쓰는 필드 (직위·직급 …). 드문 값이 흔한 값과 한 글자(자모)만 다르면 오타로 의심
  */
 public record FieldSpec(
         String name,
@@ -16,7 +17,8 @@ public record FieldSpec(
         boolean key,
         Integer maxLength,
         List<String> synonyms,
-        Map<String, String> enumValues
+        Map<String, String> enumValues,
+        boolean codeLike
 ) {
 
     static Builder of(String name, String label, FieldType type) {
@@ -32,6 +34,7 @@ public record FieldSpec(
         private Integer maxLength;
         private List<String> synonyms = List.of();
         private Map<String, String> enumValues = Map.of();
+        private boolean codeLike;
 
         private Builder(String name, String label, FieldType type) {
             this.name = name;
@@ -66,8 +69,13 @@ public record FieldSpec(
             return this;
         }
 
+        Builder codeLike() {
+            this.codeLike = true;
+            return this;
+        }
+
         FieldSpec build() {
-            return new FieldSpec(name, label, type, required, key, maxLength, synonyms, enumValues);
+            return new FieldSpec(name, label, type, required, key, maxLength, synonyms, enumValues, codeLike);
         }
     }
 }

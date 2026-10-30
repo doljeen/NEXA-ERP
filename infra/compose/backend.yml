@@ -37,6 +37,7 @@ services:
       retries: 3
       start_period: 40s
 
+
   approval-service:
     build:
       context: ./Backend/approval-service
@@ -53,6 +54,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nexa_approval
       SPRING_DATASOURCE_USERNAME: nexa_approval_app
       SPRING_DATASOURCE_PASSWORD: ${APPROVAL_DB_PASSWORD:?APPROVAL_DB_PASSWORD is required}
+      JWT_JWKS_URI: http://user-service:8081/.well-known/jwks.json
       EUREKA_URL: "http://${EUREKA_USER:?EUREKA_USER is required}:${EUREKA_PASSWORD:?EUREKA_PASSWORD is required}@eureka-server:8761/eureka/"
 
     ports:
@@ -83,7 +85,7 @@ services:
       postgres:
         condition: service_healthy
       config-server:
-        condition: service_started
+        condition: service_healthy
       eureka-server:
         condition: service_started
 
@@ -102,6 +104,93 @@ services:
 
     ports:
       - "127.0.0.1:8084:8084"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "3", "http://localhost:8084/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+        
+
+  leave-service:
+    build:
+      context: ./Backend/leave-service
+    image: nexa-leave:local
+
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+
+    environment:
+      SERVER_PORT: "8082"
+
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nexa_leave
+      SPRING_DATASOURCE_USERNAME: nexa_leave_app
+      SPRING_DATASOURCE_PASSWORD: ${LEAVE_DB_PASSWORD:?LEAVE_DB_PASSWORD is required}
+
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: "http://${EUREKA_USER:?EUREKA_USER is required}:${EUREKA_PASSWORD:?EUREKA_PASSWORD is required}@eureka-server:8761/eureka/"
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+
+    ports:
+      - "127.0.0.1:8082:8082"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "3", "http://localhost:8082/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+
+  migration-service:
+    build:
+      context: ./Backend/migration-service
+    image: nexa-migration:local
+
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+
+    environment:
+      SERVER_PORT: "8087"
+
+      CONFIG_SERVER_URL: http://config-server:8888
+      SPRING_CLOUD_CONFIG_USERNAME: config-client
+      SPRING_CLOUD_CONFIG_PASSWORD: ${CONFIG_SERVER_PASSWORD:?CONFIG_SERVER_PASSWORD is required}
+
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nexa_migration
+      SPRING_DATASOURCE_USERNAME: nexa_migration_app
+      MIGRATION_DB_PASSWORD: ${MIGRATION_DB_PASSWORD:?MIGRATION_DB_PASSWORD is required}
+
+      EUREKA_URL: "http://${EUREKA_USER:?EUREKA_USER is required}:${EUREKA_PASSWORD:?EUREKA_PASSWORD is required}@eureka-server:8761/eureka/"
+
+      HR_SERVICE_URL: http://user-service:8081
+
+    ports:
+      - "127.0.0.1:8087:8087"
 
     logging:
       driver: json-file

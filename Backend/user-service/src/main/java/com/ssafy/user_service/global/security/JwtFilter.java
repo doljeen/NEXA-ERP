@@ -10,6 +10,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -20,7 +21,8 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * accessToken 쿠키를 검증해 SecurityContext에 인증을 등록한다.
+ * Authorization: Bearer 헤더의 access 토큰을 검증해 SecurityContext에 인증을 등록한다.
+ * (로그인/재발급/로그아웃은 AuthController가 쿠키를 직접 읽으며 permitAll이라 이 필터와 무관하다)
  * 토큰이 없거나 유효하지 않으면 인증을 등록하지 않고 다음 필터로 넘긴다.
  * 보호된 경로라면 이후 AuthorizationFilter가 401을 발생시키고 JwtAuthenticationEntryPoint가
  * 응답을 작성하며, 그때 이 필터가 request attribute에 남긴 ErrorCode를 사용한다.
@@ -31,15 +33,15 @@ import java.util.List;
 public class JwtFilter extends OncePerRequestFilter {
 
     public static final String JWT_ERROR_ATTRIBUTE = "jwtError";
+    private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtUtil jwtUtil;
     private final TokenStore tokenStore;
-    private final TokenCookieManager cookieManager;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-        String token = cookieManager.readAccessToken(request);
+        String token = resolveToken(request);
 
         // 토큰이 없는 경우는 오류가 아니라 미인증 상태 → 그대로 통과
         if (token == null) {
@@ -76,6 +78,18 @@ public class JwtFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * Authorization: Bearer 헤더만 읽는다. 브라우저의 accessToken 쿠키는 gateway 가 검증한 뒤 Bearer 로 바꿔 넘기고,
+     * 서비스 간 호출(approval-service 등)은 사용자 토큰을 그대로 Bearer 로 보낸다
+     */
+    private String resolveToken(HttpServletRequest request) {
+        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (header != null && header.startsWith(BEARER_PREFIX) && header.length() > BEARER_PREFIX.length()) {
+            return header.substring(BEARER_PREFIX.length());
+        }
+        return null;
     }
 
     private void reject(HttpServletRequest request, ErrorCode errorCode) {

@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 공개키 배포(JWKS). approval-service 등 다른 서비스와 게이트웨이는 이 엔드포인트의 키로
+ * 공개키 배포(JWKS). 게이트웨이와 approval-service 등 다른 서비스는 이 엔드포인트의 키로
  * user-service가 서명한 토큰을 검증한다. 개인키는 user-service 밖으로 나가지 않는다.
  */
 @RestController
@@ -26,6 +26,7 @@ public class JwksController {
     @GetMapping(SecurityConstants.JWKS_PATH)
     public Map<String, Object> jwks() {
         RSAPublicKey key = keyProvider.getPublicKey();
+        // JWK(RFC 7517) 필드명. n/e 는 RSA 공개키의 modulus/exponent
         Map<String, Object> jwk = Map.of(
                 "kty", "RSA",
                 "use", "sig",

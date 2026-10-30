@@ -47,13 +47,30 @@ public class MigrationFile {
     @Column(name = "uploaded_at", nullable = false)
     private LocalDateTime uploadedAt;
 
+    @Column(name = "sheet_name")
+    private String sheetName;               // 엑셀 시트 (CSV는 null)
+
+    @Column(name = "header_row")
+    private Integer headerRow;
+
+    @Column(name = "total_rows", nullable = false, columnDefinition = "integer[]")
+    private Integer[] totalRows;            // 합계·소계로 보고 뺀 행
+
+    @Column(name = "rows_after_total", nullable = false, columnDefinition = "integer[]")
+    private Integer[] rowsAfterTotal;       // 합계 행 아래에 있는 데이터 행
+
     @Builder
-    private MigrationFile(Long migrationId, MigrationEntity entity, String fileName, String[] headers, int rowCount) {
+    private MigrationFile(Long migrationId, MigrationEntity entity, String fileName, String[] headers, int rowCount,
+                          String sheetName, Integer headerRow, Integer[] totalRows, Integer[] rowsAfterTotal) {
         this.migrationId = migrationId;
         this.entity = entity;
         this.fileName = fileName;
         this.headers = headers;
         this.rowCount = rowCount;
+        this.sheetName = sheetName;
+        this.headerRow = headerRow;
+        this.totalRows = totalRows == null ? new Integer[0] : totalRows;
+        this.rowsAfterTotal = rowsAfterTotal == null ? new Integer[0] : rowsAfterTotal;
         this.uploadedAt = LocalDateTime.now();
     }
 }

@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-/** 사원 관리 API. /api/v1/admin/** 는 SecurityConfig에서 ROLE_ADMIN 전용으로 묶인다. */
+/** 사원 관리 API. 조회는 인증 사용자 모두, 등록(POST)/퇴직 처리(PATCH)는 SecurityConfig에서 ROLE_ADMIN 전용으로 묶인다. */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping(SecurityConstants.EMPLOYEE_BASE_PATH)
@@ -23,7 +23,6 @@ public class EmployeeAdminController {
 
     private final EmployeeService employeeService;
 
-    // 회원 가입 API
     @PostMapping
     public ResponseEntity<ApiResult<EmployeeCreateResponse>> create(@Valid @RequestBody EmployeeCreateRequest request) {
         Long employeeId = employeeService.create(request);
@@ -31,17 +30,27 @@ public class EmployeeAdminController {
                 .body(ApiResult.success(new EmployeeCreateResponse(employeeId)));
     }
 
-    // 회원 목록 조회 API
-    /** 사원 목록. deptId가 있으면 해당 부서원만, 없으면 전체 */
+    /**
+     * 사원 목록. ids가 있으면 그 사원들만(없는 ID는 빠짐), deptId가 있으면 해당 부서원만, 둘 다 없으면 전체.
+     * ids는 결재선 검증·이름 표시처럼 여러 사원을 한 번에 확인할 때 쓴다 (approval-service, 프런트엔드)
+     */
     @GetMapping
-    public ResponseEntity<ApiResult<EmployeeListResponse>> getList(@RequestParam(required = false) Long deptId) {
-        List<Employee> employees = deptId == null
-                ? employeeService.findAll()
-                : employeeService.findByDeptId(deptId);
+    public ResponseEntity<ApiResult<EmployeeListResponse>> getList(@RequestParam(required = false) Long deptId,
+                                                                   @RequestParam(required = false) List<Long> ids) {
+        if (ids != null && deptId != null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "ids와 deptId는 함께 쓸 수 없습니다.");
+        }
+        List<Employee> employees;
+        if (ids != null) {
+            employees = employeeService.findAllByIds(ids);
+        } else if (deptId != null) {
+            employees = employeeService.findByDeptId(deptId);
+        } else {
+            employees = employeeService.findAll();
+        }
         return ResponseEntity.ok(ApiResult.success(EmployeeListResponse.from(employees)));
     }
 
-    // 회원 상세 조회 API
     @GetMapping("/{employeeId}")
     public ResponseEntity<ApiResult<EmployeeInfoResponse>> getEmployeeInfo(@PathVariable Long employeeId) {
         Employee employee = employeeService.findById(employeeId)
@@ -49,7 +58,6 @@ public class EmployeeAdminController {
         return ResponseEntity.ok(ApiResult.success(EmployeeInfoResponse.from(employee)));
     }
 
-    // 회원 탈퇴 API
     @PatchMapping("/{employeeId}/terminate")
     public ResponseEntity<ApiResult<Void>> terminate(@PathVariable Long employeeId,
                                                      @Valid @RequestBody EmployeeTerminateRequest request) {

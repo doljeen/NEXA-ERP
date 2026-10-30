@@ -38,11 +38,17 @@ public class SecurityConfig {
     ) {
         return http
                 .securityMatcher(
-                        ServerWebExchangeMatchers.pathMatchers(
-                                HttpMethod.POST,
-                                "/api/v1/auth/login",
-                                "/api/v1/auth/logout",
-                                "/api/v1/auth/reissue"
+                        ServerWebExchangeMatchers.matchers(
+                                ServerWebExchangeMatchers.pathMatchers(
+                                        HttpMethod.GET,
+                                        "/actuator/health"
+                                ),
+                                ServerWebExchangeMatchers.pathMatchers(
+                                        HttpMethod.POST,
+                                        "/api/v1/auth/login",
+                                        "/api/v1/auth/logout",
+                                        "/api/v1/auth/reissue"
+                                )
                         )
                 )
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)

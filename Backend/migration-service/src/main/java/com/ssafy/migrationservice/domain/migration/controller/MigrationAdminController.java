@@ -2,6 +2,7 @@ package com.ssafy.migrationservice.domain.migration.controller;
 
 import com.ssafy.migrationservice.domain.migration.dto.FileDetailResponse;
 import com.ssafy.migrationservice.domain.migration.dto.FileUploadResponse;
+import com.ssafy.migrationservice.domain.migration.dto.FormulaRulesResponse;
 import com.ssafy.migrationservice.domain.migration.dto.FixApplyRequest;
 import com.ssafy.migrationservice.domain.migration.dto.FixApplyResponse;
 import com.ssafy.migrationservice.domain.migration.dto.IssueListResponse;
@@ -67,6 +68,7 @@ public class MigrationAdminController {
     @PostMapping(value = "/{migrationId}/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResult<FileUploadResponse>> upload(@PathVariable Long migrationId,
                                                                 @RequestParam MigrationEntity entity,
+                                                                @RequestParam(required = false) String sheet,
                                                                 @RequestPart MultipartFile file) {
         byte[] content;
         try {
@@ -74,13 +76,19 @@ public class MigrationAdminController {
         } catch (IOException e) {
             throw new BusinessException(ErrorCode.FILE_READ_FAILED);
         }
-        FileUploadResponse response = migrationService.upload(migrationId, entity, file.getOriginalFilename(), content);
+        FileUploadResponse response = migrationService.upload(migrationId, entity, file.getOriginalFilename(), content, sheet);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResult.success(response));
     }
 
     @GetMapping("/{migrationId}/files/{fileId}")
     public ResponseEntity<ApiResult<FileDetailResponse>> getFile(@PathVariable Long migrationId, @PathVariable Long fileId) {
         return ResponseEntity.ok(ApiResult.success(migrationService.getFile(migrationId, fileId)));
+    }
+
+    /** 엑셀 수식에서 뽑은 열별 규칙 (대표 수식, 값 직접 입력·빈 칸·다른 수식 행, 다른 시트와 비교) */
+    @GetMapping("/{migrationId}/files/{fileId}/formulas")
+    public ResponseEntity<ApiResult<FormulaRulesResponse>> formulas(@PathVariable Long migrationId, @PathVariable Long fileId) {
+        return ResponseEntity.ok(ApiResult.success(migrationService.formulas(migrationId, fileId)));
     }
 
     @PutMapping("/{migrationId}/files/{fileId}/mappings")

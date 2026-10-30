@@ -1,22 +1,15 @@
 build-user:
+  extends:
+    - .testcontainers
+    - .gradle-cache
   stage: build
   image: eclipse-temurin:21-jdk
 
   tags:
     - nexa-ci
 
-  services:
-    - name: postgres:17-alpine
-      alias: postgres
-
   variables:
-    POSTGRES_DB: nexa_user_test
-    POSTGRES_USER: ci_user
-    POSTGRES_PASSWORD: ci_test_password
-
-    SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nexa_user_test
-    SPRING_DATASOURCE_USERNAME: ci_user
-    SPRING_DATASOURCE_PASSWORD: ci_test_password
+    EUREKA_CLIENT_ENABLED: "false"
 
   script:
     - cd Backend/user-service
@@ -25,8 +18,47 @@ build-user:
   artifacts:
     when: always
     expire_in: 7 days
+    paths:
+      - Backend/user-service/build/libs/*.jar
     reports:
       junit: Backend/user-service/build/test-results/test/TEST-*.xml
 
-  when: manual
-  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: &user_changes
+        - Backend/user-service/**/*
+        - .gitlab/ci/user.yml
+        - .gitlab/ci/testcontainers.yml
+        - .gitlab/ci/deploy.yml
+        - .gitlab-ci.yml
+        - compose.dev.yml
+        - infra/compose/**/*
+        - infra/docker/**/*
+      when: on_success
+      allow_failure: false
+
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes: *user_changes
+      when: on_success
+      allow_failure: false
+
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: true
+
+deploy-user-dev:
+  extends: .deploy-dev
+
+  needs:
+    - job: build-user
+    - job: deploy-eureka-dev
+      optional: true
+
+  variables:
+    DEPLOY_SERVICE: user-service
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes: *user_changes
+      when: on_success
+      allow_failure: false

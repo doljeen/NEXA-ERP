@@ -1,6 +1,5 @@
 package com.ssafy.user_service.global.security;
 
-import com.ssafy.user_service.global.config.AppProperties;
 import com.ssafy.user_service.global.exception.ErrorCode;
 import com.ssafy.user_service.global.security.jwt.JwtKeyProvider;
 import com.ssafy.user_service.global.security.jwt.JwtProperties;
@@ -14,9 +13,6 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-
-import java.time.Duration;
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -35,9 +31,7 @@ class JwtFilterTest {
         keys = new JwtKeyProvider(jwtProps);
         keys.init();
         jwtUtil = new JwtUtil(keys, jwtProps);
-        AppProperties appProps = new AppProperties(new AppProperties.Cookie(false, "Lax"),
-                new AppProperties.Cors(List.of()), new AppProperties.Login(5, Duration.ofMinutes(10), Duration.ofMinutes(15)));
-        filter = new JwtFilter(jwtUtil, tokenStore, new TokenCookieManager(appProps, jwtProps));
+        filter = new JwtFilter(jwtUtil, tokenStore);
         SecurityContextHolder.clearContext();
     }
 
@@ -46,9 +40,14 @@ class JwtFilterTest {
         SecurityContextHolder.clearContext();
     }
 
-    private MockHttpServletRequest run(String accessCookie) throws Exception {
+    /** access 토큰을 Bearer 헤더로 보낸다 (null 이면 헤더 없음) */
+    private MockHttpServletRequest run(String accessToken) throws Exception {
+        return runWithHeader(accessToken == null ? null : "Bearer " + accessToken);
+    }
+
+    private MockHttpServletRequest runWithHeader(String authorization) throws Exception {
         MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/x");
-        if (accessCookie != null) req.setCookies(new Cookie(SecurityConstants.ACCESS_COOKIE, accessCookie));
+        if (authorization != null) req.addHeader("Authorization", authorization);
         MockFilterChain chain = new MockFilterChain();
         filter.doFilter(req, new MockHttpServletResponse(), chain);
         assertThat(chain.getRequest()).as("다음 필터로 항상 넘어간다").isNotNull();
@@ -60,7 +59,7 @@ class JwtFilterTest {
     }
 
     @Test
-    void 쿠키가_없으면_인증없이_통과() throws Exception {
+    void 토큰이_없으면_인증없이_통과() throws Exception {
         MockHttpServletRequest req = run(null);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
         assertThat(errorOf(req)).isNull();
@@ -88,6 +87,25 @@ class JwtFilterTest {
         when(tokenStore.isBlacklisted(token.id())).thenReturn(true);
         MockHttpServletRequest req = run(token.value());
         assertThat(errorOf(req)).isEqualTo(ErrorCode.TOKEN_BLACKLISTED);
+    }
+
+    // ===== 헤더 형식 =====
+
+    @Test
+    void Bearer_형식이_아닌_헤더는_토큰_없음으로_통과() throws Exception {
+        MockHttpServletRequest req = runWithHeader("Basic dXNlcjpwYXNz");
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        assertThat(errorOf(req)).isNull();
+    }
+
+    @Test
+    void accessToken_쿠키만_있으면_인증하지_않음() throws Exception {
+        // 쿠키 → Bearer 변환은 gateway 가 한다
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/x");
+        req.setCookies(new Cookie(SecurityConstants.ACCESS_COOKIE, jwtUtil.generateAccessToken(1L, Role.USER).value()));
+        filter.doFilter(req, new MockHttpServletResponse(), new MockFilterChain());
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        assertThat(errorOf(req)).isNull();
     }
 
     @Test

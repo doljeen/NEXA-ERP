@@ -1,0 +1,141 @@
+import logging
+
+from langgraph.types import Command
+from sqlalchemy import func, select
+
+from core.database import SessionLocal
+from engine.builder import StepRecorder, build_graph
+from engine.checkpointer import get_checkpointer
+from runs.models import Run, RunStatus, RunStep
+
+
+log = logging.getLogger(__name__)
+
+
+class RunCanceled(Exception):
+    pass
+
+
+class DbRecorder(StepRecorder):
+    def __init__(self, run_id: int):
+        self.run_id = run_id
+        self.step_ids: dict[str, int] = {}
+
+    
+    def start(self, node_id: str, node_type: str) -> None:
+        with SessionLocal() as db:
+            run = db.get(Run, self.run_id)
+            if run.status == RunStatus.CANCELED:
+                raise RunCanceled()
+
+            step = db.scalars(
+                select(RunStep).where(
+                    RunStep.run_id == self.run_id,
+                    RunStep.node_id == node_id,
+                    RunStep.status == RunStatus.WAITING,
+                )
+            ).first()
+            if step is None:
+                step = RunStep(run_id=self.run_id, node_id=node_id, node_type=node_type)
+                db.add(step)
+            else:
+                step.status = RunStatus.RUNNING
+
+            run.current_node_id = node_id
+            db.commit()
+            self.step_ids[node_id] = step.id
+
+
+    def finish(self, node_id: str, output: dict, branch: str | None) -> None:
+        with SessionLocal() as db:
+            step = db.get(RunStep, self.step_ids[node_id])
+            step.status = RunStatus.SUCCEEDED
+            step.output = output
+            step.branch = branch
+            step.finished_at = func.now()
+            db.commit()
+
+    
+    def fail(self, node_id: str, error: Exception) -> None:
+        with SessionLocal() as db:
+            step = db.get(RunStep, self.step_ids[node_id])
+            step.status = RunStatus.FAILED
+            step.error = str(error)
+            step.finished_at = func.now()
+            db.commit()
+
+
+    def wait(self, node_id: str) -> None:
+        with SessionLocal() as db:
+            step = db.get(RunStep, self.step_ids[node_id])
+            step.status = RunStatus.WAITING
+            db.commit()
+
+
+def execute_run(run_id: int) -> None:
+    with SessionLocal() as db:
+        run = db.get(Run, run_id)
+        if run is None or run.status != RunStatus.QUEUED:
+            return
+        graph_json = run.graph
+        inputs = run.inputs
+        thread_id = run.thread_id
+        run.status = RunStatus.RUNNING
+        run.started_at = func.now()
+        db.commit()
+
+    first_state = {"run_id": run_id, "inputs": inputs, "outputs": {}, "branches": {}}
+    _run_graph(run_id, graph_json, thread_id, first_state)
+
+
+def resume_run(run_id: int, decision: dict) -> None:
+    with SessionLocal() as db:
+        run = db.get(Run, run_id)
+        if run is None or run.status != RunStatus.WAITING:
+            return
+        graph_json = run.graph
+        thread_id = run.thread_id
+        run.status = RunStatus.RUNNING
+        db.commit()
+
+    _run_graph(run_id, graph_json, thread_id, Command(resume=decision))
+
+
+def _run_graph(run_id: int, graph_json: dict, thread_id: str, graph_input) -> None:
+    config = {"configurable": {"thread_id": thread_id}}
+    try:
+        graph = build_graph(graph_json, DbRecorder(run_id), checkpointer=get_checkpointer())
+        result = graph.invoke(graph_input, config)
+    except RunCanceled:
+        return
+    except Exception as e:
+        log.exception("실행 실패 run_id=%s", run_id)
+        _finish(run_id, RunStatus.FAILED, error=str(e))
+        return
+
+    if "__interrupt__" in result:
+        _set_waiting(run_id)
+        return
+
+    _finish(run_id, RunStatus.SUCCEEDED, outputs=result["outputs"])
+
+
+def _set_waiting(run_id: int) -> None:
+    with SessionLocal() as db:
+        run = db.get(Run, run_id)
+        if run.status == RunStatus.CANCELED:
+            return
+        run.status = RunStatus.WAITING
+        db.commit()
+
+
+def _finish(run_id: int, status: RunStatus, outputs: dict | None = None, error: str | None = None) -> None:
+    with SessionLocal() as db:
+        run = db.get(Run, run_id)
+        if run.status == RunStatus.CANCELED:
+            return
+        run.status = status
+        run.outputs = outputs
+        run.error = error
+        run.finished_at = func.now()
+        db.commit()

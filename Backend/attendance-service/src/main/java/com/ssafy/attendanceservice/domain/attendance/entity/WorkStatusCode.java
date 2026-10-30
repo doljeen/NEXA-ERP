@@ -15,6 +15,11 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class WorkStatusCode {
 
+    public static final String WORKING = "WORKING";
+    public static final String CLOCK_IN = "CLOCK_IN";
+    public static final String CLOCK_OUT = "CLOCK_OUT";
+    public static final String CLOCK_OUT_CANCEL = "CLOCK_OUT_CANCEL";
+
     @Id
     @Column(name = "status_code", length = 20)
     private String statusCode;          // 상태 코드

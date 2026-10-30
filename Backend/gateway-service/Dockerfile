@@ -13,6 +13,10 @@ FROM eclipse-temurin:21-jre
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN useradd --system --uid 1001 --create-home spring
 
 COPY --from=build /app/app.jar ./app.jar

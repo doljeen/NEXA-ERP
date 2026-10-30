@@ -23,18 +23,22 @@ public class StagingRowRepository {
     private static final int BATCH_SIZE = 1000;
     private static final TypeReference<LinkedHashMap<String, String>> ROW_TYPE = new TypeReference<>() {
     };
+    private static final TypeReference<Map<String, Map<String, String>>> META_TYPE = new TypeReference<>() {
+    };
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
     public void saveAll(Long fileId, List<ParsedTable.Row> rows) {
         jdbcTemplate.batchUpdate(
-                "INSERT INTO staging_row (file_id, row_no, data) VALUES (?, ?, ?::jsonb)",
+                "INSERT INTO staging_row (file_id, row_no, data, meta) VALUES (?, ?, ?::jsonb, ?::jsonb)",
                 rows, BATCH_SIZE,
                 (ps, row) -> {
                     ps.setLong(1, fileId);
                     ps.setInt(2, row.rowNo());
                     ps.setString(3, objectMapper.writeValueAsString(row.values()));
+                    ps.setString(4, row.formulas().isEmpty() && row.errors().isEmpty() ? null
+                            : objectMapper.writeValueAsString(Map.of("f", row.formulas(), "e", row.errors())));
                 });
     }
 
@@ -59,10 +63,16 @@ public class StagingRowRepository {
         return result;
     }
 
+    /** 행 값 + 셀 수식·오류값 (meta) */
     public List<ParsedTable.Row> findByFileId(Long fileId) {
         return jdbcTemplate.query(
-                "SELECT row_no, data::text AS data FROM staging_row WHERE file_id = ? ORDER BY row_no",
-                (rs, i) -> new ParsedTable.Row(rs.getInt("row_no"), objectMapper.readValue(rs.getString("data"), ROW_TYPE)),
+                "SELECT row_no, data::text AS data, meta::text AS meta FROM staging_row WHERE file_id = ? ORDER BY row_no",
+                (rs, i) -> {
+                    Map<String, Map<String, String>> meta = rs.getString("meta") == null ? Map.of()
+                            : objectMapper.readValue(rs.getString("meta"), META_TYPE);
+                    return new ParsedTable.Row(rs.getInt("row_no"), objectMapper.readValue(rs.getString("data"), ROW_TYPE),
+                            meta.getOrDefault("f", Map.of()), meta.getOrDefault("e", Map.of()));
+                },
                 fileId);
     }
 }

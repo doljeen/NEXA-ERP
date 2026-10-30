@@ -7,6 +7,7 @@ import com.ssafy.user_service.global.security.SecurityConstants;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -44,8 +45,6 @@ public class SecurityConfig {
             SecurityConstants.JWKS_PATH,
             "/actuator/health",
             "/error",
-            "/swagger-ui/**",
-            "/v3/api-docs/**"
     };
 
     @Bean
@@ -60,13 +59,15 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PERMIT_URLS).permitAll()
                         .requestMatchers(ADMIN_URLS).hasRole("ADMIN")
+                        // 사원 API는 조회만 인증 사용자에게 열고, 등록/퇴직 처리 등 쓰기는 관리자 전용
+                        .requestMatchers(HttpMethod.POST, SecurityConstants.EMPLOYEE_BASE_PATH + "/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PATCH, SecurityConstants.EMPLOYEE_BASE_PATH + "/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
-                // 미인증 → 401, 권한 부족 → 403 (둘 다 ApiResult 형식)
                 .exceptionHandling(exception -> exception
-                        .authenticationEntryPoint(jwtAuthenticationEntryPoint)
-                        .accessDeniedHandler(jwtAccessDeniedHandler));
+                        .authenticationEntryPoint(jwtAuthenticationEntryPoint) // 토큰이 없거나 틀렸을 때
+                        .accessDeniedHandler(jwtAccessDeniedHandler)); // 토큰은 맞는데 권한이 부족할 때
         return http.build();
     }
 

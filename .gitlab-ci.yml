@@ -1,12 +1,28 @@
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_TAG =~ /^nexa-security-v/'
+    - when: never
+
 stages:
   - verify
   - build
+  - deploy
 
 include:
   - local: /.gitlab/ci/user.yml
   - local: /.gitlab/ci/approval.yml
   - local: /.gitlab/ci/fastapi.yml
-
+  - local: /.gitlab/ci/eureka.yml
+  - local: /.gitlab/ci/config.yml
+  - local: /.gitlab/ci/gateway.yml
+  - local: /.gitlab/ci/attendance.yml
+  - local: /.gitlab/ci/testcontainers.yml
+  - local: /.gitlab/ci/leave.yml
+  - local: /.gitlab/ci/nexa-security.yml
+  - local: /.gitlab/ci/deploy.yml
 check-ci-environment:
   stage: verify
   image: eclipse-temurin:21-jdk
@@ -22,3 +38,14 @@ check-ci-environment:
     - when: manual
 
   allow_failure: true
+
+.gradle-cache:
+  variables:
+    GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle-ci"
+
+  cache:
+    key: "gradle-v1-$CI_JOB_NAME"
+    paths:
+      - .gradle-ci/wrapper/
+      - .gradle-ci/caches/modules-2/
+    policy: pull-push
