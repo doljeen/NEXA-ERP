@@ -13,10 +13,10 @@ class FileUploadNode(BaseNode):
          "options": ["이미지", "PDF", "엑셀"], "required": True},
     ]
     output_vars = [
-        {"key": "file_ids", "label": "파일 목록", "type": "list"},
+        {"key": "files", "label": "파일 목록", "type": "list"},
     ]
 
     def run(self, ctx: NodeContext) -> NodeResult:
         time.sleep(1)
-        file_ids = ctx.inputs.get("file_ids", [])
-        return NodeResult(output={"file_ids": file_ids})
+        files = ctx.inputs.get("files", [])
+        return NodeResult(output={"files": files})

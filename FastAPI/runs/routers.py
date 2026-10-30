@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
 from sqlalchemy.orm import Session
 
 from core.auth import get_user_id
@@ -6,8 +6,15 @@ from core.database import get_db
 from core.response import ApiResult, ok
 from engine.runner import execute_run, resume_run
 from runs import service
-from runs.schemas import ResumeRequest, RunCreated, RunCreateRequest, RunDetail, RunStepResponse, RunSummary
-
+from runs.schemas import (
+    ResumeRequest, 
+    RunCreated, 
+    RunCreateRequest, 
+    RunDetail,
+    RunFileResponse, 
+    RunStepResponse, 
+    RunSummary,
+)
 
 router = APIRouter(tags=["실행"])
 
@@ -36,6 +43,28 @@ def create_test_run(
     run = service.create_test_run(db, workflow_id, req, user_id)
     background_tasks.add_task(execute_run, run.id)
     return ok({"run_id": run.id, "status": run.status})
+
+
+@router.post("/runs/files", response_model=ApiResult[RunFileResponse], status_code=201)
+def upload_file(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user_id: str | None = Depends(get_user_id),
+):
+    run_file = service.upload_file(db, file, user_id)
+    return ok(RunFileResponse.model_validate(run_file))
+
+
+@router.get("/runs/files/{file_id}", response_model=ApiResult[RunFileResponse])
+def get_file(file_id: int, db: Session = Depends(get_db)):
+    run_file = service.get_file(db, file_id)
+    return ok(RunFileResponse.model_validate(run_file))
+
+
+@router.delete("/runs/files/{file_id}", response_model=ApiResult[None])
+def delete_file(file_id: int, db: Session = Depends(get_db)):
+    service.delete_file(db, file_id)
+    return ok()
 
 
 @router.get("/runs/me", response_model=ApiResult[list[RunSummary]])
