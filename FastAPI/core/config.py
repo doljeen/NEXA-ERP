@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     instance_host: str = ""
     instance_port: int = 8086
 
+    upload_dir: str = "uploads"
+    max_upload_mb: int = 20
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

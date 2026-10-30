@@ -31,6 +31,11 @@ class ErrorCode(Enum):
     RUN_MISSING_INPUT = (400, "RUN_003", "필수 입력값이 비어 있습니다.")
     RUN_NOT_WAITING = (409, "RUN_004", "확인 대기 중인 실행이 아닙니다.")
 
+    # 첨부 파일
+    FILE_NOT_FOUND = (404, "FILE_001", "존재하지 않는 파일입니다")
+    FILE_ALREADY_USED = (409, "FILE_002", "이미 실행에 사용된 파일입니다.")
+    FILE_TOO_LARGE = (413, "FILE_003", "파일 용량이 너무 큽니다.")
+
 
     def __init__(self, status: int, code: str, message: str):
         self.status = status

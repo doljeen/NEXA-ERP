@@ -5,6 +5,7 @@ from core.schemas import CamelModel
 
 class RunCreateRequest(CamelModel):
     inputs: dict = {}
+    file_ids: list[int] = []
 
 
 class ResumeRequest(CamelModel):
@@ -46,3 +47,15 @@ class RunStepResponse(CamelModel):
     error: str | None
     started_at: datetime
     finished_at: datetime | None
+
+
+# 파일 응답
+class RunFileResponse(CamelModel):
+    id: int
+    run_id: int | None
+    original_name: str
+    content_type: str | None
+    size: int
+    uploaded_by: str | None
+    created_at: datetime
+

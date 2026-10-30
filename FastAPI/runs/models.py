@@ -70,3 +70,16 @@ class RunStep(Base):
     finished_at: Mapped[datetime | None]
 
     run: Mapped["Run"] = relationship(back_populates="steps")
+
+
+class RunFile(Base):
+    __tablename__ = "run_file"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("run.id"))
+    original_name: Mapped[str] = mapped_column(String(255))
+    stored_name: Mapped[str] = mapped_column(String(64), unique=True)
+    content_type: Mapped[str | None] = mapped_column(String(100))
+    size: Mapped[int]
+    uploaded_by: Mapped[str | None] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+

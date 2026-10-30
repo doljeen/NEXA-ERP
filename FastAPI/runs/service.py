@@ -1,10 +1,13 @@
 import copy
+from datetime import timedelta
 
+from fastapi import UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from core.exceptions import BusinessException, ErrorCode
-from runs.models import FINISHED_STATUSES, Run, RunStatus, RunStep
+from runs import files
+from runs.models import FINISHED_STATUSES, Run, RunFile, RunStatus, RunStep
 from runs.schemas import RunCreateRequest
 from workflows.models import Workflow
 from workflows.validator import validate_graph
@@ -24,9 +27,38 @@ def _get_workflow(db: Session, workflow_id: int) -> Workflow:
     return workflow
 
 
-def _check_required_inputs(workflow: Workflow, inputs: dict) -> None:
+def _get_file(db: Session, file_id: int) -> RunFile:
+    run_file = db.get(RunFile, file_id)
+    if run_file is None:
+        raise BusinessException(ErrorCode.FILE_NOT_FOUND)
+    return run_file
+
+
+def _take_files(db: Session, file_ids: list[int]) -> list[RunFile]:
+    run_files = []
+    for file_id in file_ids:
+        run_file = _get_file(db, file_id)
+        if run_file.run_id is not None:
+            raise BusinessException(ErrorCode.FILE_ALREADY_USED)
+        run_files.append(run_file)
+    return run_files
+
+
+def _file_info(run_file: RunFile) -> dict:
+    return {
+        "file_id": run_file.id,
+        "name": run_file.original_name,
+        "content_type": run_file.content_type,
+        "size": run_file.size,
+        "path": str(files.file_path(run_file.stored_name)),
+    }
+
+
+def _check_required_inputs(workflow: Workflow, inputs: dict, file_ids: list[int]) -> None:
     for field in workflow.input_form:
         if field["type"] == "file":
+            if field.get("required") and not file_ids:
+                raise BusinessException(ErrorCode.RUN_MISSING_INPUT, f"'{field['label']}' 파일이 첨부되지 않았습니다.")
             continue
         if field.get("required") and not inputs.get(field["key"]):
             raise BusinessException(ErrorCode.RUN_MISSING_INPUT, f"'{field['label']}' 값이 비어 있습니다.")
@@ -38,16 +70,20 @@ def create_run(db: Session, workflow_id: int, req: RunCreateRequest, user_id: st
         raise BusinessException(ErrorCode.WF_NOT_DEPLOYED)
 
     version = next(v for v in workflow.versions if v.version == workflow.deployed_version)
-    _check_required_inputs(workflow, req.inputs)
+    _check_required_inputs(workflow, req.inputs, req.file_ids)
+    run_files = _take_files(db, req.file_ids)
 
     run = Run(
         workflow_id=workflow.id,
         version=version.version,
         graph=copy.deepcopy(version.graph),
-        inputs=req.inputs,
+        inputs={**req.inputs, "files": [_file_info(f) for f in run_files]},
         requested_by=user_id,
     )
     db.add(run)
+    db.flush()
+    for run_file in run_files:
+        run_file.run_id = run.id
     db.commit()
     db.refresh(run)
     return run
@@ -60,15 +96,19 @@ def create_test_run(db: Session, workflow_id: int, req: RunCreateRequest, user_i
     if issues:
         raise BusinessException(ErrorCode.WF_INVALID_GRAPH, issues[0]["message"])
 
+    run_files = _take_files(db, req.file_ids)
     run = Run(
         workflow_id=workflow.id,
         version=None,
         is_test=True,
         graph=copy.deepcopy(workflow.draft_graph),
-        inputs=req.inputs,
+        inputs={**req.inputs, "files": [_file_info(f) for f in run_files]},
         requested_by=user_id,
     )
     db.add(run)
+    db.flush()
+    for run_file in run_files:
+        run_file.run_id = run.id
     db.commit()
     db.refresh(run)
     return run
@@ -117,3 +157,48 @@ def list_my_pending(db: Session, user_id: str | None) -> list[Run]:
         .order_by(Run.id.desc())
     )
     return list(db.scalars(stmt).all())
+
+
+# 첨부 파일 업로드
+def upload_file(db: Session, file: UploadFile, user_id: str | None) -> RunFile:
+    cleanup_unused_files(db)
+    stored_name, size = files.save_upload(file)
+    run_file = RunFile(
+        original_name=file.filename or "unknown",
+        stored_name=stored_name,
+        content_type=file.content_type,
+        size=size,
+        uploaded_by=user_id,
+    )
+    db.add(run_file)
+    db.commit()
+    db.refresh(run_file)
+    return run_file
+
+
+# 첨부 파일 조회
+def get_file(db: Session, file_id: int) -> RunFile:
+    return _get_file(db, file_id)
+
+
+# 파일 첨부 취소
+def delete_file(db: Session, file_id: int) -> None:
+    run_file = _get_file(db, file_id)
+    if run_file.run_id is not None:
+        raise BusinessException(ErrorCode.FILE_ALREADY_USED)
+    files.delete_stored(run_file.stored_name)
+    db.delete(run_file)
+    db.commit()
+
+
+# 24시간 동안 실행에 안 쓰인 파일 정리
+def cleanup_unused_files(db: Session) -> None:
+    stmt = (
+        select(RunFile)
+        .where(RunFile.run_id.is_(None))
+        .where(RunFile.created_at < func.now() - timedelta(hours=24))
+    )
+    for run_file in db.scalars(stmt).all():
+        files.delete_stored(run_file.stored_name)
+        db.delete(run_file)
+    db.commit()
