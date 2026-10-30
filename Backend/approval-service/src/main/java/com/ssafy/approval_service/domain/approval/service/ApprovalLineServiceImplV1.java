@@ -12,7 +12,7 @@ import com.ssafy.approval_service.domain.document.model.entity.Document;
 import com.ssafy.approval_service.domain.document.service.DocumentService;
 import com.ssafy.approval_service.global.exception.BusinessException;
 import com.ssafy.approval_service.global.exception.ErrorCode;
-import com.ssafy.approval_service.global.security.Requester;
+import com.ssafy.nexa.security.AuthUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,7 +44,7 @@ public class ApprovalLineServiceImplV1 implements ApprovalLineService {
     // ===== 결재자 =====
 
     @Override
-    public List<ApprovalLineResponse> getApprovers(Long documentId, Requester requester) {
+    public List<ApprovalLineResponse> getApprovers(Long documentId, AuthUser requester) {
         return findLines(documentId, APPROVER_ROLES, requester);
     }
 
@@ -127,7 +127,7 @@ public class ApprovalLineServiceImplV1 implements ApprovalLineService {
     // ===== 참조자 =====
 
     @Override
-    public List<ApprovalLineResponse> getReferrers(Long documentId, Requester requester) {
+    public List<ApprovalLineResponse> getReferrers(Long documentId, AuthUser requester) {
         return findLines(documentId, List.of(LineRole.REFERENCE), requester);
     }
 
@@ -146,7 +146,7 @@ public class ApprovalLineServiceImplV1 implements ApprovalLineService {
     // ===== 열람자 =====
 
     @Override
-    public List<ApprovalLineResponse> getViewers(Long documentId, Requester requester) {
+    public List<ApprovalLineResponse> getViewers(Long documentId, AuthUser requester) {
         return findLines(documentId, List.of(LineRole.VIEWER), requester);
     }
 
@@ -229,7 +229,7 @@ public class ApprovalLineServiceImplV1 implements ApprovalLineService {
     }
 
     /** 문서가 없거나 조회 권한이 없으면 404, 있으면 해당 역할의 결재선을 순서대로 조회 */
-    private List<ApprovalLineResponse> findLines(Long documentId, Collection<LineRole> roles, Requester requester) {
+    private List<ApprovalLineResponse> findLines(Long documentId, Collection<LineRole> roles, AuthUser requester) {
         documentService.getReadableDocument(documentId, requester);
         return approvalLineRepository.findByDocumentDocIdAndRoleInOrderByStepAscLineIdAsc(documentId, roles).stream()
                 .map(ApprovalLineResponse::from)

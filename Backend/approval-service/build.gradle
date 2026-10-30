@@ -19,6 +19,8 @@ java {
 
 repositories {
 	mavenCentral()
+	// 팀 공통 라이브러리(nexa-security). 이 저장소의 GitLab Package Registry (익명 pull 허용)
+	maven { url = 'https://lab.ssafy.com/api/v4/projects/1457109/packages/maven' }
 }
 
 dependencies {
@@ -50,8 +52,8 @@ dependencies {
 	// Actuator 추가
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
-	// JWT 검증 (user-service JWKS 공개키로 access 토큰 서명 확인)
-	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+	// JWT 검증 공통 라이브러리 (user-service JWKS 공개키로 access 토큰 서명 확인, 리소스 서버 포함)
+	implementation 'com.ssafy.nexa:nexa-security:1.0.0'
 
 }
 
