@@ -1,5 +1,17 @@
 server:
   port: 8082
+leave:
+  approval:
+    enabled: ${LEAVE_APPROVAL_ENABLED:false}
+    base-url: ${LEAVE_APPROVAL_BASE_URL:}
+    service-id: ${LEAVE_APPROVAL_SERVICE_ID:}
+    connect-timeout: ${LEAVE_APPROVAL_CONNECT_TIMEOUT:2s}
+    read-timeout: ${LEAVE_APPROVAL_READ_TIMEOUT:3s}
+  attendance:
+    base-url: ${LEAVE_ATTENDANCE_BASE_URL:}
+    service-id: ${LEAVE_ATTENDANCE_SERVICE_ID:attendance-service}
+    connect-timeout: ${LEAVE_ATTENDANCE_CONNECT_TIMEOUT:2s}
+    read-timeout: ${LEAVE_ATTENDANCE_READ_TIMEOUT:3s}
 spring:
   cloud:
     config:
