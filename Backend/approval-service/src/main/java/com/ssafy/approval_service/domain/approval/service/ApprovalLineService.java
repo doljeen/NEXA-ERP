@@ -2,7 +2,7 @@ package com.ssafy.approval_service.domain.approval.service;
 
 import com.ssafy.approval_service.domain.approval.model.dto.ApprovalLineResponse;
 import com.ssafy.approval_service.domain.document.model.dto.ApprovalLineRequest;
-import com.ssafy.approval_service.global.security.Requester;
+import com.ssafy.nexa.security.AuthUser;
 
 import java.util.List;
 
@@ -10,7 +10,7 @@ import java.util.List;
 public interface ApprovalLineService {
 
     /** 결재자 조회 (APPROVER/AGREEMENT, step 순) */
-    List<ApprovalLineResponse> getApprovers(Long documentId, Requester requester);
+    List<ApprovalLineResponse> getApprovers(Long documentId, AuthUser requester);
 
     /** 결재자 추가 (기안자) */
     void addApprover(Long employeeId, Long documentId, ApprovalLineRequest request);
@@ -22,7 +22,7 @@ public interface ApprovalLineService {
     void reorderApprovers(Long employeeId, Long documentId, List<Long> approverIds);
 
     /** 참조자 조회 */
-    List<ApprovalLineResponse> getReferrers(Long documentId, Requester requester);
+    List<ApprovalLineResponse> getReferrers(Long documentId, AuthUser requester);
 
     /** 참조자 추가 (기안자) */
     void addReferrer(Long employeeId, Long documentId, Long referrerId);
@@ -31,7 +31,7 @@ public interface ApprovalLineService {
     void removeReferrer(Long employeeId, Long documentId, Long referrerId);
 
     /** 열람자 조회 */
-    List<ApprovalLineResponse> getViewers(Long documentId, Requester requester);
+    List<ApprovalLineResponse> getViewers(Long documentId, AuthUser requester);
 
     /** 열람자 추가 (기안자) */
     void addViewer(Long employeeId, Long documentId, Long viewerId);

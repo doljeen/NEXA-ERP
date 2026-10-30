@@ -17,7 +17,7 @@ import com.ssafy.approval_service.domain.document.model.entity.enums.FormType;
 import com.ssafy.approval_service.domain.document.repository.DocumentRepository;
 import com.ssafy.approval_service.global.exception.BusinessException;
 import com.ssafy.approval_service.global.exception.ErrorCode;
-import com.ssafy.approval_service.global.security.Requester;
+import com.ssafy.nexa.security.AuthUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,7 +38,7 @@ public class DocumentServiceImplV1 implements DocumentService {
 
     @Override
     public DocumentListResponse findByStatusAndType(String approvalStatus, String formType, String box,
-                                                    Requester requester) {
+                                                    AuthUser requester) {
         DocumentStatus status = parseEnum(DocumentStatus.class, approvalStatus, "approvalStatus");
         FormType type = parseEnum(FormType.class, formType, "formType");
         Long drafterId = parseEnum(DocumentBox.class, box, "box") == DocumentBox.DRAFTED
@@ -46,7 +46,7 @@ public class DocumentServiceImplV1 implements DocumentService {
                 : null;
 
         List<Document> documents = documentRepository.findReadableByStatusAndFormType(
-                status, type, drafterId, requester.employeeId(), requester.admin());
+                status, type, drafterId, requester.employeeId(), requester.isAdmin());
         return DocumentListResponse.from(documents);
     }
 
@@ -92,7 +92,7 @@ public class DocumentServiceImplV1 implements DocumentService {
     }
 
     @Override
-    public DocumentInfoResponse findById(Long documentId, Requester requester) {
+    public DocumentInfoResponse findById(Long documentId, AuthUser requester) {
         Document document = getReadableDocument(documentId, requester);
 
         List<ApprovalLine> lines = approvalLineRepository.findByDocumentDocIdOrderByStepAsc(documentId);
@@ -123,9 +123,9 @@ public class DocumentServiceImplV1 implements DocumentService {
      * 권한이 없으면 문서 존재 여부도 드러나지 않게 없는 문서와 같은 404로 응답한다
      */
     @Override
-    public Document getReadableDocument(Long documentId, Requester requester) {
+    public Document getReadableDocument(Long documentId, AuthUser requester) {
         Document document = getDocument(documentId);
-        if (requester.admin() || document.isDraftedBy(requester.employeeId())) {
+        if (requester.isAdmin() || document.isDraftedBy(requester.employeeId())) {
             return document;
         }
         if (!approvalLineRepository.existsByDocumentDocIdAndEmpId(documentId, requester.employeeId())) {

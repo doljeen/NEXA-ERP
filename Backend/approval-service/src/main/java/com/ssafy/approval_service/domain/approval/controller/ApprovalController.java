@@ -5,10 +5,10 @@ import com.ssafy.approval_service.domain.approval.model.dto.RejectRequest;
 import com.ssafy.approval_service.domain.approval.model.dto.ResubmitRequest;
 import com.ssafy.approval_service.domain.approval.service.ApprovalService;
 import com.ssafy.approval_service.global.dto.ApiResult;
-import com.ssafy.approval_service.global.security.CurrentEmployeeId;
-import com.ssafy.approval_service.global.security.CurrentRequester;
-import com.ssafy.approval_service.global.security.Requester;
 import com.ssafy.approval_service.global.security.SecurityConstants;
+import com.ssafy.nexa.security.AuthUser;
+import com.ssafy.nexa.security.CurrentEmployeeId;
+import com.ssafy.nexa.security.CurrentUser;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -30,7 +30,7 @@ public class ApprovalController {
     /** 문서의 결재 이력 (발생 순) */
     @GetMapping("/histories")
     public ResponseEntity<ApiResult<List<ApprovalHistoryResponse>>> getApprovalHistories(
-            @CurrentRequester Requester requester,
+            @CurrentUser AuthUser requester,
             @PathVariable Long documentId
     ) {
         List<ApprovalHistoryResponse> response = approvalService.getHistories(documentId, requester);

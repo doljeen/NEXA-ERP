@@ -1,6 +1,7 @@
 package com.ssafy.approval_service.global.client;
 
 import com.ssafy.approval_service.global.client.UserServiceClient.EmployeeStatus;
+import com.ssafy.nexa.security.BearerTokenRelayInterceptor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,7 +39,7 @@ class UserServiceClientTest {
     void setUp() {
         RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
         server = MockRestServiceServer.bindTo(builder).build();
-        client = UserServiceClientConfig.create(builder);
+        client = UserServiceClientConfig.create(builder, new BearerTokenRelayInterceptor());
     }
 
     @AfterEach
