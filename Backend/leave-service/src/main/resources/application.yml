@@ -12,6 +12,10 @@ leave:
     service-id: ${LEAVE_ATTENDANCE_SERVICE_ID:attendance-service}
     connect-timeout: ${LEAVE_ATTENDANCE_CONNECT_TIMEOUT:2s}
     read-timeout: ${LEAVE_ATTENDANCE_READ_TIMEOUT:3s}
+nexa:
+  security:
+    # 토큰 검증 공개키 (user-service JWKS)
+    jwks-uri: ${JWT_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
 spring:
   cloud:
     config:
