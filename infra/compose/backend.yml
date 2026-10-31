@@ -141,6 +141,8 @@ services:
       SPRING_DATASOURCE_USERNAME: nexa_leave_app
       SPRING_DATASOURCE_PASSWORD: ${LEAVE_DB_PASSWORD:?LEAVE_DB_PASSWORD is required}
 
+      JWT_JWKS_URI: http://user-service:8081/.well-known/jwks.json
+
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: "http://${EUREKA_USER:?EUREKA_USER is required}:${EUREKA_PASSWORD:?EUREKA_PASSWORD is required}@eureka-server:8761/eureka/"
       EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
 

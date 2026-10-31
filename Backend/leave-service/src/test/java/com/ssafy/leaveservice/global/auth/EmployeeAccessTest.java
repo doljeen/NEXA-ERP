@@ -1,39 +1,37 @@
 package com.ssafy.leaveservice.global.auth;
 
-import com.ssafy.leaveservice.global.exception.BusinessException;
-import com.ssafy.leaveservice.global.exception.ErrorCode;
+import com.ssafy.leaveservice.support.TestTokens;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import static org.assertj.core.api.Assertions.*;
 
 class EmployeeAccessTest {
-    private final ApplicationContextRunner runner = new ApplicationContextRunner()
-            .withUserConfiguration(DevEmployeeAccess.class, UnavailableEmployeeAccess.class);
+    private final EmployeeAccess access = new TokenEmployeeAccess();
 
-    @Test
-    void devAllowsTemporaryEmployeeAndAdmin() {
-        runner.withPropertyValues("spring.profiles.active=dev").run(context -> {
-            assertThat(context).hasSingleBean(EmployeeAccess.class);
-            EmployeeAccess access = context.getBean(EmployeeAccess.class);
-            assertThat(access).isInstanceOf(DevEmployeeAccess.class);
-            assertThat(access.currentEmployeeId()).isEqualTo(1L);
-            assertThat(access.isAdmin(access.currentEmployeeId())).isTrue();
-        });
+    @AfterEach
+    void clearToken() {
+        TestTokens.clear();
     }
 
     @Test
-    void allNonDevAndProductionCombinationsDenyAccess() {
-        for (String profiles : new String[]{"", "test", "prod", "production", "dev,prod", "dev,production"}) {
-            runner.withPropertyValues("spring.profiles.active=" + profiles).run(context -> {
-                assertThat(context).hasSingleBean(EmployeeAccess.class);
-                EmployeeAccess access = context.getBean(EmployeeAccess.class);
-                assertThat(access).isInstanceOf(UnavailableEmployeeAccess.class);
-                assertThat(access.isAdmin(1L)).isFalse();
-                assertThatThrownBy(access::currentEmployeeId)
-                        .isInstanceOfSatisfying(BusinessException.class,
-                                ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.AUTHENTICATION_UNAVAILABLE));
-            });
-        }
+    void tokenSubjectIsCurrentEmployee() {
+        TestTokens.authenticate(7L, "USER");
+        assertThat(access.currentEmployeeId()).isEqualTo(7L);
+        assertThat(access.isAdmin(7L)).isFalse();
+    }
+
+    @Test
+    void adminRoleIsAdminOnlyForTokenEmployee() {
+        TestTokens.authenticate(1L, "ADMIN");
+        assertThat(access.isAdmin(1L)).isTrue();
+        assertThat(access.isAdmin(2L)).isFalse();
+        assertThat(access.isAdmin(null)).isFalse();
+    }
+
+    @Test
+    void withoutTokenNoEmployeeAndNotAdmin() {
+        assertThat(access.currentEmployeeId()).isNull();
+        assertThat(access.isAdmin(1L)).isFalse();
     }
 }
