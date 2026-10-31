@@ -100,6 +100,8 @@ services:
       SPRING_DATASOURCE_USERNAME: nexa_attendance_app
       SPRING_DATASOURCE_PASSWORD: ${ATTENDANCE_DB_PASSWORD:?ATTENDANCE_DB_PASSWORD is required}
 
+      JWT_JWKS_URI: http://user-service:8081/.well-known/jwks.json
+
       EUREKA_URL: "http://${EUREKA_USER:?EUREKA_USER is required}:${EUREKA_PASSWORD:?EUREKA_PASSWORD is required}@eureka-server:8761/eureka/"
 
     ports:
