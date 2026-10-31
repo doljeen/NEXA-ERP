@@ -73,7 +73,8 @@ public class JwtConfig {
                 )
         );
 
-        // 서명 및 클레임 검증 성공 후 Redis 블랙리스트 검사
+        // 서명 및 클레임 검증 성공 후 Redis 블랙리스트 검사.
+        // 키 규칙(BL:{access jti})은 user-service RedisTokenStore.BLACKLIST_PREFIX 와 같아야 한다
         return token -> decoder.decode(token)
                 .flatMap(jwt ->
                         redisTemplate.hasKey("BL:" + jwt.getId())
