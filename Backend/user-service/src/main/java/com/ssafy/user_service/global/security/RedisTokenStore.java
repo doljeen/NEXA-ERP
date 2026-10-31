@@ -14,6 +14,8 @@ import java.util.concurrent.TimeUnit;
 public class RedisTokenStore implements TokenStore {
 
     private static final String REFRESH_PREFIX = "RT:";   // RT:{employeeId} -> refresh jti
+    // BL: 접두사는 gateway-service JwtConfig 의 블랙리스트 확인("BL:" + jti)과 같아야 한다.
+    // 한쪽만 바꾸면 에러 없이 로그아웃 토큰이 gateway 를 통과하므로 반드시 함께 바꾼다
     private static final String BLACKLIST_PREFIX = "BL:"; // BL:{access jti} -> "logout"
 
     // GET-비교-SET 을 Redis 안에서 한 번에 수행. 동시 재발급 중 하나만 성공하고,
