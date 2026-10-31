@@ -14,8 +14,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 관리자 급여 API */
-// TODO: 인증 적용 시 관리자 권한 확인 (SecurityConfig에서 /api/v1/pay/admin/lear
-//  ** ROLE_ADMIN)
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/pay/admin")

@@ -3,6 +3,8 @@ package com.ssafy.payrollservice.domain.payroll.client;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.ssafy.payrollservice.global.exception.BusinessException;
 import com.ssafy.payrollservice.global.exception.ErrorCode;
+import com.ssafy.nexa.security.BearerTokenRelayInterceptor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -22,15 +24,26 @@ public class AttendanceClient {
 
     private final RestClient restClient;
 
-    public AttendanceClient(@Value("${payroll.clients.attendance.base-url}") String baseUrl) {
-        // 근태 서비스가 응답하지 않으면 급여 생성 요청이 끝없이 걸리지 않게
+    @Autowired
+    public AttendanceClient(@Value("${payroll.clients.attendance.base-url}") String baseUrl,
+                            BearerTokenRelayInterceptor bearerTokenRelay) {
+        this(RestClient.builder().requestFactory(timeoutRequestFactory()), baseUrl, bearerTokenRelay);
+    }
+
+    // 요청한 관리자의 access 토큰을 근태 서비스로 넘긴다 (근태 서비스가 다시 검증).
+    // 테스트에서 요청 팩토리를 바꿔 끼울 수 있게 빌더를 받는다
+    AttendanceClient(RestClient.Builder builder, String baseUrl, BearerTokenRelayInterceptor bearerTokenRelay) {
+        this.restClient = builder.baseUrl(baseUrl).requestInterceptor(bearerTokenRelay).build();
+    }
+
+    // 근태 서비스가 응답하지 않으면 급여 생성 요청이 끝없이 걸리지 않게
+    private static SimpleClientHttpRequestFactory timeoutRequestFactory() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(3));
         factory.setReadTimeout(Duration.ofSeconds(30));
-        this.restClient = RestClient.builder().baseUrl(baseUrl).requestFactory(factory).build();
+        return factory;
     }
 
-    // TODO: 서비스 간 인증 방식이 정해지면 인증 헤더 추가
     public AttendanceSummary getSummary(Long empId, YearMonth month) {
         InternalResult<AttendanceSummary> res;
         try {
