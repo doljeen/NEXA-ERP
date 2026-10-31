@@ -10,7 +10,7 @@ import jakarta.validation.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.*;
-import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import com.ssafy.leaveservice.support.TestTokens;
 import java.time.*;
 import java.util.*;
 import static org.assertj.core.api.Assertions.*;
@@ -23,34 +23,32 @@ class LeaveRequestPreviewAuthenticationTest {
     private final Clock clock=Clock.fixed(Instant.parse("2030-01-01T00:00:00Z"),ZoneOffset.UTC);
     private final LeaveRequestPreviewRequest request=new LeaveRequestPreviewRequest(1L,null,List.of(
             new LeaveRequestPreviewRequest.DateRequest(LocalDate.of(2030,1,7),LeaveRequestPortion.FULL)));
-    private final ApplicationContextRunner runner=new ApplicationContextRunner()
-            .withUserConfiguration(DevEmployeeAccess.class,UnavailableEmployeeAccess.class);
+    private final EmployeeAccess tokenAccess=new TokenEmployeeAccess();
 
     @AfterAll
     static void closeFactory() { FACTORY.close(); }
 
-    @ParameterizedTest
-    @ValueSource(strings={"","test","prod","production","dev,prod","dev,production"})
-    void existingProfilesBlockBeforeAnyExternalOrDatabaseWork(String profile) {
-        runner.withPropertyValues("spring.profiles.active="+profile).run(context -> {
-            LeaveRequestPreviewService service=service(context.getBean(EmployeeAccess.class));
-            assertThatThrownBy(()->service.preview(request)).isInstanceOfSatisfying(BusinessException.class,
-                    exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.AUTHENTICATION_UNAVAILABLE));
-            verifyNoInteractions(holidays,snapshot);
-        });
+    @AfterEach
+    void clearToken() { TestTokens.clear(); }
+
+    @Test
+    void withoutTokenBlocksBeforeAnyExternalOrDatabaseWork() {
+        LeaveRequestPreviewService service=service(tokenAccess);
+        assertThatThrownBy(()->service.preview(request)).isInstanceOfSatisfying(BusinessException.class,
+                exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.UNAUTHORIZED));
+        verifyNoInteractions(holidays,snapshot);
     }
 
     @Test
-    void devUsesExistingEmployeeOneWithoutRequiringAdminAndPassesSingleClockInstant() {
-        runner.withPropertyValues("spring.profiles.active=dev").run(context -> {
-            EmployeeAccess access=spy(context.getBean(EmployeeAccess.class));
-            HolidayClient.HolidayResult result=new HolidayClient.HolidayResult(true,List.of());
-            when(holidays.findHolidays(any(),any())).thenReturn(result);
-            service(access).preview(request);
-            verify(access).currentEmployeeId();
-            verify(access,never()).isAdmin(any());
-            verify(snapshot).preview(eq(request),eq(OffsetDateTime.ofInstant(clock.instant(),ZoneOffset.UTC)),same(result));
-        });
+    void tokenEmployeeWithoutRequiringAdminAndPassesSingleClockInstant() {
+        TestTokens.authenticate(1L,"USER");
+        EmployeeAccess access=spy(tokenAccess);
+        HolidayClient.HolidayResult result=new HolidayClient.HolidayResult(true,List.of());
+        when(holidays.findHolidays(any(),any())).thenReturn(result);
+        service(access).preview(request);
+        verify(access).currentEmployeeId();
+        verify(access,never()).isAdmin(any());
+        verify(snapshot).preview(eq(request),eq(OffsetDateTime.ofInstant(clock.instant(),ZoneOffset.UTC)),same(result));
     }
 
     @ParameterizedTest
@@ -66,7 +64,8 @@ class LeaveRequestPreviewAuthenticationTest {
 
     @Test
     void directServiceCallsStillValidateRequest() {
-        EmployeeAccess access=new DevEmployeeAccess();
+        TestTokens.authenticate(1L,"USER");
+        EmployeeAccess access=tokenAccess;
         for(LeaveRequestPreviewRequest invalid:Arrays.asList(null,new LeaveRequestPreviewRequest(1L,null,List.of()))) {
             assertThatThrownBy(()->service(access).preview(invalid)).isInstanceOfSatisfying(BusinessException.class,
                     exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT));
