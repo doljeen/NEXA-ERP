@@ -19,3 +19,8 @@ spring:
 eureka:
   client:
     enabled: false
+
+payroll:
+  clients:
+    attendance:
+      base-url: http://localhost:8084
