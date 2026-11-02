@@ -225,6 +225,11 @@ def evaluate_hr_file(base, mid, cdir, fname, hk, cross=frozenset()):
                     if i["code"] in codes and (row is None or i["rowNo"] == row):
                         item["detected"] = True
                         explained.add((sheet, i["rowNo"], i["code"]))
+        if codes and a.get("formula") and a.get("sheet") in issues_by_sheet:
+            # 수식 자체를 바꾼 사고: 정답지가 일부 행만 적어도 그 시트에서 같은 코드 경고는 이 사고로 설명된다
+            for i in issues_by_sheet[a["sheet"]]:
+                if i["code"] in codes:
+                    explained.add((a["sheet"], i["rowNo"], i["code"]))
         emp = _emp_key(a.get("empNo"))
         for code_set, detects in ((EMP_SCOPED.get(a["type"], set()), True), (EXPLAINS.get(a["type"], set()), False)):
             for sheet, issues in issues_by_sheet.items() if emp and code_set else []:
