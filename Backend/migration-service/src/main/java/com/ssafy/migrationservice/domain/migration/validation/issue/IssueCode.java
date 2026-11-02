@@ -15,6 +15,10 @@ public enum IssueCode {
     // 검산
     RECALC_MISMATCH,
     TOTAL_ITEM_MISSING,
+    // 법정 기준
+    INSURANCE_RATE_OUTDATED,
+    INSURANCE_BASE_INCLUDES_MEAL,
+    PREMIUM_BELOW_STATUTORY,
     // 형식·필수값
     REQUIRED,
     INVALID_DATE,
