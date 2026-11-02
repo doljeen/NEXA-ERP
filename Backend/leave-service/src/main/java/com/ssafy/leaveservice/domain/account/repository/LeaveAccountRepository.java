@@ -2,6 +2,7 @@ package com.ssafy.leaveservice.domain.account.repository;
 
 import com.ssafy.leaveservice.domain.account.entity.LeaveAccount;
 import com.ssafy.leaveservice.domain.account.repository.projection.LeaveAccountBalance;
+import com.ssafy.leaveservice.domain.account.repository.projection.DepartmentAccountBalance;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,19 +15,8 @@ public interface LeaveAccountRepository extends JpaRepository<LeaveAccount, Long
 
     // 발생분별 원장을 먼저 집계하고, 같은 기준 시각의 유효 발생분만 계정별로 합산한다.
     // NUMERIC 합계로 DB 중간 집계의 BIGINT 오버플로도 방지한다.
-    @Query(value = LeaveBalanceSql.GRANT_TOTALS + """
-            select account.account_id as "accountId", balance_type.balance_type_id as "balanceTypeId",
-                   balance_type.name as "balanceTypeName",
-                   coalesce(sum(grant_total.quantity_minutes), 0) as "quantityMinutes",
-                   coalesce(sum(grant_total.reserved_minutes), 0) as "reservedMinutes",
-                   coalesce(bool_or(grant_total.quantity_minutes < 0 or grant_total.reserved_minutes < 0
-                       or grant_total.reserved_minutes > grant_total.quantity_minutes), false) as "invalidGrant"
-            from owned_accounts account
-            join leave_balance_type balance_type on balance_type.balance_type_id = account.balance_type_id
-            cross join calculation_time time
-            left join grant_totals grant_total on grant_total.account_id = account.account_id
-                and grant_total.valid_from <= time.as_of
-                and (grant_total.expires_on is null or grant_total.expires_on > time.as_of)
+    @Query(value = LeaveBalanceSql.GRANT_TOTALS + "select " + LeaveBalanceSql.ACCOUNT_BALANCE_COLUMNS
+            + LeaveBalanceSql.ACCOUNT_BALANCE_FROM + """
             group by account.account_id, balance_type.balance_type_id, balance_type.name
             order by balance_type.balance_type_id, account.account_id
             """, nativeQuery = true)
@@ -60,6 +50,16 @@ public interface LeaveAccountRepository extends JpaRepository<LeaveAccount, Long
             """, nativeQuery = true)
     List<PreviewGrantBalance> findRecordedGrantBalances(
             @Param("employeeId") Long employeeId,
+            @Param("asOf") OffsetDateTime asOf
+    );
+
+    @Query(value = LeaveBalanceSql.DEPARTMENT_GRANT_TOTALS + "select account.emp_id as \"employeeId\", "
+            + LeaveBalanceSql.ACCOUNT_BALANCE_COLUMNS + LeaveBalanceSql.ACCOUNT_BALANCE_FROM + """
+            group by account.emp_id, account.account_id, balance_type.balance_type_id, balance_type.name
+            order by account.emp_id, balance_type.balance_type_id, account.account_id
+            """, nativeQuery = true)
+    List<DepartmentAccountBalance> findBalancesByEmployeeIds(
+            @Param("employeeIds") List<Long> employeeIds,
             @Param("asOf") OffsetDateTime asOf
     );
 }
