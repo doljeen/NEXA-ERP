@@ -41,6 +41,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     private final WorkStatusLogRepository workStatusLogRepository;
     private final WorkStatusCodeRepository workStatusCodeRepository;
     private final AttendanceAnomalyRepository attendanceAnomalyRepository;
+    private final HolidayRepository holidayRepository;
     private final AttendanceDailyProcessor processor;
 
     @Override
@@ -206,6 +207,17 @@ public class AttendanceServiceImpl implements AttendanceService {
     public List<WorkStatusCodeResponse> getStatusCodes() {
         return workStatusCodeRepository.findAll(Sort.by("statusCode")).stream()
                 .map(WorkStatusCodeResponse::from)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<HolidayResponse> getHolidays(LocalDate startDate, LocalDate endDate) {
+        if (startDate.isAfter(endDate)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "startDate는 endDate보다 늦을 수 없습니다.");
+        }
+        return holidayRepository.findByHolidayDateBetweenOrderByHolidayDateAsc(startDate, endDate).stream()
+                .map(HolidayResponse::from)
                 .toList();
     }
 
