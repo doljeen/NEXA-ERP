@@ -29,7 +29,7 @@ ROSTER_CODE_ALIAS = {"POSITION_TYPO": {"CODE_TYPO_SUSPECTED"}}
 ACCIDENT_CODES = {
     "HARDCODED_EQUAL": {"HARDCODED_VALUE"}, "HARDCODED_STALE": {"HARDCODED_VALUE"},
     "REMAIN_HARDCODED": {"HARDCODED_VALUE", "RECALC_MISMATCH"}, "GRANTED_HARDCODED": {"HARDCODED_VALUE"},
-    "AMOUNT_HARDCODED": {"HARDCODED_VALUE"}, "RATE_AMOUNT_MISMATCH": {"HARDCODED_VALUE"},
+    "AMOUNT_HARDCODED": {"HARDCODED_VALUE", "SALARY_PAYROLL_MISMATCH"}, "RATE_AMOUNT_MISMATCH": {"HARDCODED_VALUE"},
     "NEW_ROW_FORMULA_MISSING": {"BLANK_IN_FORMULA_COLUMN"},
     "ROW_AFTER_TOTAL": {"ROW_AFTER_TOTAL", "HARDCODED_VALUE"},  # 합계 아래 행은 계산 결과도 숫자로만 입력
     "REF_ERROR": {"FORMULA_ERROR", "FORMULA_INCONSISTENT"}, "LOOKUP_NA": {"FORMULA_ERROR"},
@@ -43,14 +43,19 @@ ACCIDENT_CODES = {
     # 부양가족
     "DEDUCTION_AGE_RULE": {"DEPENDENT_AGE_RULE"}, "RATIO_INVALID": {"WITHHOLDING_RATIO_INVALID"},
     "FAMILY_COUNT_MISMATCH": {"FAMILY_COUNT_MISMATCH"},
+    # 연봉이력
+    "SALARY_NOT_UPDATED": {"SALARY_PAYROLL_MISMATCH"}, "VALUE_MISSING": {"SALARY_PAYROLL_MISMATCH"},
+    "PERCENT_AS_NUMBER": {"RAISE_RATE_AS_PERCENT"}, "WAGE_NOT_UPDATED": {"SALARY_HISTORY_MISMATCH"},
 }
 # 직원명부 대조 이슈: 정답지 사고가 아니라 직원명부에 넣은 오류(사번 중복·같은 사람 두 번)의 결과라 따로 센다
 REF_CODES = {"EMP_NOT_IN_ROSTER", "EMP_NAME_MISMATCH", "EMPNO_ZERO_PADDED"}
 NEW_CODES = set().union(*ACCIDENT_CODES.values())
 # 사번 기준으로 보는 사고: 정답지 위치(명세 행)와 다른 시트(집계 행)에 같은 직원 경고가 나와도 검출로 본다
-EMP_SCOPED = {"FAMILY_COUNT_MISMATCH": {"FAMILY_COUNT_MISMATCH"}}
+EMP_SCOPED = {"FAMILY_COUNT_MISMATCH": {"FAMILY_COUNT_MISMATCH"}, "AMOUNT_HARDCODED": {"SALARY_PAYROLL_MISMATCH"}}
 # 이 사고 때문에 같은 직원의 다른 행에 생기는 경고 (정답지에 따로 없지만 설명됨)
-EXPLAINS = {"DEDUCTION_AGE_RULE": {"FAMILY_COUNT_MISMATCH"}}
+EXPLAINS = {"DEDUCTION_AGE_RULE": {"FAMILY_COUNT_MISMATCH"}, "PERCENT_AS_NUMBER": {"SALARY_PAYROLL_MISMATCH"}}
+# 이 사고 때문에 다른 파일의 같은 직원 행에 생기는 경고 (연봉이력이 틀리면 4대보험 연봉(2026)과도 달라진다)
+CROSS_EXPLAINS = {t: {"SALARY_HISTORY_MISMATCH"} for t in ("SALARY_NOT_UPDATED", "AMOUNT_HARDCODED", "PERCENT_AS_NUMBER")}
 SKIP_ROLES = {"settings", "lookupTable"}  # 설정·세액표 시트는 데이터가 아니라서 올리지 않음
 
 
@@ -118,7 +123,9 @@ def evaluate_company(base, cdir):
         result["falsePositives"][code] += 1
     result["falsePositives"] = dict(result["falsePositives"])
     result["orgIssues"] = len(found_by_entity["HR_ORG"])
-    result["hrFiles"] = [evaluate_hr_file(base, mid, cdir, fname, hk) for fname, hk in key.get("hrFiles", {}).items()]
+    cross = {(code, _emp_key(a.get("empNo"))) for hk in key.get("hrFiles", {}).values() for a in hk["accidents"]
+             for code in CROSS_EXPLAINS.get(a["type"], set())}
+    result["hrFiles"] = [evaluate_hr_file(base, mid, cdir, fname, hk, cross) for fname, hk in key.get("hrFiles", {}).items()]
     result["reference"] = reference_check(cdir, key, [i for f in result["hrFiles"] for i in f.pop("refIssues")])
     return result
 
@@ -165,7 +172,7 @@ def read_roster(cdir, key):
     return {i + 1: (r[ei].strip(), r[ni].strip()) for i, r in enumerate(rows) if i > h and len(r) > max(ei, ni) and r[ei]}
 
 
-def evaluate_hr_file(base, mid, cdir, fname, hk):
+def evaluate_hr_file(base, mid, cdir, fname, hk, cross=frozenset()):
     """데이터 시트마다 올려 읽기 결과와 사고 검출을 본다. 업로드가 거절돼도 다른 평가는 계속"""
     entity = hk["closestEntity"] or "REFERENCE"
     res = {"file": fname, "entity": entity, "sheets": [], "accidents": [], "unexpected": Counter(),
@@ -212,7 +219,8 @@ def evaluate_hr_file(base, mid, cdir, fname, hk):
         res["accidents"].append(item)
     for sheet, issues in issues_by_sheet.items():
         for i in issues:
-            if i["code"] in NEW_CODES and (sheet, i["rowNo"], i["code"]) not in explained:
+            if i["code"] in NEW_CODES and (sheet, i["rowNo"], i["code"]) not in explained \
+                    and (i["code"], _emp_rows(cdir / fname, sheet, hk).get(i["rowNo"])) not in cross:
                 res["unexpected"][i["code"]] += 1
     res["unexpected"] = dict(res["unexpected"])
     return res

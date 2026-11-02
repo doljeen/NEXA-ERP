@@ -149,7 +149,7 @@ public class DependentsChecker {
     }
 
     /** 시트·파일 이름의 연월 (2026-12 → 202612). 없으면 0 */
-    private static int yearMonth(MigrationFile f) {
+    static int yearMonth(MigrationFile f) {
         for (String s : new String[]{f.getSheetName(), f.getFileName()}) {
             var m = s == null ? null : YEAR_MONTH.matcher(s);
             if (m != null && m.find()) {

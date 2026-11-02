@@ -31,6 +31,7 @@ import com.ssafy.migrationservice.domain.migration.repository.MigrationFileRepos
 import com.ssafy.migrationservice.domain.migration.repository.MigrationJobRepository;
 import com.ssafy.migrationservice.domain.migration.repository.StagingRowRepository;
 import com.ssafy.migrationservice.domain.migration.validation.DependentsChecker;
+import com.ssafy.migrationservice.domain.migration.validation.SalaryHistoryChecker;
 import com.ssafy.migrationservice.domain.migration.validation.ValidationService;
 import com.ssafy.migrationservice.domain.migration.validation.issue.IssueRepository;
 import com.ssafy.migrationservice.domain.migration.validation.issue.Severity;
@@ -60,6 +61,7 @@ public class MigrationService {
     private final MigrationBatchRepository batchRepository;
     private final FormulaRuleService formulaRuleService;
     private final DependentsChecker dependentsChecker;
+    private final SalaryHistoryChecker salaryHistoryChecker;
 
     @Transactional
     public MigrationCreateResponse create(MigrationCreateRequest r) {
@@ -106,6 +108,8 @@ public class MigrationService {
         formulaRuleService.siblings(file).forEach(validationService::validate);
         // 월별 급여 시트를 나중에 올려도 부양가족 공제가족수 대조가 되게 다시 검증
         dependentsChecker.related(file).forEach(validationService::validate);
+        // 급여 시트 ↔ 연봉이력 ↔ 연도 붙은 연봉 열이 있는 파일(4대보험)도 서로 대조한다
+        salaryHistoryChecker.related(file).forEach(validationService::validate);
         // 직원명부를 새로 올리면 다른 파일의 사번 대조 결과가 바뀐다
         if (entity == MigrationEntity.HR_EMPLOYEE) {
             fileRepository.findByMigrationIdOrderByFileIdAsc(migrationId).stream()
