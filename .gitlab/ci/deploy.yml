@@ -40,6 +40,7 @@
         config-server)      image_name="nexa-config:local" ;;
         gateway-service)    image_name="nexa-gateway:local" ;;
         payroll-service)    image_name="nexa-payroll:local" ;;
+        migration-service)  image_name="nexa-migration:local" ;;
         *)
           echo "지원하지 않는 배포 서비스: $DEPLOY_SERVICE"
           exit 1
