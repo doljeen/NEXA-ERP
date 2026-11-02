@@ -140,7 +140,7 @@ class LeaveSubmissionOrchestrationPostgresIntegrationTest {
         assertThat(balances.getMyBalances().getFirst().reservedMinutes()).isEqualTo(480);
         assertThat(myRequests.getMyRequests().getFirst().status()).isEqualTo(LeaveRequestStatus.SUBMITTED);
         assertThat(myRequests.getMyRequest(myRequests.getMyRequests().getFirst().requestId()).approvalDocId()).isEqualTo(901);
-        assertThat(jdbc.queryForObject("select count(*) from flyway_schema_history where success",Integer.class)).isEqualTo(4);
+        assertThat(jdbc.queryForObject("select count(*) from flyway_schema_history where success",Integer.class)).isEqualTo(5);
         assertThat(jdbc.queryForObject("show server_version",String.class)).startsWith("17.");
     }
 

@@ -65,6 +65,31 @@ public class LeaveLedger {
     @Column(name = "idempotency_key", nullable = false, length = 120)
     private String idempotencyKey;
 
+    @Column(name = "actor_emp_id")
+    private Long actorEmpId;
+
+    public static LeaveLedger adjust(
+            LeaveAccount account,
+            Long grantId,
+            int quantityDelta,
+            Long actorEmpId,
+            String reason,
+            String idempotencyKey,
+            OffsetDateTime createdAt
+    ) {
+        LeaveLedger ledger = new LeaveLedger();
+        ledger.account = account;
+        ledger.grantId = grantId;
+        ledger.eventType = LedgerEventType.ADJUST;
+        ledger.quantityDelta = quantityDelta;
+        ledger.reservedDelta = 0;
+        ledger.actorEmpId = actorEmpId;
+        ledger.reason = reason;
+        ledger.idempotencyKey = idempotencyKey;
+        ledger.createdAt = createdAt;
+        return ledger;
+    }
+
     public static LeaveLedger reserve(
             LeaveAccount account,
             LeaveRequestAllocation allocation,

@@ -213,7 +213,7 @@ class LeavePolicyVersionPostgresIntegrationTest {
     @Test
     void mapsVersionSettingsAfterV4AndValidatesFlyway() {
         flyway.validate();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("4");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("5");
 
         LeavePolicyVersion version = leavePolicyVersionRepository.findById(13L).orElseThrow();
 

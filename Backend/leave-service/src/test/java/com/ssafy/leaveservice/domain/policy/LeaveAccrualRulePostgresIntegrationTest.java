@@ -191,7 +191,7 @@ class LeaveAccrualRulePostgresIntegrationTest {
     @Test
     void validatesFlywayAndMapsEveryRuleColumnAfterHibernateValidation() {
         flyway.validate();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("4");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("5");
         LeaveAccrualRule rule = ruleRepository.findById(10L).orElseThrow();
 
         assertThat(rule.getRuleId()).isEqualTo(10L);

@@ -69,4 +69,12 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long
     Optional<LeaveRequest> findOwnedForUpdate(@Param("requestId") Long requestId, @Param("employeeId") Long employeeId);
 
     boolean existsByApprovalDocIdAndRequestIdNot(Long documentId, Long requestId);
+
+    @Query("""
+            select leaveRequest from LeaveRequest leaveRequest
+            join fetch leaveRequest.leaveType
+            where leaveRequest.employeeId in :employeeIds
+            order by leaveRequest.createdAt desc, leaveRequest.requestId desc
+            """)
+    List<LeaveRequest> findAllWithLeaveTypeByEmployeeIdIn(@Param("employeeIds") List<Long> employeeIds);
 }
