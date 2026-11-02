@@ -3,6 +3,7 @@ package com.ssafy.migrationservice.domain.migration.validation.formula;
 import com.ssafy.migrationservice.domain.migration.reader.ParsedTable;
 import com.ssafy.migrationservice.domain.migration.validation.issue.IssueCode;
 import com.ssafy.migrationservice.domain.migration.validation.issue.ValidationIssue;
+import com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -32,10 +33,10 @@ class RecalcCheckerTest {
 
     @Test
     void 숫자는_쉼표와_원을_빼고_읽는다() {
-        assertThat(RecalcChecker.number("2,156,880")).contains(new BigDecimal("2156880"));
-        assertThat(RecalcChecker.number("10,320원")).contains(new BigDecimal("10320"));
-        assertThat(RecalcChecker.number("-1500.5")).contains(new BigDecimal("-1500.5"));
-        assertThat(RecalcChecker.number("팀장")).isEmpty();
+        assertThat(PayrollColumns.number("2,156,880")).contains(new BigDecimal("2156880"));
+        assertThat(PayrollColumns.number("10,320원")).contains(new BigDecimal("10320"));
+        assertThat(PayrollColumns.number("-1500.5")).contains(new BigDecimal("-1500.5"));
+        assertThat(PayrollColumns.number("팀장")).isEmpty();
     }
 
     @Test

@@ -20,6 +20,8 @@ import org.mockito.invocation.InvocationOnMock;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -33,12 +35,14 @@ class DocumentSourceTest {
 
     private final DocumentRepository documentRepository = mock(DocumentRepository.class);
     private final DocumentNumberGenerator numberGenerator = mock(DocumentNumberGenerator.class);
+    private final RequestKeyLock requestKeyLock = mock(RequestKeyLock.class);
     private final DocumentServiceImplV1 service = new DocumentServiceImplV1(
             documentRepository,
             mock(ApprovalLineRepository.class),
             mock(ApprovalHistoryRepository.class),
             mock(ApprovalLineValidator.class),
-            numberGenerator);
+            numberGenerator,
+            requestKeyLock);
 
     /** JPA 저장처럼 문서ID를 채워 돌려준다 */
     private static Document persist(InvocationOnMock inv) {
@@ -52,7 +56,7 @@ class DocumentSourceTest {
         when(numberGenerator.next(eq(FormType.LEAVE), anyInt())).thenReturn(7);
         when(documentRepository.save(any())).thenAnswer(DocumentSourceTest::persist);
 
-        var res = service.create(request(FormType.LEAVE, SourceType.LEAVE, 42L), 1L);
+        var res = service.create(request(FormType.LEAVE, SourceType.LEAVE, 42L), 1L).response();
 
         Document saved = savedDocument();
         String expected = "LEAVE-%d-0007".formatted(saved.getDraftedAt().getYear());
@@ -71,8 +75,10 @@ class DocumentSourceTest {
     private static final List<ApprovalLineRequest> LINES =
             List.of(new ApprovalLineRequest(2L, (short) 1, LineRole.APPROVER));
 
+    /** 출처가 있는 요청에는 요청 키를 채운다 (필수) */
     private static DocumentCreateRequest request(FormType formType, SourceType sourceType, Long sourceId) {
-        return new DocumentCreateRequest("테스트 문서", formType, LINES, sourceType, sourceId);
+        UUID requestKey = sourceType == null || sourceType == SourceType.DIRECT ? null : UUID.randomUUID();
+        return new DocumentCreateRequest("테스트 문서", formType, LINES, sourceType, sourceId, requestKey);
     }
 
     private static DocumentCreateRequest request(SourceType sourceType, Long sourceId) {
@@ -175,5 +181,53 @@ class DocumentSourceTest {
                 .isInstanceOf(BusinessException.class)
                 .matches(t -> ((BusinessException) t).getErrorCode() == ErrorCode.INVALID_DOCUMENT_SOURCE);
         verifyNoInteractions(documentRepository);
+    }
+
+    @Test
+    void 출처가_있는데_요청_키가_없으면_400() {
+        var request = new DocumentCreateRequest("t", FormType.LEAVE, LINES, SourceType.LEAVE, 42L, null);
+        expectError(request, ErrorCode.REQUEST_KEY_REQUIRED);
+    }
+
+    @Test
+    void 같은_요청_키로_다시_오면_새로_만들지_않고_기존_문서를_돌려준다() {
+        UUID key = UUID.randomUUID();
+        Document existing = existingDocument(key, 1L, 42L);
+        when(documentRepository.findByRequestKey(key)).thenReturn(Optional.of(existing));
+
+        var result = service.create(
+                new DocumentCreateRequest("재시도", FormType.LEAVE, LINES, SourceType.LEAVE, 42L, key), 1L);
+
+        assertThat(result.created()).isFalse();
+        assertThat(result.response().documentId()).isEqualTo(12L);
+        assertThat(result.response().docNo()).isEqualTo("LEAVE-2026-0003");
+        verify(requestKeyLock).lock(key);
+        verify(documentRepository, never()).save(any());
+        verifyNoInteractions(numberGenerator);
+    }
+
+    @Test
+    void 같은_요청_키인데_다른_신청이면_409() {
+        UUID key = UUID.randomUUID();
+        when(documentRepository.findByRequestKey(key)).thenReturn(Optional.of(existingDocument(key, 1L, 42L)));
+
+        // 원본 신청 ID가 다르다
+        assertThatThrownBy(() -> service.create(
+                new DocumentCreateRequest("t", FormType.LEAVE, LINES, SourceType.LEAVE, 99L, key), 1L))
+                .isInstanceOf(BusinessException.class)
+                .matches(t -> ((BusinessException) t).getErrorCode() == ErrorCode.REQUEST_KEY_CONFLICT);
+        // 기안자가 다르다
+        assertThatThrownBy(() -> service.create(
+                new DocumentCreateRequest("t", FormType.LEAVE, LINES, SourceType.LEAVE, 42L, key), 2L))
+                .matches(t -> ((BusinessException) t).getErrorCode() == ErrorCode.REQUEST_KEY_CONFLICT);
+        verify(documentRepository, never()).save(any());
+    }
+
+    private static Document existingDocument(UUID key, Long drafterId, Long sourceId) {
+        Document document = Document.builder().formType(FormType.LEAVE).title("휴가").drafterId(drafterId)
+                .sourceType(SourceType.LEAVE).sourceId(sourceId).requestKey(key).build();
+        ReflectionTestUtils.setField(document, "docId", 12L);
+        ReflectionTestUtils.setField(document, "docNo", "LEAVE-2026-0003");
+        return document;
     }
 }
