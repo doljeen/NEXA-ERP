@@ -12,7 +12,7 @@ from core.exceptions import register_exception_handlers
 from nodes.routers import router as nodes_router
 from runs.routers import router as runs_router
 from workflows.routers import router as workflows_router
-
+from ai.routers import router as ai_router
 
 API_PREFIX = "/api/v1/ai"
 SERVICE_NAME = "ai-service"
@@ -48,6 +48,9 @@ app.include_router(nodes_router, prefix=API_PREFIX)
 app.include_router(workflows_router, prefix=API_PREFIX)
 app.include_router(runs_router, prefix=API_PREFIX)
 
+# 개발용 LLM 테스트 API는 설정으로 켰을 때만 등록
+if settings.llm_test_api_enabled:
+    app.include_router(ai_router, prefix=API_PREFIX)
 
 @app.get("/health")
 def health():

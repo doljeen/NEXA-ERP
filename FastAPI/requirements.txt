@@ -24,6 +24,7 @@ httpx2==2.14.0
 idna==3.20
 ifaddr==0.2.0
 Jinja2==3.1.6
+jiter==0.18.0
 jsonpatch==1.38
 jsonpointer==3.6
 langchain-core==1.7.0
@@ -37,6 +38,7 @@ langsmith==0.14.12
 markdown-it-py==4.2.0
 MarkupSafe==3.0.4
 mdurl==0.1.2
+openai==3.42.1
 opentelemetry-api==1.45.1
 opentelemetry-exporter-http-transport==0.66b1
 opentelemetry-exporter-otlp-common==0.66b1

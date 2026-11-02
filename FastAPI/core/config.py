@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     gms_base_url: str = ""
     gms_model: str = ""
 
+    # 개발용 LLM 테스트 API 등록 여부 (운영에서는 False 유지)
+    llm_test_api_enabled: bool = False
+
     eureka_server_url: str = ""
     instance_host: str = ""
     instance_port: int = 8086
