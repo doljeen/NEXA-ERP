@@ -41,10 +41,10 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected MockMvc mvc;
 
-    /** 문서 생성 + 상신 요청. docNo 는 기안자 ID 로 만든다 */
+    /** 문서 생성 + 상신 요청. 문서번호는 서버가 만든다 */
     protected ResultActions submit(long drafter, String... lines) throws Exception {
         return mvc.perform(post(BASE).with(user(drafter)).contentType(MediaType.APPLICATION_JSON).content("""
-                {"docNo":"DOC-%d","title":"테스트 문서","formType":"GENERAL","approvalLines":[%s]}"""
+                {"title":"테스트 문서 %d","formType":"GENERAL","approvalLines":[%s]}"""
                 .formatted(drafter, String.join(",", lines))));
     }
 

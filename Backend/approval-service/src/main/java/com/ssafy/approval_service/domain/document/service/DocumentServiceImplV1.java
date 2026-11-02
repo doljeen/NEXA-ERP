@@ -14,6 +14,7 @@ import com.ssafy.approval_service.domain.document.model.dto.DocumentListResponse
 import com.ssafy.approval_service.domain.document.model.entity.Document;
 import com.ssafy.approval_service.domain.document.model.entity.enums.DocumentStatus;
 import com.ssafy.approval_service.domain.document.model.entity.enums.FormType;
+import com.ssafy.approval_service.domain.document.model.entity.enums.SourceType;
 import com.ssafy.approval_service.domain.document.repository.DocumentRepository;
 import com.ssafy.approval_service.global.exception.BusinessException;
 import com.ssafy.approval_service.global.exception.ErrorCode;
@@ -35,6 +36,7 @@ public class DocumentServiceImplV1 implements DocumentService {
     private final ApprovalLineRepository approvalLineRepository;
     private final ApprovalHistoryRepository approvalHistoryRepository;
     private final ApprovalLineValidator approvalLineValidator;
+    private final DocumentNumberGenerator documentNumberGenerator;
 
     @Override
     public DocumentListResponse findByStatusAndType(String approvalStatus, String formType, String box,
@@ -56,16 +58,23 @@ public class DocumentServiceImplV1 implements DocumentService {
     @Override
     @Transactional
     public DocumentCreateResponse create(DocumentCreateRequest request, Long drafterId) {
+        // 출처 검증: 원본 신청 ID 유무, 양식과 출처의 조합
+        validateSource(request.formType(), request.sourceType(), request.sourceId());
+
         // 결재선 검증
         approvalLineValidator.validate(request.approvalLines(), drafterId);
 
         // 문서 생성
-        Document document = documentRepository.save(Document.builder()
-                .docNo(request.docNo())
+        Document draft = Document.builder()
                 .formType(request.formType())
                 .title(request.title())
                 .drafterId(drafterId)
-                .build());
+                .sourceType(request.sourceType())
+                .sourceId(request.sourceId())
+                .build();
+        // 양식·연도별 일련번호를 받아 문서번호를 채운 뒤 저장한다
+        draft.assignDocNo(documentNumberGenerator.next(draft.getFormType(), draft.numberingYear()));
+        Document document = documentRepository.save(draft);
 
         // req -> 결재선
         List<ApprovalLine> lines = request.approvalLines().stream()
@@ -88,7 +97,7 @@ public class DocumentServiceImplV1 implements DocumentService {
                 .action(HistoryAction.SUBMIT)
                 .build());
 
-        return new DocumentCreateResponse(document.getDocId());
+        return new DocumentCreateResponse(document.getDocId(), document.getDocNo());
     }
 
     @Override
@@ -132,6 +141,20 @@ public class DocumentServiceImplV1 implements DocumentService {
             throw new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND);
         }
         return document;
+    }
+
+    /**
+     * 다른 서비스에서 온 문서는 원본 신청 ID가 있어야 하고, 직접 기안은 없어야 한다.
+     * 양식마다 만들 수 있는 출처가 정해져 있다 (FormType.requiredSource)
+     */
+    private void validateSource(FormType formType, SourceType sourceType, Long sourceId) {
+        boolean direct = sourceType == SourceType.DIRECT;
+        if (direct != (sourceId == null)) {
+            throw new BusinessException(ErrorCode.INVALID_DOCUMENT_SOURCE);
+        }
+        if (formType.requiredSource() != sourceType) {
+            throw new BusinessException(ErrorCode.FORM_SOURCE_MISMATCH);
+        }
     }
 
     /** 쿼리 파라미터 문자열을 enum으로 변환. null/빈 문자열은 null, 잘못된 값은 400 */

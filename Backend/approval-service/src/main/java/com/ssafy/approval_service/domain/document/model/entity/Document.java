@@ -2,6 +2,7 @@ package com.ssafy.approval_service.domain.document.model.entity;
 
 import com.ssafy.approval_service.domain.document.model.entity.enums.DocumentStatus;
 import com.ssafy.approval_service.domain.document.model.entity.enums.FormType;
+import com.ssafy.approval_service.domain.document.model.entity.enums.SourceType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -16,6 +17,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 
 /** 결재 문서 (approval_document) */
 @Entity
@@ -29,8 +31,8 @@ public class Document {
     @Column(name = "doc_id")
     private Long docId;                     // 문서ID
 
-    @Column(name = "doc_no")
-    private String docNo;                     // 문서번호
+    @Column(name = "doc_no", unique = true)
+    private String docNo;                   // 문서번호. 저장 전에 서버가 채번해 채운다 (assignDocNo)
 
     @Enumerated(EnumType.STRING)
     @Column(name = "form_type")
@@ -52,14 +54,42 @@ public class Document {
     @Column(name = "drafter_id")
     private Long drafterId;                 // 기안자 사원ID (user-service employee.emp_id)
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source_type", nullable = false)
+    private SourceType sourceType;          // 출처 서비스
+
+    @Column(name = "source_id")
+    private Long sourceId;                  // 출처 서비스의 원본 신청 ID (DIRECT 면 null)
+
     @Builder
-    private Document(String docNo, FormType formType, String title, Long drafterId) {
-        this.docNo = docNo;
+    private Document(FormType formType, String title, Long drafterId,
+                     SourceType sourceType, Long sourceId) {
         this.formType = formType;
         this.title = title;
         this.drafterId = drafterId;
+        this.sourceType = sourceType == null ? SourceType.DIRECT : sourceType;
+        this.sourceId = sourceId;
         this.status = DocumentStatus.INPROGRESS;
         this.draftedAt = OffsetDateTime.now();
+    }
+
+    /** 문서번호 연도는 서버 시간대와 상관없이 한국 시간 기준 상신 연도 */
+    private static final ZoneId NUMBERING_ZONE = ZoneId.of("Asia/Seoul");
+
+    /** 문서번호를 만들 때 쓰는 연도 (한국 시간 기준 상신 연도) */
+    public int numberingYear() {
+        return draftedAt.atZoneSameInstant(NUMBERING_ZONE).getYear();
+    }
+
+    /**
+     * 문서번호를 채운다. 형식: {양식}-{상신 연도}-{양식·연도별 일련번호 4자리} (예: LEAVE-2026-0001)
+     * 한 번 정해지면 바뀌지 않는다 (재기안해도 유지)
+     */
+    public void assignDocNo(int sequence) {
+        if (this.docNo != null) {
+            throw new IllegalStateException("이미 문서번호가 있습니다: " + docNo);
+        }
+        this.docNo = "%s-%d-%04d".formatted(formType.name(), numberingYear(), sequence);
     }
 
     public void approve() {
