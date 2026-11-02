@@ -11,6 +11,7 @@ import com.ssafy.approval_service.domain.document.model.entity.enums.SourceType;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.UUID;
 
 /** 문서 상세: 문서 + 결재선 + 변경 이력 */
 public record DocumentInfoResponse(
@@ -24,6 +25,7 @@ public record DocumentInfoResponse(
         OffsetDateTime completedAt,                 // 완료일시
         SourceType sourceType,                      // 출처 서비스
         Long sourceId,                              // 출처 서비스의 원본 신청 ID
+        UUID requestKey,                            // 생성 요청 키
         List<ApprovalLineResponse> approvalLines,   // 결재선 (step 순)
         List<ApprovalHistoryResponse> histories     // 변경 이력 (발생 순)
 ) {
@@ -41,6 +43,7 @@ public record DocumentInfoResponse(
                 document.getCompletedAt(),
                 document.getSourceType(),
                 document.getSourceId(),
+                document.getRequestKey(),
                 lines.stream().map(ApprovalLineResponse::from).toList(),
                 histories.stream().map(ApprovalHistoryResponse::from).toList()
         );

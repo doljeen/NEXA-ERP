@@ -24,6 +24,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -37,6 +39,7 @@ public class DocumentServiceImplV1 implements DocumentService {
     private final ApprovalHistoryRepository approvalHistoryRepository;
     private final ApprovalLineValidator approvalLineValidator;
     private final DocumentNumberGenerator documentNumberGenerator;
+    private final RequestKeyLock requestKeyLock;
 
     @Override
     public DocumentListResponse findByStatusAndType(String approvalStatus, String formType, String box,
@@ -57,9 +60,18 @@ public class DocumentServiceImplV1 implements DocumentService {
      */
     @Override
     @Transactional
-    public DocumentCreateResponse create(DocumentCreateRequest request, Long drafterId) {
-        // 출처 검증: 원본 신청 ID 유무, 양식과 출처의 조합
-        validateSource(request.formType(), request.sourceType(), request.sourceId());
+    public DocumentCreateResult create(DocumentCreateRequest request, Long drafterId) {
+        // 출처 검증: 원본 신청 ID·요청 키 유무, 양식과 출처의 조합
+        validateSource(request.formType(), request.sourceType(), request.sourceId(), request.requestKey());
+
+        // 같은 요청 키로 이미 만든 문서가 있으면 새로 만들지 않고 돌려준다 (재시도 대비)
+        if (request.requestKey() != null) {
+            requestKeyLock.lock(request.requestKey());
+            Optional<Document> existing = documentRepository.findByRequestKey(request.requestKey());
+            if (existing.isPresent()) {
+                return new DocumentCreateResult(toCreateResponse(existing.get(), request, drafterId), false);
+            }
+        }
 
         // 결재선 검증
         approvalLineValidator.validate(request.approvalLines(), drafterId);
@@ -71,6 +83,7 @@ public class DocumentServiceImplV1 implements DocumentService {
                 .drafterId(drafterId)
                 .sourceType(request.sourceType())
                 .sourceId(request.sourceId())
+                .requestKey(request.requestKey())
                 .build();
         // 양식·연도별 일련번호를 받아 문서번호를 채운 뒤 저장한다
         draft.assignDocNo(documentNumberGenerator.next(draft.getFormType(), draft.numberingYear()));
@@ -97,7 +110,26 @@ public class DocumentServiceImplV1 implements DocumentService {
                 .action(HistoryAction.SUBMIT)
                 .build());
 
-        return new DocumentCreateResponse(document.getDocId(), document.getDocNo());
+        return new DocumentCreateResult(new DocumentCreateResponse(document.getDocId(), document.getDocNo()), true);
+    }
+
+    /** 이미 있는 문서를 재요청에 돌려준다. 같은 키인데 다른 신청이면 409 */
+    private DocumentCreateResponse toCreateResponse(Document existing, DocumentCreateRequest request, Long drafterId) {
+        if (!existing.isSameRequest(drafterId, request.formType(), request.sourceType(), request.sourceId())) {
+            throw new BusinessException(ErrorCode.REQUEST_KEY_CONFLICT);
+        }
+        return new DocumentCreateResponse(existing.getDocId(), existing.getDocNo());
+    }
+
+    /**
+     * 요청 키로 문서 조회. 원본 서비스가 생성 결과를 모를 때(타임아웃 등)와 결과 이벤트를 놓쳤을 때 쓴다.
+     * 없거나 조회 권한이 없으면 404 (404 = 이 키로 만든 문서가 없음)
+     */
+    @Override
+    public DocumentInfoResponse findByRequestKey(UUID requestKey, AuthUser requester) {
+        Document document = documentRepository.findByRequestKey(requestKey)
+                .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND));
+        return findById(document.getDocId(), requester);
     }
 
     @Override
@@ -147,13 +179,17 @@ public class DocumentServiceImplV1 implements DocumentService {
      * 다른 서비스에서 온 문서는 원본 신청 ID가 있어야 하고, 직접 기안은 없어야 한다.
      * 양식마다 만들 수 있는 출처가 정해져 있다 (FormType.requiredSource)
      */
-    private void validateSource(FormType formType, SourceType sourceType, Long sourceId) {
+    private void validateSource(FormType formType, SourceType sourceType, Long sourceId, UUID requestKey) {
         boolean direct = sourceType == SourceType.DIRECT;
         if (direct != (sourceId == null)) {
             throw new BusinessException(ErrorCode.INVALID_DOCUMENT_SOURCE);
         }
         if (formType.requiredSource() != sourceType) {
             throw new BusinessException(ErrorCode.FORM_SOURCE_MISMATCH);
+        }
+        // 다른 서비스는 생성 요청을 재시도하므로 중복 생성을 막을 요청 키가 있어야 한다 (직접 기안은 선택)
+        if (!direct && requestKey == null) {
+            throw new BusinessException(ErrorCode.REQUEST_KEY_REQUIRED);
         }
     }
 

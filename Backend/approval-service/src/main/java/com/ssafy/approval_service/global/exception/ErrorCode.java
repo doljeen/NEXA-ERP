@@ -40,6 +40,8 @@ public enum ErrorCode {
     EMPLOYEE_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "APPROVAL_017", "사원 정보를 확인할 수 없습니다. 잠시 후 다시 시도하세요."),
     INVALID_DOCUMENT_SOURCE(HttpStatus.BAD_REQUEST, "APPROVAL_018", "직접 기안이 아니면 원본 신청 ID(sourceId)가 필요하고, 직접 기안이면 sourceId를 보낼 수 없습니다."),
     FORM_SOURCE_MISMATCH(HttpStatus.BAD_REQUEST, "APPROVAL_019", "문서 양식과 출처가 맞지 않습니다. 휴가/근태 문서는 해당 신청을 통해서만 만들 수 있습니다."),
+    REQUEST_KEY_REQUIRED(HttpStatus.BAD_REQUEST, "APPROVAL_020", "다른 서비스의 신청으로 만드는 문서는 요청 키(requestKey)가 필요합니다."),
+    REQUEST_KEY_CONFLICT(HttpStatus.CONFLICT, "APPROVAL_021", "같은 요청 키로 다른 신청의 문서가 이미 있습니다."),
 
     // 공통
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),
