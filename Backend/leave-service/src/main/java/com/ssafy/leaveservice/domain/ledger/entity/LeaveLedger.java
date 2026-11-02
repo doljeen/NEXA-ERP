@@ -109,6 +109,25 @@ public class LeaveLedger {
         return ledger;
     }
 
+    public static LeaveLedger releaseForAdminCancellation(
+            LeaveAccount account,
+            LeaveRequestAllocation allocation,
+            OffsetDateTime asOf
+    ) {
+        LeaveLedger ledger = new LeaveLedger();
+        ledger.account = account;
+        ledger.grantId = allocation.getGrantId();
+        ledger.leaveReqId = allocation.getRequestId();
+        ledger.allocationId = allocation.getAllocationId();
+        ledger.eventType = LedgerEventType.RELEASE;
+        ledger.quantityDelta = 0;
+        ledger.reservedDelta = -allocation.getAllocatedMinutes();
+        ledger.reason = "관리자 직접 취소에 따른 예약 해제 (신청 " + allocation.getRequestId() + ")";
+        ledger.createdAt = asOf;
+        ledger.idempotencyKey = "leave:admin-cancel:request:" + allocation.getRequestId() + ":allocation:" + allocation.getAllocationId();
+        return ledger;
+    }
+
     public static LeaveLedger release(
             LeaveAccount account,
             LeaveRequestAllocation allocation,
