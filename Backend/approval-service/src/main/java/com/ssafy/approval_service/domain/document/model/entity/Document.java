@@ -2,6 +2,7 @@ package com.ssafy.approval_service.domain.document.model.entity;
 
 import com.ssafy.approval_service.domain.document.model.entity.enums.DocumentStatus;
 import com.ssafy.approval_service.domain.document.model.entity.enums.FormType;
+import com.ssafy.approval_service.domain.document.model.entity.enums.SourceType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -52,12 +53,22 @@ public class Document {
     @Column(name = "drafter_id")
     private Long drafterId;                 // 기안자 사원ID (user-service employee.emp_id)
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source_type", nullable = false)
+    private SourceType sourceType;          // 출처 서비스
+
+    @Column(name = "source_id")
+    private Long sourceId;                  // 출처 서비스의 원본 신청 ID (DIRECT 면 null)
+
     @Builder
-    private Document(String docNo, FormType formType, String title, Long drafterId) {
+    private Document(String docNo, FormType formType, String title, Long drafterId,
+                     SourceType sourceType, Long sourceId) {
         this.docNo = docNo;
         this.formType = formType;
         this.title = title;
         this.drafterId = drafterId;
+        this.sourceType = sourceType == null ? SourceType.DIRECT : sourceType;
+        this.sourceId = sourceId;
         this.status = DocumentStatus.INPROGRESS;
         this.draftedAt = OffsetDateTime.now();
     }

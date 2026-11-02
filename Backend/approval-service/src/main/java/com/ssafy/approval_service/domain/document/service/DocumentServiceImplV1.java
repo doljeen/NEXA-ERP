@@ -14,6 +14,7 @@ import com.ssafy.approval_service.domain.document.model.dto.DocumentListResponse
 import com.ssafy.approval_service.domain.document.model.entity.Document;
 import com.ssafy.approval_service.domain.document.model.entity.enums.DocumentStatus;
 import com.ssafy.approval_service.domain.document.model.entity.enums.FormType;
+import com.ssafy.approval_service.domain.document.model.entity.enums.SourceType;
 import com.ssafy.approval_service.domain.document.repository.DocumentRepository;
 import com.ssafy.approval_service.global.exception.BusinessException;
 import com.ssafy.approval_service.global.exception.ErrorCode;
@@ -56,6 +57,9 @@ public class DocumentServiceImplV1 implements DocumentService {
     @Override
     @Transactional
     public DocumentCreateResponse create(DocumentCreateRequest request, Long drafterId) {
+        // 출처 검증: 다른 서비스에서 온 문서는 원본 신청 ID가 있어야 하고, 직접 기안은 없어야 한다
+        validateSource(request.sourceType(), request.sourceId());
+
         // 결재선 검증
         approvalLineValidator.validate(request.approvalLines(), drafterId);
 
@@ -65,6 +69,8 @@ public class DocumentServiceImplV1 implements DocumentService {
                 .formType(request.formType())
                 .title(request.title())
                 .drafterId(drafterId)
+                .sourceType(request.sourceType())
+                .sourceId(request.sourceId())
                 .build());
 
         // req -> 결재선
@@ -132,6 +138,13 @@ public class DocumentServiceImplV1 implements DocumentService {
             throw new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND);
         }
         return document;
+    }
+
+    private void validateSource(SourceType sourceType, Long sourceId) {
+        boolean direct = sourceType == SourceType.DIRECT;
+        if (direct != (sourceId == null)) {
+            throw new BusinessException(ErrorCode.INVALID_DOCUMENT_SOURCE);
+        }
     }
 
     /** 쿼리 파라미터 문자열을 enum으로 변환. null/빈 문자열은 null, 잘못된 값은 400 */
