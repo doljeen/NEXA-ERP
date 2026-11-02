@@ -3,6 +3,7 @@ package com.ssafy.attendanceservice.domain.attendance.service;
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceStatusResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceSummaryResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.DailyAttendanceResponse;
+import com.ssafy.attendanceservice.domain.attendance.dto.HolidayResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.MonthlyAttendanceResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.WeeklyAttendanceResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.WorkStatusCodeResponse;
@@ -29,6 +30,9 @@ public interface AttendanceService {
     /** 근무 상태 코드 전체 목록 */
     List<WorkStatusCodeResponse> getStatusCodes();
 
+    /** 기간 내 공휴일 (날짜순). startDate가 endDate보다 늦으면 BusinessException(INVALID_INPUT) */
+    List<HolidayResponse> getHolidays(LocalDate startDate, LocalDate endDate);
+
     /** 일별 근태 타임라인. 기록이 없는 날은 빈 응답 */
     DailyAttendanceResponse getDaily(Long empId, LocalDate date);
 
@@ -38,7 +42,7 @@ public interface AttendanceService {
     /** 월간 근태 (1일 ~ 말일) */
     MonthlyAttendanceResponse getMonthly(Long empId, YearMonth month);
 
-    /** 근무상태 변경 이력 (삭제 포함). from이 to보다 늦으면 BusinessException(INVALID_INPUT) */
+    /** 근무상태 변경 이력 (삭제 포함). from이 to보다 늦거나 기간이 31일을 넘으면 BusinessException(INVALID_INPUT) */
     List<WorkStatusHistoryResponse> getHistory(Long empId, LocalDate from, LocalDate to);
 
     /** 급여용 월별 근태 집계 */

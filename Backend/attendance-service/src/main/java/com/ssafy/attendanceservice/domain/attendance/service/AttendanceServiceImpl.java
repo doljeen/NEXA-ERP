@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.*;
+import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.Map;
@@ -37,10 +38,14 @@ public class AttendanceServiceImpl implements AttendanceService {
             WorkStatusCode.CLOCK_OUT_CANCEL
     );
 
+    // 변경 이력 최대 조회 기간 (시작일·종료일 포함)
+    private static final int HISTORY_MAX_DAYS = 31;
+
     private final AttendanceDailyRepository attendanceDailyRepository;
     private final WorkStatusLogRepository workStatusLogRepository;
     private final WorkStatusCodeRepository workStatusCodeRepository;
     private final AttendanceAnomalyRepository attendanceAnomalyRepository;
+    private final HolidayRepository holidayRepository;
     private final AttendanceDailyProcessor processor;
 
     @Override
@@ -211,6 +216,17 @@ public class AttendanceServiceImpl implements AttendanceService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<HolidayResponse> getHolidays(LocalDate startDate, LocalDate endDate) {
+        if (startDate.isAfter(endDate)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "startDate는 endDate보다 늦을 수 없습니다.");
+        }
+        return holidayRepository.findByHolidayDateBetweenOrderByHolidayDateAsc(startDate, endDate).stream()
+                .map(HolidayResponse::from)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public DailyAttendanceResponse getDaily(Long empId, LocalDate date) {
         return attendanceDailyRepository.findByEmpIdAndWorkDate(empId, date)
                 .map(daily -> DailyAttendanceResponse.of(
@@ -258,6 +274,9 @@ public class AttendanceServiceImpl implements AttendanceService {
     public List<WorkStatusHistoryResponse> getHistory(Long empId, LocalDate from, LocalDate to) {
         if (from.isAfter(to)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "from은 to보다 늦을 수 없습니다.");
+        }
+        if (ChronoUnit.DAYS.between(from, to) + 1 > HISTORY_MAX_DAYS) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "조회 기간은 최대 " + HISTORY_MAX_DAYS + "일입니다.");
         }
         return workStatusLogRepository.findByEmpIdAndWorkDateBetweenOrderByWorkDateAscStartAtAscLogIdAsc(empId, from, to)
                 .stream()

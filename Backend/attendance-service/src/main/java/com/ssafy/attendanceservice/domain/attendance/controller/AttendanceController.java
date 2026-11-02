@@ -94,4 +94,12 @@ public class AttendanceController {
     public ResponseEntity<ApiResult<List<WorkStatusCodeResponse>>> getStatusCodes() {
         return ResponseEntity.ok(ApiResult.success(attendanceService.getStatusCodes()));
     }
+
+    // 공휴일 조회 API (휴가 일수 계산용)
+    @GetMapping("/holidays")
+    public ResponseEntity<ApiResult<List<HolidayResponse>>> getHolidays(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        return ResponseEntity.ok(ApiResult.success(attendanceService.getHolidays(startDate, endDate)));
+    }
 }
