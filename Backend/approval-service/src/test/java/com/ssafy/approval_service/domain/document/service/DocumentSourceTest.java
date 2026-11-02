@@ -13,6 +13,8 @@ import com.ssafy.approval_service.domain.document.repository.DocumentRepository;
 import com.ssafy.approval_service.global.exception.BusinessException;
 import com.ssafy.approval_service.global.exception.ErrorCode;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 
 import java.util.List;
@@ -60,6 +62,32 @@ class DocumentSourceTest {
     @Test
     void 휴가_출처인데_다른_양식이면_400() {
         expectError(request(FormType.GENERAL, SourceType.LEAVE, 42L), ErrorCode.FORM_SOURCE_MISMATCH);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = FormType.class, names = {"OVERTIME", "TIME_FIX", "HOLIDAY_SUBST"})
+    void 근태_양식은_근태_신청에서_만들_수_있다(FormType formType) {
+        when(documentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.create(request(formType, SourceType.ATTENDANCE, 7L), 1L);
+
+        Document saved = savedDocument();
+        assertThat(saved.getFormType()).isEqualTo(formType);
+        assertThat(saved.getSourceType()).isEqualTo(SourceType.ATTENDANCE);
+        assertThat(saved.getSourceId()).isEqualTo(7L);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = FormType.class, names = {"OVERTIME", "TIME_FIX", "HOLIDAY_SUBST"})
+    void 근태_양식을_직접_기안하면_400(FormType formType) {
+        expectError(request(formType, SourceType.DIRECT, null), ErrorCode.FORM_SOURCE_MISMATCH);
+    }
+
+    @Test
+    void 출처와_양식_서비스가_다르면_400() {
+        expectError(request(FormType.LEAVE, SourceType.ATTENDANCE, 7L), ErrorCode.FORM_SOURCE_MISMATCH);
+        expectError(request(FormType.OVERTIME, SourceType.LEAVE, 7L), ErrorCode.FORM_SOURCE_MISMATCH);
+        expectError(request(FormType.GENERAL, SourceType.ATTENDANCE, 7L), ErrorCode.FORM_SOURCE_MISMATCH);
     }
 
     @Test

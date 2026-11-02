@@ -142,15 +142,14 @@ public class DocumentServiceImplV1 implements DocumentService {
 
     /**
      * 다른 서비스에서 온 문서는 원본 신청 ID가 있어야 하고, 직접 기안은 없어야 한다.
-     * 휴가 문서는 leave-service 를 거쳐야 승인 시 연차가 차감되므로 LEAVE 양식과 LEAVE 출처는 짝으로만 허용한다.
-     * (OVERTIME/ATTENDANCE 조합은 정책이 정해지면 추가)
+     * 양식마다 만들 수 있는 출처가 정해져 있다 (FormType.requiredSource)
      */
     private void validateSource(FormType formType, SourceType sourceType, Long sourceId) {
         boolean direct = sourceType == SourceType.DIRECT;
         if (direct != (sourceId == null)) {
             throw new BusinessException(ErrorCode.INVALID_DOCUMENT_SOURCE);
         }
-        if ((formType == FormType.LEAVE) != (sourceType == SourceType.LEAVE)) {
+        if (formType.requiredSource() != sourceType) {
             throw new BusinessException(ErrorCode.FORM_SOURCE_MISMATCH);
         }
     }
