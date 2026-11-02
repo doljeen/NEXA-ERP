@@ -20,6 +20,7 @@ curl -L -o ~/personas/personas.parquet https://huggingface.co/datasets/nvidia/Ne
 python -I generate.py ~/personas/personas.parquet out --seed 42
 
 # 3) 이관 서비스(localhost:8087)에 올리고 정답지와 비교 → out/evaluation.md
+#    서비스는 MIGRATION_PERMIT_URLS=/actuator/health,/error,/api/v1/admin/migrations/** 로 띄운다 (토큰 없이 호출)
 python -I evaluate.py out
 
 # (개발용) 수식과 함께 저장한 계산값이 엑셀 계산과 같은지 확인 → out/<회사>/<파일>.check.json

@@ -30,6 +30,8 @@ MIGRATION_DB_PASSWORD=localpw \
 | `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5433/nexa_migration` | |
 | `MIGRATION_DB_PASSWORD` | (없음) | |
 | `HR_SERVICE_URL` | `http://localhost:8081` | user-service 이관용 내부 API 주소 |
+| `JWT_JWKS_URI` | `http://localhost:8081/.well-known/jwks.json` | 토큰 검증용 user-service 공개키 주소. 이관 API는 관리자(ADMIN) 토큰만 받음 |
+| `MIGRATION_PERMIT_URLS` | `/actuator/health,/error` | 토큰 서버 없이 로컬 평가할 때만 `,/api/v1/admin/migrations/**`를 더해 연다. 배포에서는 쓰지 말 것 |
 | `GMS_KEY` | (없음) | 매핑 추천 LLM 키. 없으면 동의어 추천만 씀. 저장소·설정 파일에 넣지 말 것 |
 | `MIGRATION_LLM_BASE_URL` | `https://gms.ssafy.io/gmsapi/api.openai.com/v1` | OpenAI Responses API 형식이면 바꿔 끼울 수 있음 (팀 vLLM 등) |
 | `MIGRATION_LLM_MODEL` | `gpt-6-luna` | |
@@ -122,7 +124,7 @@ GET    /internal/v1/hr/migration/batches/{batchId}/summary           → ApiResu
 
 ## 아직 안 된 것
 
-- 인증 연동 (지금은 API가 열려 있고 `companyId`를 요청 본문으로 받음)
+- `companyId`를 요청 본문으로 받음 (토큰에 회사 정보가 없음. 단일 회사 ERP라 지금은 그대로)
 - 임시 테이블(`staging_row`) 민감정보 암호화
 - 업로드·적재 비동기 처리 (지금은 동기)
 - 대상 서비스 코드 목록과 대조하는 코드 매핑, 엑셀 양식 다운로드, 전환 완료
