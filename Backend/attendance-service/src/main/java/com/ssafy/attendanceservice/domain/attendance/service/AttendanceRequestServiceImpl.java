@@ -3,11 +3,16 @@ package com.ssafy.attendanceservice.domain.attendance.service;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkLogEntry;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeCalculator;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeResult;
+import com.ssafy.attendanceservice.domain.attendance.client.ApprovalClient;
+import com.ssafy.attendanceservice.domain.attendance.client.ApprovalDocument;
+import com.ssafy.attendanceservice.domain.attendance.client.ApprovalDocumentCreateRequest;
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceRequestDetailResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceRequestPreviewRequest;
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceRequestPreviewResponse;
+import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceRequestSubmitRequest;
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceRequestSummaryResponse;
 import com.ssafy.attendanceservice.domain.attendance.entity.AttendanceRequest;
+import com.ssafy.attendanceservice.domain.attendance.entity.AttendanceRequestItem;
 import com.ssafy.attendanceservice.domain.attendance.dto.WorkTimeResponse;
 import com.ssafy.attendanceservice.domain.attendance.entity.AttendanceDaily;
 import com.ssafy.attendanceservice.domain.attendance.entity.WorkGroup;
@@ -15,6 +20,7 @@ import com.ssafy.attendanceservice.domain.attendance.entity.WorkStatusCode;
 import com.ssafy.attendanceservice.domain.attendance.entity.WorkStatusLog;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequestStatus;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequestType;
+import com.ssafy.attendanceservice.domain.attendance.entity.enums.RequestItemAction;
 import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceDailyRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceRequestRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.WorkStatusCodeRepository;
@@ -46,6 +52,7 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
     private final WorkStatusLogRepository workStatusLogRepository;
     private final WorkStatusCodeRepository workStatusCodeRepository;
     private final AttendanceDailyProcessor processor;
+    private final ApprovalClient approvalClient;
 
     /** 시뮬레이션용 로그 한 줄 (DB에 저장하지 않음) */
     private record SimulatedLog(String statusCode, OffsetDateTime startAt, boolean countAsWork) {
@@ -92,6 +99,72 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
                 .filter(request -> request.getEmpId().equals(empId))
                 .map(AttendanceRequestDetailResponse::from)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ATTENDANCE_REQUEST_NOT_FOUND));
+    }
+
+    @Override
+    @Transactional
+    public AttendanceRequestDetailResponse submit(Long empId, AttendanceRequestSubmitRequest request) {
+        AttendanceRequestType reqType = request.reqType();
+
+        // 1. 미리보기와 같은 검증 (중복 신청, 주 최대 근로시간, 대상 로그 등)
+        preview(empId, request.toPreviewRequest());
+
+        // 2. 신청서 저장. 결재 문서에 신청 ID를 넘기려고 먼저 저장한다
+        AttendanceRequest attendanceRequest = AttendanceRequest.builder()
+                .empId(empId)
+                .reqType(reqType)
+                .targetDate(request.targetDate())
+                .substDate(reqType == AttendanceRequestType.HOLIDAY_SUBST ? request.substDate() : null)
+                .reason(request.reason())
+                .build();
+        if (reqType != AttendanceRequestType.HOLIDAY_SUBST) {
+            request.itemsOrEmpty().forEach(item -> attendanceRequest.addItem(toRequestItem(item)));
+        }
+        attendanceRequestRepository.save(attendanceRequest);
+
+        // 3. 결재 문서 생성 (신청한 사원의 토큰으로 호출). 실패하면 예외로 신청서 저장도 롤백된다
+        ApprovalDocument document = approvalClient.createDocument(ApprovalDocumentCreateRequest.ofAttendance(
+                titleOf(request), reqType, attendanceRequest.getAttReqId(), toApprovalLines(request.approvalLines())));
+        attendanceRequest.linkApprovalDocument(document.documentId(), document.docNo());
+
+        return AttendanceRequestDetailResponse.from(attendanceRequest);
+    }
+
+    /** 신청 항목 → 저장용 상세. 삭제 항목은 지울 로그의 상태·시각을 그대로 남긴다 */
+    private AttendanceRequestItem toRequestItem(AttendanceRequestPreviewRequest.Item item) {
+        if (item.action() == RequestItemAction.DELETE) {
+            WorkStatusLog target = workStatusLogRepository.findById(item.targetLogId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_INPUT, "수정/삭제 대상 로그가 올바르지 않습니다."));
+            return AttendanceRequestItem.builder()
+                    .action(RequestItemAction.DELETE)
+                    .targetLogId(target.getLogId())
+                    .workStatusCode(target.getWorkStatusCode())
+                    .startAt(target.getStartAt())
+                    .build();
+        }
+        return AttendanceRequestItem.builder()
+                .action(item.action())  // OVERTIME은 null
+                .targetLogId(item.targetLogId())
+                .workStatusCode(processor.getStatusCode(item.statusCode()))
+                .startAt(item.startAt())
+                .endAt(item.endAt())
+                .build();
+    }
+
+    /** 결재 문서 제목 */
+    private static String titleOf(AttendanceRequestSubmitRequest request) {
+        return switch (request.reqType()) {
+            case TIME_FIX -> "근무시간 수정 신청 (" + request.targetDate() + ")";
+            case OVERTIME -> "초과근무 신청 (" + request.targetDate() + ")";
+            case HOLIDAY_SUBST -> "휴일대체 신청 (" + request.targetDate() + " → " + request.substDate() + ")";
+        };
+    }
+
+    private static List<ApprovalDocumentCreateRequest.ApprovalLine> toApprovalLines(
+            List<AttendanceRequestSubmitRequest.ApprovalLine> lines) {
+        return lines.stream()
+                .map(line -> new ApprovalDocumentCreateRequest.ApprovalLine(line.empId(), line.step(), line.role()))
+                .toList();
     }
 
     // ===== 휴일대체 =====

@@ -86,4 +86,10 @@ public class AttendanceRequest {
         items.add(item);
         item.assignRequest(this);
     }
+
+    /** 결재 문서 연결 (상신 시 결재 서비스가 만든 문서) */
+    public void linkApprovalDocument(Long approvalDocId, String docNo) {
+        this.approvalDocId = approvalDocId;
+        this.docNo = docNo;
+    }
 }
