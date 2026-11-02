@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
 /**
  * 엑셀 수식에서 회사 규칙을 뽑고(열마다 대표 수식), 규칙에서 벗어난 칸을 이슈로 만든다.
  * 같은 작업에 같은 파일의 같은 양식 시트(월별 급여 시트 등)가 있으면 시트끼리 대표 수식도 비교한다.
+ * 합계 열 검산(RecalcChecker)도 여기서 같이 돌린다.
  */
 @Component
 @RequiredArgsConstructor
@@ -53,7 +54,8 @@ public class FormulaRuleService {
         }
         List<FormulaRulesResponse.Column> columns = new ArrayList<>();
         List<ValidationIssue> issues = new ArrayList<>();
-        for (ColumnRule rule : FormulaInspector.inspect(headers, rows, List.copyOf(others.values()))) {
+        List<ColumnRule> rules = FormulaInspector.inspect(headers, rows, List.copyOf(others.values()));
+        for (ColumnRule rule : rules) {
             String col = rule.column();
             String formula = FormulaPattern.readable(rule.pattern(), headers);
             rule.hardcodedRows().forEach((rowNo, v) -> issues.add(issue(file, rowNo, col, IssueCode.HARDCODED_VALUE,
@@ -102,6 +104,7 @@ public class FormulaRuleService {
                             e -> FormulaPattern.readable(e.getValue(), headers), (a, b) -> a, LinkedHashMap::new)),
                     across, otherFormula, otherSheets));
         }
+        issues.addAll(RecalcChecker.check(file.getFileId(), headers, rows, rules));
         return new Inspection(columns, issues);
     }
 
