@@ -38,6 +38,10 @@ public enum ErrorCode {
     LEAVE_ADJUSTMENT_NOT_ALLOWED(HttpStatus.CONFLICT, "LEAVE_018", "현재 발생분에는 잔액 조정을 적용할 수 없습니다."),
     LEAVE_ADJUSTMENT_KEY_CONFLICT(HttpStatus.CONFLICT, "LEAVE_019", "같은 조정 키에 다른 요청 내용을 사용할 수 없습니다."),
 
+    APPROVAL_WITHDRAWAL_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "LEAVE_020", "결재 철회 연동이 준비되지 않아 관리자 취소를 사용할 수 없습니다."),
+    LEAVE_CANCELLATION_NOT_ALLOWED(HttpStatus.CONFLICT, "LEAVE_021", "현재 휴가 신청 또는 원격 결재 상태에서는 관리자 취소를 완료할 수 없습니다."),
+    LEAVE_CANCELLATION_CONFLICT(HttpStatus.CONFLICT, "LEAVE_022", "이미 시작된 취소의 관리자 또는 사유와 일치하지 않습니다."),
+
     // 공통: user-service와 동일한 상태 및 코드
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),
     DATA_INTEGRITY_VIOLATION(HttpStatus.CONFLICT, "COMMON_002", "데이터 제약 조건에 위배됩니다."),
