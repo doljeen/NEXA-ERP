@@ -118,6 +118,7 @@
 | 토픽 | 앱 기동 시 `approval.document.result`, `.DLT` 생성 (파티션 3) |
 | 브로커 | approval-service `compose.yaml` `kafka` (`apache/kafka:3.9.1`, 호스트 `localhost:19092`) |
 | 테스트 | Testcontainers Kafka 통합 4개(롤백 시 이벤트 없음 포함), 발행기 단위 3개 |
+| 발행 지연 감시 | 1분마다 점검, 가장 오래된 미발행 이벤트가 5분을 넘으면 ERROR 로그(`아웃박스 발행 지연`). 게이지 `approval.outbox.pending`, `approval.outbox.oldest.age`, 카운터 `approval.outbox.published`, `approval.outbox.publish.failures` (팀 모니터링 시스템이 생기면 `/actuator/prometheus`로 노출) |
 
 수신 측 계약과 예시 코드: `DOCS/approval-result-event.md`
 
