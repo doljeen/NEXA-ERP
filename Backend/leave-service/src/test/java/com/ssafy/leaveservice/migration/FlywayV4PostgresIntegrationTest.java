@@ -1,5 +1,6 @@
 package com.ssafy.leaveservice.migration;
 
+import com.ssafy.leaveservice.support.PostgresTestConfiguration;
 import com.ssafy.leaveservice.domain.request.entity.*;
 import com.ssafy.leaveservice.domain.ledger.entity.LeaveLedger;
 import jakarta.persistence.EntityManager;
@@ -10,26 +11,24 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.*;
-import org.testcontainers.junit.jupiter.*;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import java.util.*;
 import static org.assertj.core.api.Assertions.*;
 
-@SpringBootTest(properties={"spring.cloud.config.enabled=false","eureka.client.enabled=false",
+@SpringBootTest(properties={
+        "leave.test.database-owner=FlywayV4PostgresIntegrationTest",
+        "spring.cloud.config.enabled=false","eureka.client.enabled=false",
         "eureka.client.service-url.defaultZone=http://localhost:8761/eureka/","spring.jpa.open-in-view=false"})
 @ActiveProfiles("dev")
-@Testcontainers
+@Import(PostgresTestConfiguration.class)
 class FlywayV4PostgresIntegrationTest {
-    @Container static final PostgreSQLContainer postgres=new PostgreSQLContainer("postgres:17-alpine");
-    @DynamicPropertySource static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url",postgres::getJdbcUrl);
-        registry.add("spring.datasource.username",postgres::getUsername);
-        registry.add("spring.datasource.password",postgres::getPassword);
-    }
+    @Autowired
+    private PostgreSQLContainer postgres;
     @Autowired EntityManagerFactory entityManagerFactory;
     private String schema;
     private JdbcTemplate jdbc;

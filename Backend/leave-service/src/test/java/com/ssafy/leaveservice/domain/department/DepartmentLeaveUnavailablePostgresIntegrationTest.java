@@ -1,5 +1,6 @@
 package com.ssafy.leaveservice.domain.department;
 
+import com.ssafy.leaveservice.support.PostgresTestConfiguration;
 import com.ssafy.leaveservice.client.hr.HrClient;
 import com.ssafy.leaveservice.client.hr.UnavailableHrClient;
 import com.ssafy.leaveservice.domain.account.repository.LeaveAccountRepository;
@@ -9,26 +10,24 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.junit.jupiter.*;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest(properties={"spring.cloud.config.enabled=false","eureka.client.enabled=false",
+@SpringBootTest(properties={
+        "leave.test.database-owner=DepartmentLeaveUnavailablePostgresIntegrationTest",
+        "spring.cloud.config.enabled=false","eureka.client.enabled=false",
         "eureka.client.service-url.defaultZone=http://localhost:8761/eureka/","spring.jpa.open-in-view=false"})
 @AutoConfigureMockMvc
-@Testcontainers
+@Import(PostgresTestConfiguration.class)
 class DepartmentLeaveUnavailablePostgresIntegrationTest {
-    @Container
-    @ServiceConnection
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17-alpine");
+
     @Autowired MockMvc mvc;
     @Autowired HrClient hrClient;
     @MockitoBean LeaveAccountRepository accounts;

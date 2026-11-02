@@ -59,7 +59,7 @@ class LeaveAccrualRuleReplaceServiceTest {
         verify(existingRule, never()).updateSettings(any());
         verify(versionRepository, never()).existsUsageHistory(anyLong());
         verify(ruleRepository, never()).saveAll(any());
-        verify(ruleRepository, never()).deleteAll(any(Iterable.class));
+        verify(ruleRepository, never()).deleteAll(org.mockito.ArgumentMatchers.<LeaveAccrualRule>anyIterable());
         verify(ruleRepository, never()).flush();
     }
 

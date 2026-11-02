@@ -1,5 +1,6 @@
 package com.ssafy.leaveservice.domain.request;
 
+import com.ssafy.leaveservice.support.PostgresTestConfiguration;
 import com.ssafy.leaveservice.client.attendance.HolidayClient;
 import com.ssafy.leaveservice.client.attendance.HolidayClient.*;
 import com.ssafy.leaveservice.domain.request.service.LeaveRequestPreviewService;
@@ -11,6 +12,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.*;
@@ -19,8 +21,6 @@ import org.springframework.test.web.servlet.*;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.context.WebApplicationContext;
-import org.testcontainers.junit.jupiter.*;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.*;
 import java.time.*;
 import java.util.*;
@@ -31,19 +31,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest(properties={
+        "leave.test.database-owner=LeaveRequestPreviewPostgresIntegrationTest",
         "spring.cloud.config.enabled=false","eureka.client.enabled=false",
         "eureka.client.service-url.defaultZone=http://localhost:8761/eureka/","spring.jpa.open-in-view=false",
         "spring.jpa.properties.hibernate.session_factory.statement_inspector=com.ssafy.leaveservice.domain.request.LeaveRequestPreviewPostgresIntegrationTest$SqlCapture"
 })
 @ActiveProfiles("dev")
-@Testcontainers
+@Import(PostgresTestConfiguration.class)
 class LeaveRequestPreviewPostgresIntegrationTest {
-    @Container static final PostgreSQLContainer postgres=new PostgreSQLContainer("postgres:17-alpine");
-    @DynamicPropertySource static void database(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url",postgres::getJdbcUrl);
-        registry.add("spring.datasource.username",postgres::getUsername);
-        registry.add("spring.datasource.password",postgres::getPassword);
-    }
     public static class SqlCapture implements StatementInspector {
         static final ThreadLocal<List<String>> sql=ThreadLocal.withInitial(ArrayList::new);
         static final ThreadLocal<Boolean> gated=ThreadLocal.withInitial(()->false);
