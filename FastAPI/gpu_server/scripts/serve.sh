@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # vLLM serving (daytime). Run inside tmux on the GPU server.
+# API key is read from the VLLM_API_KEY env var (.env), not passed as an argument,
+# so it does not show up in `ps` on the shared server.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -14,7 +16,6 @@ CUDA_VISIBLE_DEVICES="$GPU_ID" vllm serve "$MODEL_PATH" \
   --served-model-name "$SERVED_MODEL_NAME" \
   --host 0.0.0.0 \
   --port "$PORT" \
-  --api-key "$VLLM_API_KEY" \
   --gpu-memory-utilization "$GPU_MEM_UTIL" \
   --max-model-len "$MAX_MODEL_LEN" \
   --max-num-seqs "$MAX_NUM_SEQS" \
