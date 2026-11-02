@@ -125,7 +125,7 @@ public class RosterReferenceChecker {
     }
 
     /** 매핑이 없는 파일: 직원명부 필드(사번·이름)의 이름·라벨·동의어와 같은 헤더 */
-    private static String findColumn(MigrationFile file, String field) {
+    static String findColumn(MigrationFile file, String field) {
         FieldSpec spec = EntitySchemas.of(MigrationEntity.HR_EMPLOYEE).flatMap(s -> s.field(field)).orElseThrow();
         List<String> names = new ArrayList<>(spec.synonyms());
         names.add(spec.name());

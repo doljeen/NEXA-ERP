@@ -37,10 +37,17 @@ ACCIDENT_CODES = {
     "STALE_RATE_LITERAL": {"FORMULA_INCONSISTENT", "FORMULA_DIFFERS_ACROSS_SHEETS"},
     "BASE_DATE_WRONG": {"FORMULA_INCONSISTENT"}, "UNDER_ONE_YEAR_PAID": {"FORMULA_INCONSISTENT"},
     "KEY_MISSING": {"EMP_KEY_MISSING"},
+    # 부양가족
+    "DEDUCTION_AGE_RULE": {"DEPENDENT_AGE_RULE"}, "RATIO_INVALID": {"WITHHOLDING_RATIO_INVALID"},
+    "FAMILY_COUNT_MISMATCH": {"FAMILY_COUNT_MISMATCH"},
 }
 # 직원명부 대조 이슈: 정답지 사고가 아니라 직원명부에 넣은 오류(사번 중복·같은 사람 두 번)의 결과라 따로 센다
 REF_CODES = {"EMP_NOT_IN_ROSTER", "EMP_NAME_MISMATCH", "EMPNO_ZERO_PADDED"}
 NEW_CODES = set().union(*ACCIDENT_CODES.values())
+# 사번 기준으로 보는 사고: 정답지 위치(명세 행)와 다른 시트(집계 행)에 같은 직원 경고가 나와도 검출로 본다
+EMP_SCOPED = {"FAMILY_COUNT_MISMATCH": {"FAMILY_COUNT_MISMATCH"}}
+# 이 사고 때문에 같은 직원의 다른 행에 생기는 경고 (정답지에 따로 없지만 설명됨)
+EXPLAINS = {"DEDUCTION_AGE_RULE": {"FAMILY_COUNT_MISMATCH"}}
 SKIP_ROLES = {"settings", "lookupTable"}  # 설정·세액표 시트는 데이터가 아니라서 올리지 않음
 
 
@@ -191,6 +198,14 @@ def evaluate_hr_file(base, mid, cdir, fname, hk):
                     if i["code"] in codes and (row is None or i["rowNo"] == row):
                         item["detected"] = True
                         explained.add((sheet, i["rowNo"], i["code"]))
+        emp = _emp_key(a.get("empNo"))
+        for code_set, detects in ((EMP_SCOPED.get(a["type"], set()), True), (EXPLAINS.get(a["type"], set()), False)):
+            for sheet, issues in issues_by_sheet.items() if emp and code_set else []:
+                rows = _emp_rows(cdir / fname, sheet, hk)
+                for i in issues:
+                    if i["code"] in code_set and rows.get(i["rowNo"]) == emp:
+                        item["detected"] |= detects
+                        explained.add((sheet, i["rowNo"], i["code"]))
         res["accidents"].append(item)
     for sheet, issues in issues_by_sheet.items():
         for i in issues:
@@ -198,6 +213,30 @@ def evaluate_hr_file(base, mid, cdir, fname, hk):
                 res["unexpected"][i["code"]] += 1
     res["unexpected"] = dict(res["unexpected"])
     return res
+
+
+_EMP_ROWS = {}
+
+
+def _emp_key(v):
+    s = "" if v is None else str(v).strip()
+    return s.lstrip("0") or s if s.isdigit() else s
+
+
+def _emp_rows(path, sheet, hk):
+    """시트의 행 번호 → 사번 (정답 매핑에서 사번 헤더를 찾는다)"""
+    if (path, sheet) not in _EMP_ROWS:
+        import openpyxl
+        meta = hk["sheets"][sheet]
+        mapping = hk.get("expectedMapping", {}).get(meta.get("role"), {})
+        emp_h = next((h for h, f in mapping.items() if f == "empNo"), None)
+        ws = openpyxl.load_workbook(path, read_only=True, data_only=True)[sheet]
+        rows = list(ws.iter_rows(values_only=True))
+        h = meta["headerRows"][-1] - 1
+        col = list(rows[h]).index(emp_h) if emp_h in rows[h] else None
+        _EMP_ROWS[(path, sheet)] = {} if col is None else {
+            n + 1: _emp_key(r[col]) for n, r in enumerate(rows) if n > h and len(r) > col and r[col] is not None}
+    return _EMP_ROWS[(path, sheet)]
 
 
 def _locations(a):

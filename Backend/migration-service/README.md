@@ -67,6 +67,9 @@ user-service의 이관용 내부 API는 아직 없어서, 적재 테스트는 `F
 - 직원명부 대조: 직원명부가 아닌 파일의 사번이 같은 작업의 직원명부에 있는지 `EMP_NOT_IN_ROSTER`, 이름이 같은지 `EMP_NAME_MISMATCH`,
   사번 빈 칸 `EMP_KEY_MISSING`(이름으로 찾은 사번 제안). 숫자 셀이라 앞자리 0이 빠진 사번은 명부 자리수로 채워 대조하고 `EMPNO_ZERO_PADDED`
 - 코드값 오타: 직위·직급 등에서 드문 값이 흔한 값과 한글 자모 하나만 다르면 `CODE_TYPO_SUSPECTED` + 제안값
+- 부양가족 (경고): 기본공제 표시된 자녀 나이 > 20·부모 나이 < 60 `DEPENDENT_AGE_RULE`, 원천징수비율이 80·100·120%가 아님 `WITHHOLDING_RATIO_INVALID`,
+  공제가족수가 같은 작업의 가장 늦은 달 급여 시트(이름에 연월이 있는 파일)의 공제가족수와 다름 `FAMILY_COUNT_MISMATCH`.
+  가족수 대조는 이름에 연월이 없는 파일(부양가족 집계) 쪽에만 내고, 급여 시트를 나중에 올리면 그 파일을 다시 검증
 - `REFERENCE` entity: 적재하지 않는 참고 자료(근태기록·발령대장 등)를 올려 위 검사·규칙 추출만 한다
 
 ## 대상 서비스 내부 API (user-service가 구현해야 함, 합의 필요)
