@@ -27,7 +27,7 @@ build-gateway:
         - Backend/gateway-service/**/*
         - .gitlab/ci/gateway.yml
         - .gitlab/ci/deploy.yml
-        - .gitlab-ci.yml
+        - .gitlab/ci/gradle.yml
         - compose.dev.yml
         - infra/compose/**/*
         - infra/docker/**/*

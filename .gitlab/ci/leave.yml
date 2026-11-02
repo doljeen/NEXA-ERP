@@ -27,7 +27,7 @@ build-leave:
         - .gitlab/ci/leave.yml
         - .gitlab/ci/testcontainers.yml
         - .gitlab/ci/deploy.yml
-        - .gitlab-ci.yml
+        - .gitlab/ci/gradle.yml
         - compose.dev.yml
         - infra/compose/**/*
         - infra/docker/**/*
