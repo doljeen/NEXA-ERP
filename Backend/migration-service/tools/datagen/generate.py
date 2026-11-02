@@ -25,6 +25,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 from openpyxl import Workbook
 
+import newco
 from hrfiles import appointments, attendance, insurance, leave, payroll, salary, severance
 from hrfiles.facts import build_facts, month_range
 
@@ -324,6 +325,8 @@ def main():
         for e in key["errors"]:
             by_code[e["code"]] = by_code.get(e["code"], 0) + 1
         summary.append({"company": company["name"], **key["counts"], "errors": by_code})
+    # 추가 회사(newco/): 기존 3개 회사를 다 만든 뒤, 회사별 난수로 만든다 (위 난수열·출력에 영향 없음)
+    summary += newco.build_all(df, used, out_dir, args.seed)
     (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False))
 
