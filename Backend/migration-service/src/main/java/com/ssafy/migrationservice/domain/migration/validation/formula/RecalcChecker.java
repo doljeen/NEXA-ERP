@@ -5,6 +5,7 @@ import com.ssafy.migrationservice.domain.migration.validation.formula.FormulaIns
 import com.ssafy.migrationservice.domain.migration.validation.issue.IssueCode;
 import com.ssafy.migrationservice.domain.migration.validation.issue.Severity;
 import com.ssafy.migrationservice.domain.migration.validation.issue.ValidationIssue;
+import com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns;
 
 import java.math.BigDecimal;
 import java.text.DecimalFormat;
@@ -12,14 +13,23 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+
+import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.DEDUCTION_TOTAL;
+import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.GROSS;
+import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.NET;
+import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.NOT_AMOUNT;
+import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.PAY_ITEM;
+import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.SUBTOTAL;
+import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.find;
+import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.normalize;
+import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.number;
+import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.numeric;
 
 /**
  * 검산: 합계 열이 항목 열의 합과 맞는지 행마다 다시 계산한다.
@@ -31,15 +41,6 @@ import java.util.stream.Collectors;
 public final class RecalcChecker {
 
     private static final BigDecimal TOLERANCE = new BigDecimal("0.01");   // 엑셀 실수 오차만 무시 (연차 0.5일은 잡는다)
-    private static final double NUMERIC_COLUMN_RATIO = 0.8;
-
-    // 열 이름은 소문자로 바꾸고 공백·밑줄을 지운 뒤 비교한다
-    private static final Pattern GROSS = Pattern.compile("지급(액)?(합계|총액|계)|총지급(액)?|급여(총액|합계)|gross(pay)?|totalpay|paytotal");
-    private static final Pattern DEDUCTION_TOTAL = Pattern.compile("공제(액)?(합계|총액|계)|총공제(액)?|dedtotal|totalded(uction)?s?|deductiontotal");
-    private static final Pattern NET = Pattern.compile("(실|차인|차감)지급(액)?|실수령(액)?|netpay|net");
-    private static final Pattern PAY_ITEM = Pattern.compile("기본급|급여|수당|식대|상여|성과급|보너스|인센티브|pay|alw|allowance|meal|bonus");
-    private static final Pattern SUBTOTAL = Pattern.compile(".*(계|총액|total)");    // 수당계·과세계·비과세계·소계
-    private static final Pattern NOT_AMOUNT = Pattern.compile("시간(?!외)|시급|일수(?!당)|가족수(?!당)|과세(대상|표준|소득|급여|합계)|율|hrs|hour|rate|taxable|cnt|count");
 
     private static final Pattern TOKEN = Pattern.compile("\\s*(SUM\\(|\\$?[A-Z]{1,3}\\[0]|[-+(),:])");
 
@@ -304,17 +305,8 @@ public final class RecalcChecker {
         return m;
     }
 
-    private static int find(List<String> headers, Pattern p) {
-        for (int c = 0; c < headers.size(); c++) {
-            if (p.matcher(normalize(headers.get(c))).matches()) {
-                return c;
-            }
-        }
-        return -1;
-    }
-
     private static boolean hasSubtotal(List<String> headers, int from, int to) {
-        return headers.subList(from, to).stream().map(RecalcChecker::normalize).anyMatch(h -> SUBTOTAL.matcher(h).matches());
+        return headers.subList(from, to).stream().map(PayrollColumns::normalize).anyMatch(h -> SUBTOTAL.matcher(h).matches());
     }
 
     /** [from, to) 안의 금액 열. 지급 쪽은 이름이 지급 항목 같은 열만, 공제 쪽은 시간·요율·과세표준이 아닌 숫자 열 전부 */
@@ -326,29 +318,10 @@ public final class RecalcChecker {
                     || SUBTOTAL.matcher(h).matches() || GROSS.matcher(h).matches() || NET.matcher(h).matches()) {
                 continue;
             }
-            String header = headers.get(c);
-            List<String> values = rows.stream().map(r -> r.values().get(header)).filter(Objects::nonNull).toList();
-            long numeric = values.stream().filter(v -> number(v).isPresent()).count();
-            if (!values.isEmpty() && numeric >= values.size() * NUMERIC_COLUMN_RATIO) {
+            if (numeric(rows, headers.get(c))) {
                 out.add(c);
             }
         }
         return out;
-    }
-
-    static Optional<BigDecimal> number(String value) {
-        if (value == null) {
-            return Optional.empty();
-        }
-        String v = value.replace(",", "").replace("원", "").strip();
-        try {
-            return v.matches("-?\\d+(\\.\\d+)?") ? Optional.of(new BigDecimal(v)) : Optional.empty();
-        } catch (NumberFormatException e) {
-            return Optional.empty();
-        }
-    }
-
-    private static String normalize(String header) {
-        return header.toLowerCase(Locale.ROOT).replaceAll("[\\s_]+", "");
     }
 }
