@@ -53,6 +53,7 @@ user-service의 이관용 내부 API는 아직 없어서, 적재 테스트는 `F
 | POST | `/{id}/files?entity=&sheet=` | 업로드 → 읽기·매핑 추천·검증. `sheet` 없으면 entity 필드와 가장 잘 맞는 시트 |
 | GET | `/{id}/files/{fileId}` | 파일 진단, 매핑, 오류 건수 |
 | GET | `/{id}/files/{fileId}/formulas` | 엑셀 수식에서 뽑은 열별 규칙, 규칙에서 벗어난 행, 같은 양식 다른 시트와 비교 |
+| GET | `/{id}/files/{fileId}/rules/summary?refresh=` | 수식 규칙을 사람 말로 정리 (LLM, 열 이름·대표 수식·예외 개수만 보냄, 셀 값 없음). 저장해 두고 `refresh=true`일 때만 다시 만듦 |
 | PUT | `/{id}/files/{fileId}/mappings` | 매핑 확정 → 재검증 |
 | PATCH | `/{id}/files/{fileId}/rows/{rowNo}` | 행 직접 수정 → 재검증 |
 | GET | `/{id}/issues` | 오류: 심각도별 건수, 원인별 묶음, 행 단위 목록 |
@@ -129,4 +130,4 @@ GET    /internal/v1/hr/migration/batches/{batchId}/summary           → ApiResu
 - 업로드·적재 비동기 처리 (지금은 동기)
 - 대상 서비스 코드 목록과 대조하는 코드 매핑, 엑셀 양식 다운로드, 전환 완료
 - 급여·연차 등(`PAY_*`, `LEAVE_BALANCE`) 필드 정의: 대상 서비스와 합의 전이라 없음 (지금은 읽기·수식 검사·직원명부 대조만)
-- 수식 규칙의 설정 시트 참조(`설정!$B$9`)를 값·라벨로 풀어 보여 주기, ROUND·VLOOKUP이 섞인 수식 검산, 국민연금 상·하한, 파일 사이 대조(4대보험 보수월액 ↔ 급여)
+- 수식 규칙의 설정 시트 참조(`설정!$B$9`)를 값·라벨로 풀어 보여 주기 (지금 규칙 요약은 '설정 시트 B9 값'으로만 적음), ROUND·VLOOKUP이 섞인 수식 검산, 국민연금 상·하한, 파일 사이 대조(4대보험 보수월액 ↔ 급여)
