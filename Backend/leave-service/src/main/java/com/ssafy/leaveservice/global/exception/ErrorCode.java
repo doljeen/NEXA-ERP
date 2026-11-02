@@ -35,6 +35,9 @@ public enum ErrorCode {
 
     HR_VERIFICATION_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "LEAVE_017", "인사 정보 또는 부서 조회 권한을 확인할 수 없습니다."),
 
+    LEAVE_ADJUSTMENT_NOT_ALLOWED(HttpStatus.CONFLICT, "LEAVE_018", "현재 발생분에는 잔액 조정을 적용할 수 없습니다."),
+    LEAVE_ADJUSTMENT_KEY_CONFLICT(HttpStatus.CONFLICT, "LEAVE_019", "같은 조정 키에 다른 요청 내용을 사용할 수 없습니다."),
+
     // 공통: user-service와 동일한 상태 및 코드
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),
     DATA_INTEGRITY_VIOLATION(HttpStatus.CONFLICT, "COMMON_002", "데이터 제약 조건에 위배됩니다."),

@@ -102,6 +102,8 @@ class FlywayV4PostgresIntegrationTest {
 
     @Test
     void jpaMapsMetadataAllocationAndLedgerWithoutChangingResponseDtos() {
+        // 현재 Entity의 V5 nullable 감사 컬럼까지 적용한 후 V4 매핑을 검증한다.
+        flyway("5").migrate();
         jdbc.update("""
                 insert into leave_ledger(entry_id,account_id,grant_id,leave_req_id,allocation_id,event_type,reserved_delta,idempotency_key)
                 values(2,1,1,1,1,'RESERVE',240,'reserve')

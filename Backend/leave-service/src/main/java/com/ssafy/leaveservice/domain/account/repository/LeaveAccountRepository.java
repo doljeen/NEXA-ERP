@@ -13,6 +13,17 @@ import com.ssafy.leaveservice.domain.account.repository.projection.PreviewGrantB
 
 public interface LeaveAccountRepository extends JpaRepository<LeaveAccount, Long> {
 
+    @Query(value = LeaveBalanceSql.GRANT_TOTALS + """
+            select grant_id as "grantId", valid_from as "validFromInstant", expires_on as "expiresOnInstant",
+                   quantity_minutes as "quantityMinutes", reserved_minutes as "reservedMinutes"
+            from grant_totals where grant_id = :grantId
+            """, nativeQuery = true)
+    java.util.Optional<PreviewGrantBalance> findAdjustmentGrantBalance(
+            @Param("employeeId") Long employeeId,
+            @Param("grantId") Long grantId,
+            @Param("asOf") OffsetDateTime asOf
+    );
+
     // 발생분별 원장을 먼저 집계하고, 같은 기준 시각의 유효 발생분만 계정별로 합산한다.
     // NUMERIC 합계로 DB 중간 집계의 BIGINT 오버플로도 방지한다.
     @Query(value = LeaveBalanceSql.GRANT_TOTALS + "select " + LeaveBalanceSql.ACCOUNT_BALANCE_COLUMNS

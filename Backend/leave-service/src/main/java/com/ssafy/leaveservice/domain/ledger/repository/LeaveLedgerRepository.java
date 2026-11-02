@@ -19,4 +19,7 @@ public interface LeaveLedgerRepository extends JpaRepository<LeaveLedger, Long> 
     List<LeaveLedger> findAllWithAccountAndBalanceTypeByEmployeeId(@Param("employeeId") Long employeeId);
 
     List<LeaveLedger> findAllByLeaveReqIdOrderByEntryIdAsc(Long requestId);
+
+    @Query("select ledger from LeaveLedger ledger join fetch ledger.account where ledger.idempotencyKey = :key")
+    java.util.Optional<LeaveLedger> findByAdjustmentKey(@Param("key") String key);
 }
