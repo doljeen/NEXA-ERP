@@ -42,7 +42,7 @@ public interface AttendanceService {
     /** 월간 근태 (1일 ~ 말일) */
     MonthlyAttendanceResponse getMonthly(Long empId, YearMonth month);
 
-    /** 근무상태 변경 이력 (삭제 포함). from이 to보다 늦으면 BusinessException(INVALID_INPUT) */
+    /** 근무상태 변경 이력 (삭제 포함). from이 to보다 늦거나 기간이 31일을 넘으면 BusinessException(INVALID_INPUT) */
     List<WorkStatusHistoryResponse> getHistory(Long empId, LocalDate from, LocalDate to);
 
     /** 급여용 월별 근태 집계 */
