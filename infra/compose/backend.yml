@@ -211,3 +211,48 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  payroll-service:
+    image: nexa-payroll:local
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+
+    environment:
+      SERVER_PORT: "8085"
+
+      CONFIG_SERVER_URL: http://config-server:8888
+      SPRING_CLOUD_CONFIG_USERNAME: config-client
+      SPRING_CLOUD_CONFIG_PASSWORD: ${CONFIG_SERVER_PASSWORD:?CONFIG_SERVER_PASSWORD is required}
+
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nexa_payroll
+      SPRING_DATASOURCE_USERNAME: nexa_payroll_app
+      SPRING_DATASOURCE_PASSWORD: ${PAYROLL_DB_PASSWORD:?PAYROLL_DB_PASSWORD is required}
+
+      JWT_JWKS_URI: http://user-service:8081/.well-known/jwks.json
+      ATTENDANCE_SERVICE_URL: http://attendance-service:8084
+      EUREKA_URL: "http://${EUREKA_USER:?EUREKA_USER is required}:${EUREKA_PASSWORD:?EUREKA_PASSWORD is required}@eureka-server:8761/eureka/"
+
+    ports:
+      - "127.0.0.1:8085:8085"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "3", "http://localhost:8085/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
