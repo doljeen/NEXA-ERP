@@ -20,7 +20,7 @@ public record AttendanceRequestDetailResponse(
         String reason,                      // 신청 사유
         AttendanceRequestStatus status,     // 결재 상태
         Long approvalDocId,                 // 결재문서 ID
-        Long docNo,                         // 문서번호
+        String docNo,                       // 문서번호
         OffsetDateTime createdAt,           // 상신 일시
         OffsetDateTime completedAt,         // 결재 완료 일시
         List<Item> items                    // 신청 상세
