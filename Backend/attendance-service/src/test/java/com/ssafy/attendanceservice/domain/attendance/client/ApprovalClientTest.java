@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
@@ -68,6 +69,7 @@ class ApprovalClientTest {
                         {"title":"초과근무 신청 (2026-11-05)","formType":"OVERTIME",
                          "sourceType":"ATTENDANCE","sourceId":42,
                          "approvalLines":[{"empId":12,"step":1,"role":"APPROVER"}]}"""))
+                .andExpect(jsonPath("$.requestKey").value(ApprovalDocumentCreateRequest.requestKeyOf(42L).toString()))
                 .andRespond(withSuccess("""
                         {"success":true,"data":{"documentId":128,"docNo":"OVERTIME-2026-0001"}}""",
                         MediaType.APPLICATION_JSON));
@@ -100,5 +102,12 @@ class ApprovalClientTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.APPROVAL_CALL_FAILED);
+    }
+
+    @Test
+    void 요청_키는_신청_ID마다_항상_같은_값() {
+        assertThat(ApprovalDocumentCreateRequest.requestKeyOf(42L))
+                .isEqualTo(ApprovalDocumentCreateRequest.requestKeyOf(42L))
+                .isNotEqualTo(ApprovalDocumentCreateRequest.requestKeyOf(43L));
     }
 }
