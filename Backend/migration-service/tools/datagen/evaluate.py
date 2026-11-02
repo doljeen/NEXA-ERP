@@ -23,7 +23,7 @@ from pathlib import Path
 API = "/api/v1/admin/migrations"
 
 # 직원명부 오류 코드 → 서비스가 같은 오류를 낼 때 쓰는 코드 (이름이 다른 것만)
-ROSTER_CODE_ALIAS = {"POSITION_TYPO": {"CODE_TYPO_SUSPECTED"}}
+ROSTER_CODE_ALIAS = {"POSITION_TYPO": {"CODE_TYPO_SUSPECTED"}, "INVALID_ENUM": {"ENUM_VALUE_SUGGESTED"}}  # 허용 값 밖 값은 LLM 추천이 있으면 정리 제안으로 나옴
 
 # 인사 엑셀 사고 유형 → 이 사고를 잡았다고 볼 서비스 이슈 코드
 ACCIDENT_CODES = {
@@ -46,6 +46,14 @@ ACCIDENT_CODES = {
     # 연봉이력
     "SALARY_NOT_UPDATED": {"SALARY_PAYROLL_MISMATCH"}, "VALUE_MISSING": {"SALARY_PAYROLL_MISMATCH"},
     "PERCENT_AS_NUMBER": {"RAISE_RATE_AS_PERCENT"}, "WAGE_NOT_UPDATED": {"SALARY_HISTORY_MISMATCH"},
+    # 추가 회사(newco) 사고 중 기존 서비스 코드와 뜻이 같은 것. 대응이 없는 유형은 비워 둔다
+    "TOTAL_MISMATCH": {"RECALC_MISMATCH"}, "MIN_WAGE_VIOLATION": {"BELOW_MINIMUM_WAGE"}, "MIN_WAGE_STALE": {"BELOW_MINIMUM_WAGE"},
+    "HOLIDAY_PREMIUM_MISSING": {"PREMIUM_BELOW_STATUTORY"}, "ROW_OUTSIDE_SUBTOTAL": {"ROW_AFTER_TOTAL"},
+    "DIVISOR_INCONSISTENT": {"FORMULA_DIFFERS_ACROSS_SHEETS", "FORMULA_INCONSISTENT"},
+    "STALE_PAY_TABLE": {"FORMULA_DIFFERS_ACROSS_SHEETS", "FORMULA_INCONSISTENT"},
+    "WRONG_YEAR_SHEET": {"FORMULA_DIFFERS_ACROSS_SHEETS"},
+    "ALLOWANCE_RULE_CONFLICT": {"HARDCODED_VALUE"}, "INSURANCE_EXEMPTION_WRONG": {"HARDCODED_VALUE"},
+    "MIDNIGHT_NOT_HANDLED": {"FORMULA_INCONSISTENT"},
 }
 # 정답지 legalDeviations 규칙 → 이 편차를 잡았다고 볼 서비스 이슈 코드 (시트 단위)
 LEGAL_CODES = {
@@ -100,8 +108,9 @@ def evaluate_company(base, cdir):
     key = json.loads((cdir / "answer_key.json").read_text(encoding="utf-8"))
     mid = call(base, API, json.dumps({"companyId": 1, "name": key["company"] + " 평가"}).encode("utf-8"))["migrationId"]
 
-    result = {"company": key["company"], "mapping": {}, "detection": {}, "falsePositives": Counter(), "fileLevel": []}
+    result = {"company": key["company"], "mapping": {}, "detection": {}, "falsePositives": Counter(), "fixSuggestions": Counter(), "fileLevel": []}
     found_by_entity = {}
+    fix_codes = set()
     for entity, fname in key["files"].items():
         up = upload(base, mid, entity, cdir / fname)
         detail = call(base, f"{API}/{mid}/files/{up['fileId']}")
@@ -112,6 +121,7 @@ def evaluate_company(base, cdir):
         issues = all_issues(base, mid, up["fileId"])
         result["fileLevel"] += [i["message"] for i in issues if i["rowNo"] is None]
         found_by_entity[entity] = {(i["rowNo"], i["field"], i["code"]) for i in issues if i["rowNo"] is not None}
+        fix_codes |= {i["code"] for i in issues if i.get("severity") == "FIX"}
 
     found = found_by_entity["HR_EMPLOYEE"]
     expected_errors = {(e["rowNo"], e["field"], e["code"]): e for e in key["errors"]}
@@ -125,9 +135,10 @@ def evaluate_company(base, cdir):
         s["found"] += bool(hits)
         matched |= hits
     result["detection"] = dict(by_code)
-    for row_no, field, code in found - matched:
-        result["falsePositives"][code] += 1
+    for row_no, field, code in found - matched:   # 정답지에 없는 FIX(자동 정리 제안)는 오탐과 따로 센다
+        result["fixSuggestions" if code in fix_codes else "falsePositives"][code] += 1
     result["falsePositives"] = dict(result["falsePositives"])
+    result["fixSuggestions"] = dict(result["fixSuggestions"])
     result["orgIssues"] = len(found_by_entity["HR_ORG"])
     cross = {(code, _emp_key(a.get("empNo"))) for hk in key.get("hrFiles", {}).values() for a in hk["accidents"]
              for code in CROSS_EXPLAINS.get(a["type"], set())}
@@ -191,7 +202,7 @@ def evaluate_hr_file(base, mid, cdir, fname, hk, cross=frozenset()):
             continue
         sr = {"sheet": name, "role": meta.get("role")}
         try:
-            up = upload(base, mid, entity, cdir / fname, name)
+            up = upload(base, mid, entity, cdir / fname, None if fname.lower().endswith(".csv") else name)
             sr["read"] = _read_check(up, meta, hk)
             uploaded.append((sr, up["fileId"]))
         except Exception as e:  # noqa: BLE001 - 업로드 거절도 결과로 남긴다
@@ -237,7 +248,7 @@ def evaluate_hr_file(base, mid, cdir, fname, hk, cross=frozenset()):
         res["legal"].append(item)
     for sheet, issues in issues_by_sheet.items():
         for i in issues:
-            if i["code"] in NEW_CODES and (sheet, i["rowNo"], i["code"]) not in explained \
+            if i["code"] in NEW_CODES and i.get("severity") != "FIX" and (sheet, i["rowNo"], i["code"]) not in explained \
                     and (i["code"], _emp_rows(cdir / fname, sheet, hk).get(i["rowNo"])) not in cross:
                 res["unexpected"][i["code"]] += 1
     res["unexpected"] = dict(res["unexpected"])
@@ -259,8 +270,16 @@ def _emp_rows(path, sheet, hk):
         meta = hk["sheets"][sheet]
         mapping = hk.get("expectedMapping", {}).get(meta.get("role"), {})
         emp_h = next((h for h, f in mapping.items() if f == "empNo"), None)
-        ws = openpyxl.load_workbook(path, read_only=True, data_only=True)[sheet]
-        rows = list(ws.iter_rows(values_only=True))
+        if path.suffix.lower() == ".csv":
+            import csv
+            raw = path.read_bytes()
+            try:
+                text = raw.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                text = raw.decode("cp949")
+            rows = [tuple(c or None for c in r) for r in csv.reader(text.splitlines())]
+        else:
+            rows = list(openpyxl.load_workbook(path, read_only=True, data_only=True)[sheet].iter_rows(values_only=True))
         h = meta["headerRows"][-1] - 1
         col = list(rows[h]).index(emp_h) if emp_h in rows[h] else None
         _EMP_ROWS[(path, sheet)] = {} if col is None else {
@@ -284,7 +303,8 @@ def _read_check(up, meta, hk):
     """서비스가 읽은 행 수·헤더 vs 정답지 시트 구조"""
     expected_rows = None
     if meta.get("firstDataRow") and meta.get("lastDataRow"):
-        expected_rows = meta["lastDataRow"] - meta["firstDataRow"] + 1 + len(meta.get("rowsAfterTotal", []))
+        expected_rows = (meta["lastDataRow"] - meta["firstDataRow"] + 1 + len(meta.get("rowsAfterTotal", []))
+                         - len(meta.get("subtotalRows", [])))
     mapping = hk.get("expectedMapping", {}).get(meta.get("role"), {})
     want = {" ".join(h.split()) for h in mapping}
     got = {" ".join(str(h).split()) for h in up["headers"]}
@@ -368,6 +388,7 @@ def main():
             total_det["found"] += s["found"]
         lines.append("")
         lines.append(f"- 오탐(정답지에 없는데 검출): {r['falsePositives'] or '없음'}")
+        lines.append(f"- 자동 정리 제안(FIX, 오탐에서 뺌): {r['fixSuggestions'] or '없음'}")
         lines.append(f"- 파일 단위 오류: {r['fileLevel'] or '없음'}")
         lines.append(f"- 조직 파일 행 오류: {r['orgIssues']}")
         lines.append("")
