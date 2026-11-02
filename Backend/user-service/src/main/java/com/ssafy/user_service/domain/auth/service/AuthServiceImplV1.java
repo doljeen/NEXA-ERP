@@ -4,6 +4,7 @@ import com.ssafy.user_service.domain.auth.dto.LoginRequest;
 import com.ssafy.user_service.domain.auth.dto.TokenResponse;
 import com.ssafy.user_service.domain.user.dto.EmployeeSummary;
 import com.ssafy.user_service.domain.user.entity.Employee;
+import com.ssafy.user_service.domain.user.entity.JobAssignment;
 import com.ssafy.user_service.domain.user.service.EmployeeService;
 import com.ssafy.user_service.global.exception.BusinessException;
 import com.ssafy.user_service.global.exception.ErrorCode;
@@ -137,7 +138,11 @@ public class AuthServiceImplV1 implements AuthService {
     // 토큰 생성 + 부서/직급명 조회. Redis에는 손대지 않는다 (reissue가 DB 조회를 끝낸 뒤 마지막에 회전하는 전제)
     private Issued issue(Employee employee) {
         EmployeeSummary summary = employeeService.summarize(employee);
-        IssuedToken access = jwtUtil.generateAccessToken(employee.getEmpId(), employee.getRole());
+        JobAssignment job = employee.getJob();
+        IssuedToken access = job == null
+                ? jwtUtil.generateAccessToken(employee.getEmpId(), employee.getRole(), null, null, null)
+                : jwtUtil.generateAccessToken(employee.getEmpId(), employee.getRole(),
+                        job.getDeptId(), job.getGradeId(), job.getDutyId());
         IssuedToken refresh = jwtUtil.generateRefreshToken(employee.getEmpId());
         return new Issued(new TokenResponse(access.value(), refresh.value(),
                 summary.employeeId(), summary.deptName(), summary.gradeName()), refresh);
