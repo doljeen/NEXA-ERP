@@ -65,6 +65,14 @@ services:
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # user-service·Eureka·config-server 는 이 compose 밖(호스트)에서 띄운다.
+      # 컨테이너 안의 localhost 는 자기 자신이라 호스트를 가리키는 host.docker.internal 로 접속한다
+      JWT_JWKS_URI: http://host.docker.internal:8081/.well-known/jwks.json
+      EUREKA_URL: http://admin:1234@host.docker.internal:8761/eureka
+      CONFIG_SERVER_URL: http://host.docker.internal:8888
+    extra_hosts:
+      # Docker Desktop(Windows/Mac)은 기본 제공, Linux 는 이 설정이 있어야 host.docker.internal 이 잡힌다
+      - "host.docker.internal:host-gateway"
     ports:
       - "8083:8083"
     restart: unless-stopped

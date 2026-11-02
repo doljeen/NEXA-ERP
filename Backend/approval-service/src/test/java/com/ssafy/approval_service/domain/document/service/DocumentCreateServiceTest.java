@@ -30,8 +30,8 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
-/** 문서 생성 시 출처(sourceType/sourceId) 검증과 저장 */
-class DocumentSourceTest {
+/** 문서 생성(DocumentServiceImplV1.create): 출처·양식 검증, 문서번호 채번, 요청 키 재요청 처리 */
+class DocumentCreateServiceTest {
 
     private final DocumentRepository documentRepository = mock(DocumentRepository.class);
     private final DocumentNumberGenerator numberGenerator = mock(DocumentNumberGenerator.class);
@@ -54,7 +54,7 @@ class DocumentSourceTest {
     @Test
     void 문서번호는_양식_연도_일련번호로_저장_전에_채운다() {
         when(numberGenerator.next(eq(FormType.LEAVE), anyInt())).thenReturn(7);
-        when(documentRepository.save(any())).thenAnswer(DocumentSourceTest::persist);
+        when(documentRepository.save(any())).thenAnswer(DocumentCreateServiceTest::persist);
 
         var res = service.create(request(FormType.LEAVE, SourceType.LEAVE, 42L), 1L).response();
 
@@ -107,7 +107,7 @@ class DocumentSourceTest {
     @ParameterizedTest
     @EnumSource(value = FormType.class, names = {"OVERTIME", "TIME_FIX", "HOLIDAY_SUBST"})
     void 근태_양식은_근태_신청에서_만들_수_있다(FormType formType) {
-        when(documentRepository.save(any())).thenAnswer(DocumentSourceTest::persist);
+        when(documentRepository.save(any())).thenAnswer(DocumentCreateServiceTest::persist);
 
         service.create(request(formType, SourceType.ATTENDANCE, 7L), 1L);
 
@@ -132,7 +132,7 @@ class DocumentSourceTest {
 
     @Test
     void 휴가_외_양식은_직접_기안할_수_있다() {
-        when(documentRepository.save(any())).thenAnswer(DocumentSourceTest::persist);
+        when(documentRepository.save(any())).thenAnswer(DocumentCreateServiceTest::persist);
 
         service.create(request(FormType.BUSINESS_TRIP, SourceType.DIRECT, null), 1L);
 
@@ -147,7 +147,7 @@ class DocumentSourceTest {
 
     @Test
     void 출처를_생략하면_직접_기안으로_저장된다() {
-        when(documentRepository.save(any())).thenAnswer(DocumentSourceTest::persist);
+        when(documentRepository.save(any())).thenAnswer(DocumentCreateServiceTest::persist);
 
         service.create(request(null, null), 1L);
 
@@ -158,7 +158,7 @@ class DocumentSourceTest {
 
     @Test
     void 다른_서비스에서_온_문서는_출처와_원본_ID가_저장된다() {
-        when(documentRepository.save(any())).thenAnswer(DocumentSourceTest::persist);
+        when(documentRepository.save(any())).thenAnswer(DocumentCreateServiceTest::persist);
 
         service.create(request(SourceType.LEAVE, 42L), 1L);
 
