@@ -35,8 +35,40 @@ class DocumentSourceTest {
     private static final List<ApprovalLineRequest> LINES =
             List.of(new ApprovalLineRequest(2L, (short) 1, LineRole.APPROVER));
 
+    private static DocumentCreateRequest request(FormType formType, SourceType sourceType, Long sourceId) {
+        return new DocumentCreateRequest("DOC-1", "테스트 문서", formType, LINES, sourceType, sourceId);
+    }
+
     private static DocumentCreateRequest request(SourceType sourceType, Long sourceId) {
-        return new DocumentCreateRequest("DOC-1", "휴가 신청", FormType.LEAVE, LINES, sourceType, sourceId);
+        FormType formType = sourceType == SourceType.LEAVE ? FormType.LEAVE : FormType.GENERAL;
+        return request(formType, sourceType, sourceId);
+    }
+
+    private void expectError(DocumentCreateRequest request, ErrorCode code) {
+        assertThatThrownBy(() -> service.create(request, 1L))
+                .isInstanceOf(BusinessException.class)
+                .matches(t -> ((BusinessException) t).getErrorCode() == code);
+        verifyNoInteractions(documentRepository);
+    }
+
+    @Test
+    void 휴가_양식을_직접_기안하면_400() {
+        expectError(request(FormType.LEAVE, SourceType.DIRECT, null), ErrorCode.FORM_SOURCE_MISMATCH);
+        expectError(request(FormType.LEAVE, null, null), ErrorCode.FORM_SOURCE_MISMATCH);
+    }
+
+    @Test
+    void 휴가_출처인데_다른_양식이면_400() {
+        expectError(request(FormType.GENERAL, SourceType.LEAVE, 42L), ErrorCode.FORM_SOURCE_MISMATCH);
+    }
+
+    @Test
+    void 휴가_외_양식은_직접_기안할_수_있다() {
+        when(documentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.create(request(FormType.BUSINESS_TRIP, SourceType.DIRECT, null), 1L);
+
+        assertThat(savedDocument().getFormType()).isEqualTo(FormType.BUSINESS_TRIP);
     }
 
     private Document savedDocument() {

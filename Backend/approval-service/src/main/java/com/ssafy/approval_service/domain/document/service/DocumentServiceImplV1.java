@@ -57,8 +57,8 @@ public class DocumentServiceImplV1 implements DocumentService {
     @Override
     @Transactional
     public DocumentCreateResponse create(DocumentCreateRequest request, Long drafterId) {
-        // 출처 검증: 다른 서비스에서 온 문서는 원본 신청 ID가 있어야 하고, 직접 기안은 없어야 한다
-        validateSource(request.sourceType(), request.sourceId());
+        // 출처 검증: 원본 신청 ID 유무, 양식과 출처의 조합
+        validateSource(request.formType(), request.sourceType(), request.sourceId());
 
         // 결재선 검증
         approvalLineValidator.validate(request.approvalLines(), drafterId);
@@ -140,10 +140,18 @@ public class DocumentServiceImplV1 implements DocumentService {
         return document;
     }
 
-    private void validateSource(SourceType sourceType, Long sourceId) {
+    /**
+     * 다른 서비스에서 온 문서는 원본 신청 ID가 있어야 하고, 직접 기안은 없어야 한다.
+     * 휴가 문서는 leave-service 를 거쳐야 승인 시 연차가 차감되므로 LEAVE 양식과 LEAVE 출처는 짝으로만 허용한다.
+     * (OVERTIME/ATTENDANCE 조합은 정책이 정해지면 추가)
+     */
+    private void validateSource(FormType formType, SourceType sourceType, Long sourceId) {
         boolean direct = sourceType == SourceType.DIRECT;
         if (direct != (sourceId == null)) {
             throw new BusinessException(ErrorCode.INVALID_DOCUMENT_SOURCE);
+        }
+        if ((formType == FormType.LEAVE) != (sourceType == SourceType.LEAVE)) {
+            throw new BusinessException(ErrorCode.FORM_SOURCE_MISMATCH);
         }
     }
 
