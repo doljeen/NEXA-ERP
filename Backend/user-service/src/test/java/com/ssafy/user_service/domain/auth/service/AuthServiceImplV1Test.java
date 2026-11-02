@@ -4,6 +4,7 @@ import com.ssafy.user_service.domain.auth.dto.LoginRequest;
 import com.ssafy.user_service.domain.auth.dto.TokenResponse;
 import com.ssafy.user_service.domain.user.dto.EmployeeSummary;
 import com.ssafy.user_service.domain.user.entity.Employee;
+import com.ssafy.user_service.domain.user.entity.JobAssignment;
 import com.ssafy.user_service.domain.user.service.EmployeeService;
 import com.ssafy.user_service.global.exception.BusinessException;
 import com.ssafy.user_service.global.exception.ErrorCode;
@@ -100,8 +101,23 @@ class AuthServiceImplV1Test {
     }
 
     @Test
+    void 로그인시_access_토큰에_부서_직급_직책_ID를_싣는다() {
+        ReflectionTestUtils.setField(employee, "job",
+                JobAssignment.builder().deptId(12L).gradeId(3L).dutyId(5L).build());
+        when(employeeService.findByLoginId("a@b.c")).thenReturn(Optional.of(employee));
+
+        TokenResponse res = service.login(new LoginRequest("a@b.c", "secret12"));
+
+        var claims = jwtUtil.parseClaims(res.accessToken());
+        assertThat(jwtUtil.getDeptId(claims)).isEqualTo(12L);
+        assertThat(jwtUtil.getGradeId(claims)).isEqualTo(3L);
+        assertThat(jwtUtil.getDutyId(claims)).isEqualTo(5L);
+        assertThat(jwtUtil.getDeptId(jwtUtil.parseClaims(res.refreshToken()))).isNull();
+    }
+
+    @Test
     void access_토큰을_refresh_자리에_넣으면_거부() {
-        String access = jwtUtil.generateAccessToken(10L, Role.USER).value();
+        String access = jwtUtil.generateAccessToken(10L, Role.USER, null, null, null).value();
         assertThatThrownBy(() -> service.reissue(access, null))
                 .matches(t -> codeOf(t) == ErrorCode.REFRESH_TOKEN_INVALID);
         verifyNoInteractions(tokenStore);
@@ -111,7 +127,7 @@ class AuthServiceImplV1Test {
     void 재발급은_원자적_회전에_성공해야_하며_이전_access를_차단() {
         when(employeeService.findById(10L)).thenReturn(Optional.of(employee));
         IssuedToken oldRefresh = jwtUtil.generateRefreshToken(10L);
-        IssuedToken oldAccess = jwtUtil.generateAccessToken(10L, Role.ADMIN);
+        IssuedToken oldAccess = jwtUtil.generateAccessToken(10L, Role.ADMIN, null, null, null);
         when(tokenStore.rotateRefreshToken(eq(10L), eq(oldRefresh.id()), anyString(), anyLong())).thenReturn(true);
 
         TokenResponse res = service.reissue(oldRefresh.value(), oldAccess.value());
@@ -145,7 +161,7 @@ class AuthServiceImplV1Test {
         JwtProperties expiredProps = new JwtProperties("", "", -1_000L, 604_800_000L);
         JwtKeyProvider sameKeys = (JwtKeyProvider) ReflectionTestUtils.getField(jwtUtil, "keyProvider");
         JwtUtil expiredIssuer = new JwtUtil(sameKeys, expiredProps);
-        String expiredAccess = expiredIssuer.generateAccessToken(10L, Role.USER).value();
+        String expiredAccess = expiredIssuer.generateAccessToken(10L, Role.USER, null, null, null).value();
         String refresh = jwtUtil.generateRefreshToken(10L).value();
 
         service.logout(expiredAccess, refresh);

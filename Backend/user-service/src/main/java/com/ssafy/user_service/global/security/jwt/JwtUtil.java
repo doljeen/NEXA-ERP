@@ -9,6 +9,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @Component
@@ -20,20 +22,30 @@ public class JwtUtil {
     public static final String TYPE_REFRESH = "refresh";
     private static final String CLAIM_TYPE = "type";
     private static final String CLAIM_ROLE = "role";
+    // 소속 정보는 이름이 아닌 ID만 싣는다. 이름은 바뀔 수 있고 권한 판단에는 ID면 충분하다
+    private static final String CLAIM_DEPT_ID = "deptId";
+    private static final String CLAIM_GRADE_ID = "gradeId";
+    private static final String CLAIM_DUTY_ID = "dutyId";
 
     private final JwtKeyProvider keyProvider;
     private final JwtProperties properties;
 
-    // access 토큰에만 role을 싣는다. refresh는 재발급 시 DB에서 다시 읽는다.
-    public IssuedToken generateAccessToken(Long userId, Role role) {
-        return generate(userId, TYPE_ACCESS, role, properties.accessExpiration());
+    // access 토큰에만 role/소속을 싣는다. refresh는 재발급 시 DB에서 다시 읽는다.
+    // 소속 ID가 null이면 해당 claim은 넣지 않는다
+    public IssuedToken generateAccessToken(Long userId, Role role, Long deptId, Long gradeId, Long dutyId) {
+        Map<String, Object> extra = new LinkedHashMap<>();
+        if (role != null) extra.put(CLAIM_ROLE, role.name());
+        if (deptId != null) extra.put(CLAIM_DEPT_ID, deptId);
+        if (gradeId != null) extra.put(CLAIM_GRADE_ID, gradeId);
+        if (dutyId != null) extra.put(CLAIM_DUTY_ID, dutyId);
+        return generate(userId, TYPE_ACCESS, extra, properties.accessExpiration());
     }
 
     public IssuedToken generateRefreshToken(Long userId) {
-        return generate(userId, TYPE_REFRESH, null, properties.refreshExpiration());
+        return generate(userId, TYPE_REFRESH, Map.of(), properties.refreshExpiration());
     }
 
-    private IssuedToken generate(Long userId, String type, Role role, long expiration) {
+    private IssuedToken generate(Long userId, String type, Map<String, Object> extra, long expiration) {
         String id = UUID.randomUUID().toString();
         long expiresAt = System.currentTimeMillis() + expiration;
         var builder = Jwts.builder()
@@ -43,9 +55,7 @@ public class JwtUtil {
                 .claim(CLAIM_TYPE, type)
                 .issuedAt(new Date())
                 .expiration(new Date(expiresAt));
-        if (role != null) {
-            builder.claim(CLAIM_ROLE, role.name());
-        }
+        extra.forEach(builder::claim);
         String token = builder.signWith(keyProvider.getPrivateKey(), Jwts.SIG.RS256).compact();
         return new IssuedToken(token, id, expiresAt);
     }
@@ -96,6 +106,27 @@ public class JwtUtil {
         } catch (IllegalArgumentException e) {
             return null;
         }
+    }
+
+    /** 부서 ID. claim이 없으면 null */
+    public Long getDeptId(Claims claims) {
+        return getLongClaim(claims, CLAIM_DEPT_ID);
+    }
+
+    /** 직급 ID. claim이 없으면 null */
+    public Long getGradeId(Claims claims) {
+        return getLongClaim(claims, CLAIM_GRADE_ID);
+    }
+
+    /** 직책 ID. claim이 없으면 null */
+    public Long getDutyId(Claims claims) {
+        return getLongClaim(claims, CLAIM_DUTY_ID);
+    }
+
+    // JSON 숫자는 크기에 따라 Integer/Long으로 역직렬화되므로 Number로 받아 변환한다
+    private Long getLongClaim(Claims claims, String name) {
+        Number value = claims.get(name, Number.class);
+        return value == null ? null : value.longValue();
     }
 
     public long getRemainExpiration(Claims claims) {
