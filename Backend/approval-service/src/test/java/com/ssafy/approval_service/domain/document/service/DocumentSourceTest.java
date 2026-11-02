@@ -16,29 +16,63 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.invocation.InvocationOnMock;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /** 문서 생성 시 출처(sourceType/sourceId) 검증과 저장 */
 class DocumentSourceTest {
 
     private final DocumentRepository documentRepository = mock(DocumentRepository.class);
+    private final DocumentNumberGenerator numberGenerator = mock(DocumentNumberGenerator.class);
     private final DocumentServiceImplV1 service = new DocumentServiceImplV1(
             documentRepository,
             mock(ApprovalLineRepository.class),
             mock(ApprovalHistoryRepository.class),
-            mock(ApprovalLineValidator.class));
+            mock(ApprovalLineValidator.class),
+            numberGenerator);
+
+    /** JPA 저장처럼 문서ID를 채워 돌려준다 */
+    private static Document persist(InvocationOnMock inv) {
+        Document document = inv.getArgument(0);
+        ReflectionTestUtils.setField(document, "docId", 12L);
+        return document;
+    }
+
+    @Test
+    void 문서번호는_양식_연도_일련번호로_저장_전에_채운다() {
+        when(numberGenerator.next(eq(FormType.LEAVE), anyInt())).thenReturn(7);
+        when(documentRepository.save(any())).thenAnswer(DocumentSourceTest::persist);
+
+        var res = service.create(request(FormType.LEAVE, SourceType.LEAVE, 42L), 1L);
+
+        Document saved = savedDocument();
+        String expected = "LEAVE-%d-0007".formatted(saved.getDraftedAt().getYear());
+        assertThat(saved.getDocNo()).isEqualTo(expected);
+        assertThat(res.docNo()).isEqualTo(expected);
+        assertThat(res.documentId()).isEqualTo(12L);
+        verify(numberGenerator).next(FormType.LEAVE, saved.getDraftedAt().getYear());
+    }
+
+    @Test
+    void 검증에_실패하면_번호를_발급하지_않는다() {
+        expectError(request(FormType.LEAVE, SourceType.DIRECT, null), ErrorCode.FORM_SOURCE_MISMATCH);
+        verifyNoInteractions(numberGenerator);
+    }
 
     private static final List<ApprovalLineRequest> LINES =
             List.of(new ApprovalLineRequest(2L, (short) 1, LineRole.APPROVER));
 
     private static DocumentCreateRequest request(FormType formType, SourceType sourceType, Long sourceId) {
-        return new DocumentCreateRequest("DOC-1", "테스트 문서", formType, LINES, sourceType, sourceId);
+        return new DocumentCreateRequest("테스트 문서", formType, LINES, sourceType, sourceId);
     }
 
     private static DocumentCreateRequest request(SourceType sourceType, Long sourceId) {
@@ -67,7 +101,7 @@ class DocumentSourceTest {
     @ParameterizedTest
     @EnumSource(value = FormType.class, names = {"OVERTIME", "TIME_FIX", "HOLIDAY_SUBST"})
     void 근태_양식은_근태_신청에서_만들_수_있다(FormType formType) {
-        when(documentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(documentRepository.save(any())).thenAnswer(DocumentSourceTest::persist);
 
         service.create(request(formType, SourceType.ATTENDANCE, 7L), 1L);
 
@@ -92,7 +126,7 @@ class DocumentSourceTest {
 
     @Test
     void 휴가_외_양식은_직접_기안할_수_있다() {
-        when(documentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(documentRepository.save(any())).thenAnswer(DocumentSourceTest::persist);
 
         service.create(request(FormType.BUSINESS_TRIP, SourceType.DIRECT, null), 1L);
 
@@ -107,7 +141,7 @@ class DocumentSourceTest {
 
     @Test
     void 출처를_생략하면_직접_기안으로_저장된다() {
-        when(documentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(documentRepository.save(any())).thenAnswer(DocumentSourceTest::persist);
 
         service.create(request(null, null), 1L);
 
@@ -118,7 +152,7 @@ class DocumentSourceTest {
 
     @Test
     void 다른_서비스에서_온_문서는_출처와_원본_ID가_저장된다() {
-        when(documentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(documentRepository.save(any())).thenAnswer(DocumentSourceTest::persist);
 
         service.create(request(SourceType.LEAVE, 42L), 1L);
 

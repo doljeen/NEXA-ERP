@@ -36,6 +36,7 @@ public class DocumentServiceImplV1 implements DocumentService {
     private final ApprovalLineRepository approvalLineRepository;
     private final ApprovalHistoryRepository approvalHistoryRepository;
     private final ApprovalLineValidator approvalLineValidator;
+    private final DocumentNumberGenerator documentNumberGenerator;
 
     @Override
     public DocumentListResponse findByStatusAndType(String approvalStatus, String formType, String box,
@@ -64,14 +65,16 @@ public class DocumentServiceImplV1 implements DocumentService {
         approvalLineValidator.validate(request.approvalLines(), drafterId);
 
         // 문서 생성
-        Document document = documentRepository.save(Document.builder()
-                .docNo(request.docNo())
+        Document draft = Document.builder()
                 .formType(request.formType())
                 .title(request.title())
                 .drafterId(drafterId)
                 .sourceType(request.sourceType())
                 .sourceId(request.sourceId())
-                .build());
+                .build();
+        // 양식·연도별 일련번호를 받아 문서번호를 채운 뒤 저장한다
+        draft.assignDocNo(documentNumberGenerator.next(draft.getFormType(), draft.numberingYear()));
+        Document document = documentRepository.save(draft);
 
         // req -> 결재선
         List<ApprovalLine> lines = request.approvalLines().stream()
@@ -94,7 +97,7 @@ public class DocumentServiceImplV1 implements DocumentService {
                 .action(HistoryAction.SUBMIT)
                 .build());
 
-        return new DocumentCreateResponse(document.getDocId());
+        return new DocumentCreateResponse(document.getDocId(), document.getDocNo());
     }
 
     @Override
