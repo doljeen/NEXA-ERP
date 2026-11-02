@@ -27,14 +27,14 @@ ROSTER_CODE_ALIAS = {"POSITION_TYPO": {"CODE_TYPO_SUSPECTED"}}
 
 # 인사 엑셀 사고 유형 → 이 사고를 잡았다고 볼 서비스 이슈 코드
 ACCIDENT_CODES = {
-    "HARDCODED_EQUAL": {"HARDCODED_VALUE"}, "HARDCODED_STALE": {"HARDCODED_VALUE"},
+    "HARDCODED_EQUAL": {"HARDCODED_VALUE"}, "HARDCODED_STALE": {"HARDCODED_VALUE", "PREMIUM_BELOW_STATUTORY"},
     "REMAIN_HARDCODED": {"HARDCODED_VALUE", "RECALC_MISMATCH"}, "GRANTED_HARDCODED": {"HARDCODED_VALUE"},
     "AMOUNT_HARDCODED": {"HARDCODED_VALUE"}, "RATE_AMOUNT_MISMATCH": {"HARDCODED_VALUE"},
     "NEW_ROW_FORMULA_MISSING": {"BLANK_IN_FORMULA_COLUMN"},
     "ROW_AFTER_TOTAL": {"ROW_AFTER_TOTAL", "HARDCODED_VALUE"},  # 합계 아래 행은 계산 결과도 숫자로만 입력
     "REF_ERROR": {"FORMULA_ERROR", "FORMULA_INCONSISTENT"}, "LOOKUP_NA": {"FORMULA_ERROR"},
     "SUM_RANGE_MISSING": {"FORMULA_INCONSISTENT", "FORMULA_DIFFERS_ACROSS_SHEETS", "RECALC_MISMATCH", "TOTAL_ITEM_MISSING"},
-    "STALE_RATE_LITERAL": {"FORMULA_INCONSISTENT", "FORMULA_DIFFERS_ACROSS_SHEETS"},
+    "STALE_RATE_LITERAL": {"FORMULA_INCONSISTENT", "FORMULA_DIFFERS_ACROSS_SHEETS", "INSURANCE_RATE_OUTDATED"},
     "BASE_DATE_WRONG": {"FORMULA_INCONSISTENT"}, "UNDER_ONE_YEAR_PAID": {"FORMULA_INCONSISTENT"},
     "KEY_MISSING": {"EMP_KEY_MISSING"},
     # 직원명부 날짜 대조
@@ -44,9 +44,15 @@ ACCIDENT_CODES = {
     "DEDUCTION_AGE_RULE": {"DEPENDENT_AGE_RULE"}, "RATIO_INVALID": {"WITHHOLDING_RATIO_INVALID"},
     "FAMILY_COUNT_MISMATCH": {"FAMILY_COUNT_MISMATCH"},
 }
+# 정답지 legalDeviations 규칙 → 이 편차를 잡았다고 볼 서비스 이슈 코드 (시트 단위)
+LEGAL_CODES = {
+    "insuranceRates": {"INSURANCE_RATE_OUTDATED"},
+    "mealInInsuranceBase": {"INSURANCE_BASE_INCLUDES_MEAL"},
+    "holidayPremium": {"PREMIUM_BELOW_STATUTORY"},
+}
 # 직원명부 대조 이슈: 정답지 사고가 아니라 직원명부에 넣은 오류(사번 중복·같은 사람 두 번)의 결과라 따로 센다
 REF_CODES = {"EMP_NOT_IN_ROSTER", "EMP_NAME_MISMATCH", "EMPNO_ZERO_PADDED"}
-NEW_CODES = set().union(*ACCIDENT_CODES.values())
+NEW_CODES = set().union(*ACCIDENT_CODES.values(), *LEGAL_CODES.values(), {"BELOW_MINIMUM_WAGE"})  # 최저임금은 정답지에 사례가 없어 오탐만 센다
 # 사번 기준으로 보는 사고: 정답지 위치(명세 행)와 다른 시트(집계 행)에 같은 직원 경고가 나와도 검출로 본다
 EMP_SCOPED = {"FAMILY_COUNT_MISMATCH": {"FAMILY_COUNT_MISMATCH"}}
 # 이 사고 때문에 같은 직원의 다른 행에 생기는 경고 (정답지에 따로 없지만 설명됨)
@@ -210,6 +216,18 @@ def evaluate_hr_file(base, mid, cdir, fname, hk):
                         item["detected"] |= detects
                         explained.add((sheet, i["rowNo"], i["code"]))
         res["accidents"].append(item)
+    res["legal"] = []
+    for d in hk.get("legalDeviations", []):
+        codes = LEGAL_CODES.get(d["rule"]) if "급여" in fname else None   # 다른 파일의 같은 규칙은 파일 사이 대조가 필요
+        item = {"rule": d["rule"], "sheet": d.get("sheet") or d.get("cells"), "codes": sorted(codes) if codes else None, "detected": False}
+        # 시트를 적은 편차는 그 시트, '열 전체'처럼 시트가 없으면 올린 시트 전부
+        sheets = [item["sheet"]] if item["sheet"] in issues_by_sheet else list(issues_by_sheet)
+        for sheet in sheets if codes else []:
+            for i in issues_by_sheet[sheet]:
+                if i["code"] in codes and i["rowNo"] is None:
+                    item["detected"] = True
+                    explained.add((sheet, None, i["code"]))
+        res["legal"].append(item)
     for sheet, issues in issues_by_sheet.items():
         for i in issues:
             if i["code"] in NEW_CODES and (sheet, i["rowNo"], i["code"]) not in explained:
@@ -271,6 +289,7 @@ def hr_section(results):
              "| 회사 | 파일 | 시트 | 읽은 시트 | 행 (읽음/정답) | 헤더 일치 | 파일 경고 |", "|---|---|---|---|---|---|---|"]
     by_type = defaultdict(lambda: {"expected": 0, "detected": 0, "codes": None})
     unexpected, needs = Counter(), Counter()
+    legal = []
     for r in results:
         for f in r["hrFiles"]:
             for s in f["sheets"]:
@@ -287,6 +306,8 @@ def hr_section(results):
                 t["expected"] += 1
                 t["detected"] += a["detected"]
                 t["codes"] = a["codes"]
+            for d in f.get("legal", []):
+                legal.append((r["company"], f["file"], d))
             unexpected.update(f["unexpected"])
             needs.update(f["needs"])
     total = sum(t["expected"] for t in by_type.values())
@@ -295,6 +316,12 @@ def hr_section(results):
               "| 사고 유형 | 정답 | 검출 | 대응 이슈 코드 |", "|---|---|---|---|"]
     for k, t in sorted(by_type.items(), key=lambda x: (-x[1]["detected"], x[0])):
         lines.append(f"| {k} | {t['expected']} | {t['detected']} | {', '.join(t['codes']) if t['codes'] else '대응 기능 없음'} |")
+    with_codes = [x for x in legal if x[2]["codes"]]
+    lines += ["", f"### 법정 기준 편차 검출: {sum(x[2]['detected'] for x in with_codes)}/{len(with_codes)} (대응 기능이 있는 것) · 전체 {len(legal)}", "",
+              "| 회사 | 파일 | 규칙 | 시트 | 검출 | 대응 이슈 코드 |", "|---|---|---|---|---|---|"]
+    for company, fname, d in legal:
+        mark = ("O" if d["detected"] else "X") if d["codes"] else "-"
+        lines.append(f"| {company} | {fname} | {d['rule']} | {d['sheet'] or '-'} | {mark} | {', '.join(d['codes']) if d['codes'] else '대응 기능 없음'} |")
     lines += ["", f"- 정답지에 없는 경고 (대응표 코드 기준): {dict(unexpected) or '없음'}",
               "", "### 직원명부 대조 (파일 사이 참조)", "",
               "직원명부에 일부러 넣은 오류(사번 중복 → 한 사람 사번이 명부에서 사라짐, 같은 사람 두 번 → 이름 바뀜)가 다른 파일에서 드러난 것.", "",
