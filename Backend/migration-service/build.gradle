@@ -16,6 +16,8 @@ java {
 
 repositories {
     mavenCentral()
+    // 팀 공통 라이브러리(nexa-security). 이 저장소의 GitLab Package Registry (익명 pull 허용)
+    maven { url = 'https://lab.ssafy.com/api/v4/projects/1457109/packages/maven' }
 }
 
 ext {
@@ -30,6 +32,8 @@ dependencies {
     implementation 'org.flywaydb:flyway-database-postgresql'
     implementation 'org.springframework.cloud:spring-cloud-starter-config'
     implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'com.ssafy.nexa:nexa-security:1.1.0'
 
     // 엑셀·CSV 읽기
     implementation 'org.apache.poi:poi-ooxml:5.4.1'
@@ -41,6 +45,7 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
     testImplementation 'org.testcontainers:testcontainers-postgresql'

@@ -3,6 +3,7 @@ package com.ssafy.migrationservice.domain.migration.mapping;
 import com.ssafy.migrationservice.domain.migration.entity.enums.MigrationEntity;
 import com.ssafy.migrationservice.domain.migration.validation.schema.EntitySchema;
 import com.ssafy.migrationservice.domain.migration.validation.schema.EntitySchemas;
+import com.ssafy.migrationservice.global.llm.LlmClient;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
@@ -32,7 +33,7 @@ class LlmMappingAdvisorTest {
 
     @Test
     void 응답은_보낸_컬럼_스키마_필드_안_쓴_필드만_받고_한_필드는_한_컬럼에만() {
-        LlmMappingAdvisor advisor = new LlmMappingAdvisor("http://unused", "", "m", JSON);
+        LlmMappingAdvisor advisor = new LlmMappingAdvisor(new LlmClient("http://unused", "", "m"), JSON);
         String text = """
                 설명 문장이 앞에 붙어도 JSON만 꺼낸다
                 {"mappings":[
@@ -71,7 +72,7 @@ class LlmMappingAdvisorTest {
             String base = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
             var status = EMPLOYEE.field("status").orElseThrow();
 
-            Map<String, LlmMappingAdvisor.Advice> advice = new LlmMappingAdvisor(base, "k", "m", JSON)
+            Map<String, LlmMappingAdvisor.Advice> advice = new LlmMappingAdvisor(new LlmClient(base, "k", "m"), JSON)
                     .adviseValues(status, List.of("Y", "N", "?"));
 
             assertThat(advice).containsOnlyKeys("Y");
@@ -102,13 +103,13 @@ class LlmMappingAdvisorTest {
             Map<String, List<String>> samples = new LinkedHashMap<>();
             samples.put("사원코드", List.of("E-00123", "E-00124"));
 
-            Map<String, LlmMappingAdvisor.Advice> advice = new LlmMappingAdvisor(base, "test-key", "gpt-test", JSON)
+            Map<String, LlmMappingAdvisor.Advice> advice = new LlmMappingAdvisor(new LlmClient(base, "test-key", "gpt-test"), JSON)
                     .advise(EMPLOYEE, samples, Set.of());
 
             assertThat(advice.get("사원코드").field()).isEqualTo("empNo");
             assertThat(sent.get()).contains("gpt-test", "a-99999", "auth=Bearer test-key").doesNotContain("E-00123");
-            assertThat(new LlmMappingAdvisor(base, "", "m", JSON).advise(EMPLOYEE, samples, Set.of())).isEmpty();
-            assertThat(new LlmMappingAdvisor("http://127.0.0.1:1/v1", "k", "m", JSON).advise(EMPLOYEE, samples, Set.of())).isEmpty();
+            assertThat(new LlmMappingAdvisor(new LlmClient(base, "", "m"), JSON).advise(EMPLOYEE, samples, Set.of())).isEmpty();
+            assertThat(new LlmMappingAdvisor(new LlmClient("http://127.0.0.1:1/v1", "k", "m"), JSON).advise(EMPLOYEE, samples, Set.of())).isEmpty();
         } finally {
             server.stop(0);
         }

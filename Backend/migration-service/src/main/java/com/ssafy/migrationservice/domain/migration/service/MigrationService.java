@@ -5,6 +5,8 @@ import com.ssafy.migrationservice.domain.migration.dto.BatchView;
 import com.ssafy.migrationservice.domain.migration.dto.FileUploadResponse;
 import com.ssafy.migrationservice.domain.migration.dto.FormulaRulesResponse;
 import com.ssafy.migrationservice.domain.migration.validation.formula.FormulaRuleService;
+import com.ssafy.migrationservice.domain.migration.validation.formula.RuleSummaryService;
+import com.ssafy.migrationservice.domain.migration.dto.RuleSummaryResponse;
 import com.ssafy.migrationservice.domain.migration.load.BatchStatus;
 import com.ssafy.migrationservice.domain.migration.load.MigrationBatchRepository;
 import com.ssafy.migrationservice.domain.migration.dto.FixApplyRequest;
@@ -60,6 +62,7 @@ public class MigrationService {
     private final StagingChangeRepository stagingChangeRepository;
     private final MigrationBatchRepository batchRepository;
     private final FormulaRuleService formulaRuleService;
+    private final RuleSummaryService ruleSummaryService;
     private final DependentsChecker dependentsChecker;
     private final SalaryHistoryChecker salaryHistoryChecker;
 
@@ -135,6 +138,11 @@ public class MigrationService {
                                 .thenComparing(t -> -tables.indexOf(t)))
                         .orElseThrow())
                 .orElse(tables.get(0));
+    }
+
+    /** LLM 호출이 있어 이 메서드에는 트랜잭션을 걸지 않는다 (저장은 RuleSummaryService가 따로) */
+    public RuleSummaryResponse ruleSummary(Long migrationId, Long fileId, boolean refresh) {
+        return ruleSummaryService.summarize(findFile(migrationId, fileId), refresh);
     }
 
     /** 수식에서 뽑은 열별 규칙과 벗어난 행 */

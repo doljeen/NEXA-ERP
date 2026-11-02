@@ -33,6 +33,9 @@ public enum ErrorCode {
     FILE_TOO_LARGE(HttpStatus.CONTENT_TOO_LARGE, "FILE_005", "파일 크기가 너무 큽니다."),
     SHEET_NOT_FOUND(HttpStatus.BAD_REQUEST, "FILE_006", "파일에 그 이름의 시트가 없습니다."),
 
+    // LLM
+    LLM_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "LLM_001", "LLM을 사용할 수 없습니다. 키 설정과 연결을 확인하세요."),
+
     // 공통
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),
     DATA_INTEGRITY_VIOLATION(HttpStatus.CONFLICT, "COMMON_002", "데이터 제약 조건에 위배됩니다."),

@@ -2,15 +2,12 @@ package com.ssafy.migrationservice.domain.migration.mapping;
 
 import com.ssafy.migrationservice.domain.migration.validation.schema.EntitySchema;
 import com.ssafy.migrationservice.domain.migration.validation.schema.FieldSpec;
+import com.ssafy.migrationservice.global.llm.LlmClient;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -47,24 +44,16 @@ public class LlmMappingAdvisor {
     public record Advice(String field, String reason) {
     }
 
-    private final RestClient restClient;
+    private final LlmClient llm;
     private final ObjectMapper objectMapper;
-    private final String apiKey;
-    private final String model;
 
-    public LlmMappingAdvisor(@Value("${migration.llm.base-url}") String baseUrl, @Value("${migration.llm.api-key:}") String apiKey,
-                             @Value("${migration.llm.model}") String model, ObjectMapper objectMapper) {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(Duration.ofSeconds(3));
-        factory.setReadTimeout(Duration.ofSeconds(30));
-        this.restClient = RestClient.builder().baseUrl(baseUrl).requestFactory(factory).build();
+    public LlmMappingAdvisor(LlmClient llm, ObjectMapper objectMapper) {
+        this.llm = llm;
         this.objectMapper = objectMapper;
-        this.apiKey = apiKey;
-        this.model = model;
     }
 
     public boolean enabled() {
-        return apiKey != null && !apiKey.isBlank();
+        return llm.enabled();
     }
 
     /**
@@ -77,7 +66,7 @@ public class LlmMappingAdvisor {
             return Map.of();
         }
         try {
-            String text = call(INSTRUCTIONS, prompt(schema, samples, taken));
+            String text = llm.call(INSTRUCTIONS, prompt(schema, samples, taken));
             return parse(text, schema, samples.keySet(), taken);
         } catch (RuntimeException e) {
             log.warn("LLM 매핑 추천 실패, 동의어 추천만 사용: {}", e.getMessage());
@@ -96,7 +85,7 @@ public class LlmMappingAdvisor {
         }
         try {
             String input = objectMapper.writeValueAsString(Map.of("field", field.label(), "allowed", field.enumValues(), "values", values));
-            String text = call(VALUE_INSTRUCTIONS, input);
+            String text = llm.call(VALUE_INSTRUCTIONS, input);
             int start = text.indexOf('{');
             int end = text.lastIndexOf('}');
             if (start < 0 || end < start) {
@@ -126,23 +115,6 @@ public class LlmMappingAdvisor {
         samples.forEach((column, values) -> columns.add(Map.of("column", column,
                 "samples", values.stream().map(LlmMappingAdvisor::shape).distinct().limit(SAMPLES).toList())));
         return objectMapper.writeValueAsString(Map.of("fields", fields, "takenFields", taken, "columns", columns));
-    }
-
-    private String call(String instructions, String input) {
-        JsonNode res = restClient.post().uri("/responses")
-                .header("Authorization", "Bearer " + apiKey)
-                .body(Map.of("model", model, "instructions", instructions, "input", input))
-                .retrieve()
-                .body(JsonNode.class);
-        StringBuilder text = new StringBuilder();
-        for (JsonNode out : res.path("output")) {
-            for (JsonNode c : out.path("content")) {
-                if ("output_text".equals(c.path("type").asString())) {
-                    text.append(c.path("text").asString());
-                }
-            }
-        }
-        return text.toString();
     }
 
     /** 응답에서 JSON을 꺼내 검증: 보낸 컬럼, 스키마에 있는 필드, 아직 안 쓴 필드, 한 필드 한 컬럼 */

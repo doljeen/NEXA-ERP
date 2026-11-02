@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -29,6 +30,10 @@ final class TableAssembler {
             "-?[\\d,]+(\\.\\d+)?%?|\\d{4}[-./]\\d{1,2}[-./]\\d{1,2}.*|\\d{1,2}:\\d{2}(:\\d{2})?");
     private static final Pattern GRAND_TOTAL = Pattern.compile("합계|총계|총합계|total|grandtotal");
     private static final Pattern SUB_TOTAL = Pattern.compile("소계|계|subtotal");
+    // '강남점 소계', 'A조 합계' 처럼 이름이 붙은 소계 (총계로 보지 않음)
+    private static final Pattern NAMED_SUB_TOTAL = Pattern.compile(".{1,15}(소계|합계|총계)|.{1,15}(sub)?total");
+    // 같은 열의 위쪽 행을 더하는 수식 (=SUM(F4:F25)) — 이름이 없어도 이런 칸이 대부분이면 소계 행
+    private static final Pattern VERTICAL_SUM = Pattern.compile("SUM\\(\\$?([A-Z]{1,3})\\$?(\\d+):\\$?([A-Z]{1,3})\\$?(\\d+)\\)");
     private static final int TOTAL_LABEL_COLUMNS = 3;
 
     private TableAssembler() {
@@ -142,7 +147,10 @@ final class TableAssembler {
         return headers;
     }
 
-    /** 앞쪽 몇 칸 안에 '합계'·'소계' 같은 글자만 있는 행이면 그 글자, 아니면 null */
+    /**
+     * 합계·소계 행이면 그 글자 (총계면 '합계'처럼 GRAND_TOTAL에 맞는 글자), 아니면 null.
+     * 앞쪽 몇 칸에 '합계'·'소계'·'강남점 소계' 같은 글자가 있거나, 수식 칸 대부분이 같은 열 위쪽 행을 더하는 행
+     */
     private static String totalLabel(RawRow raw) {
         for (int c = 0; c < Math.min(TOTAL_LABEL_COLUMNS, raw.cells().size()); c++) {
             String v = blankToNull(raw.cell(c));
@@ -150,11 +158,28 @@ final class TableAssembler {
                 continue;
             }
             String t = v.replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
-            if (GRAND_TOTAL.matcher(t).matches() || SUB_TOTAL.matcher(t).matches()) {
+            if (GRAND_TOTAL.matcher(t).matches() || SUB_TOTAL.matcher(t).matches() || NAMED_SUB_TOTAL.matcher(t).matches()) {
                 return t;
             }
         }
-        return null;
+        return isVerticalSumRow(raw) ? "소계" : null;
+    }
+
+    private static boolean isVerticalSumRow(RawRow raw) {
+        int formulas = 0;
+        int sums = 0;
+        for (int c = 0; c < raw.cells().size(); c++) {
+            String f = raw.formula(c);
+            if (f == null) {
+                continue;
+            }
+            formulas++;
+            Matcher m = VERTICAL_SUM.matcher(f.replace(" ", ""));
+            if (m.matches() && m.group(1).equals(m.group(3)) && Integer.parseInt(m.group(4)) < raw.rowNo()) {
+                sums++;
+            }
+        }
+        return sums >= 2 && sums * 2 >= formulas;
     }
 
     static String blankToNull(String v) {

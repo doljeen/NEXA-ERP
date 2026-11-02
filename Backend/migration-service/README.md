@@ -30,6 +30,8 @@ MIGRATION_DB_PASSWORD=localpw \
 | `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5433/nexa_migration` | |
 | `MIGRATION_DB_PASSWORD` | (없음) | |
 | `HR_SERVICE_URL` | `http://localhost:8081` | user-service 이관용 내부 API 주소 |
+| `JWT_JWKS_URI` | `http://localhost:8081/.well-known/jwks.json` | 토큰 검증용 user-service 공개키 주소. 이관 API는 관리자(ADMIN) 토큰만 받음 |
+| `MIGRATION_PERMIT_URLS` | `/actuator/health,/error` | 토큰 서버 없이 로컬 평가할 때만 `,/api/v1/admin/migrations/**`를 더해 연다. 배포에서는 쓰지 말 것 |
 | `GMS_KEY` | (없음) | 매핑 추천 LLM 키. 없으면 동의어 추천만 씀. 저장소·설정 파일에 넣지 말 것 |
 | `MIGRATION_LLM_BASE_URL` | `https://gms.ssafy.io/gmsapi/api.openai.com/v1` | OpenAI Responses API 형식이면 바꿔 끼울 수 있음 (팀 vLLM 등) |
 | `MIGRATION_LLM_MODEL` | `gpt-6-luna` | |
@@ -51,6 +53,7 @@ user-service의 이관용 내부 API는 아직 없어서, 적재 테스트는 `F
 | POST | `/{id}/files?entity=&sheet=` | 업로드 → 읽기·매핑 추천·검증. `sheet` 없으면 entity 필드와 가장 잘 맞는 시트 |
 | GET | `/{id}/files/{fileId}` | 파일 진단, 매핑, 오류 건수 |
 | GET | `/{id}/files/{fileId}/formulas` | 엑셀 수식에서 뽑은 열별 규칙, 규칙에서 벗어난 행, 같은 양식 다른 시트와 비교 |
+| GET | `/{id}/files/{fileId}/rules/summary?refresh=` | 수식 규칙을 사람 말로 정리 (LLM, 열 이름·대표 수식·예외 개수만 보냄, 셀 값 없음). 저장해 두고 `refresh=true`일 때만 다시 만듦 |
 | PUT | `/{id}/files/{fileId}/mappings` | 매핑 확정 → 재검증 |
 | PATCH | `/{id}/files/{fileId}/rows/{rowNo}` | 행 직접 수정 → 재검증 |
 | GET | `/{id}/issues` | 오류: 심각도별 건수, 원인별 묶음, 행 단위 목록 |
@@ -74,10 +77,11 @@ user-service의 이관용 내부 API는 아직 없어서, 적재 테스트는 `F
 
 - 모든 시트를 읽는다. 응답의 `sheets`에 시트별 행 수·헤더 행·수식 셀 수, `sheetName`에 읽은 시트
 - 헤더 행: 위쪽 30행에서 글자 칸이 가장 많은 행의 절반 이상인 첫 행 (제목·귀속월·요율 행 건너뜀). 세로 병합은 채우고, 가로 병합 묶음 머리글은 이름이 겹치는 열에만 붙임 (`07월 연장`)
-- 합계·소계 행은 데이터에서 빼고 `TOTAL_ROW_SKIPPED`, 합계 아래 데이터 행은 `ROW_AFTER_TOTAL`
+- 합계·소계 행은 데이터에서 빼고 `TOTAL_ROW_SKIPPED`, 합계 아래 데이터 행은 `ROW_AFTER_TOTAL`. 소계로 보는 행: 앞쪽 칸이 `합계`·`소계`·`강남점 소계`처럼 끝나는 행, 수식 칸 대부분이 같은 열 위쪽 행을 더하는 행(`=SUM(F4:F25)`)
 - 수식 셀은 저장된 계산값을 값으로 쓰고, 수식 문자열·오류값은 `staging_row.meta`에 따로 저장. 오류값 셀은 `FORMULA_ERROR`(차단)
 - 수식 규칙: 열마다 대표 수식(`=ROUNDDOWN(({기본급}+{직책수당})/설정!$B$9,0)`), 값 직접 입력 `HARDCODED_VALUE`, 빈 칸 `BLANK_IN_FORMULA_COLUMN`,
   다른 모양 `FORMULA_INCONSISTENT`, 같은 파일·같은 헤더의 다른 시트와 대표 수식이 다름 `FORMULA_DIFFERS_ACROSS_SHEETS` (모두 경고)
+  참조하는 시트만 다른 행(총괄 시트의 부서별 행 `='가공1팀'!U71`, 사람마다 소속 시트를 찾는 SUMIFS)은 같은 규칙으로 봄
 - 검산 (모두 경고, 계산값은 `suggestion`에):
   - 대표 수식이 같은 행 칸의 덧셈·뺄셈·SUM(`=SUM({기본급}:{식대},{연장수당}:{휴일수당})`, `={발생일수}-{사용일수}`)이면 행마다 다시 계산해 저장값과 비교 `RECALC_MISMATCH`.
     차이가 항목 한 열의 값과 같으면 그 열을 알려 줌 (SUM 범위 누락·숫자로 바꿔 넣은 합계)
@@ -121,9 +125,9 @@ GET    /internal/v1/hr/migration/batches/{batchId}/summary           → ApiResu
 
 ## 아직 안 된 것
 
-- 인증 연동 (지금은 API가 열려 있고 `companyId`를 요청 본문으로 받음)
+- `companyId`를 요청 본문으로 받음 (토큰에 회사 정보가 없음. 단일 회사 ERP라 지금은 그대로)
 - 임시 테이블(`staging_row`) 민감정보 암호화
 - 업로드·적재 비동기 처리 (지금은 동기)
 - 대상 서비스 코드 목록과 대조하는 코드 매핑, 엑셀 양식 다운로드, 전환 완료
 - 급여·연차 등(`PAY_*`, `LEAVE_BALANCE`) 필드 정의: 대상 서비스와 합의 전이라 없음 (지금은 읽기·수식 검사·직원명부 대조만)
-- 수식 규칙의 설정 시트 참조(`설정!$B$9`)를 값·라벨로 풀어 보여 주기, ROUND·VLOOKUP이 섞인 수식 검산, 국민연금 상·하한, 파일 사이 대조(4대보험 보수월액 ↔ 급여)
+- 수식 규칙의 설정 시트 참조(`설정!$B$9`)를 값·라벨로 풀어 보여 주기 (지금 규칙 요약은 '설정 시트 B9 값'으로만 적음), ROUND·VLOOKUP이 섞인 수식 검산, 국민연금 상·하한, 파일 사이 대조(4대보험 보수월액 ↔ 급여)

@@ -3,6 +3,7 @@ package com.ssafy.migrationservice.domain.migration.controller;
 import com.ssafy.migrationservice.domain.migration.dto.FileDetailResponse;
 import com.ssafy.migrationservice.domain.migration.dto.FileUploadResponse;
 import com.ssafy.migrationservice.domain.migration.dto.FormulaRulesResponse;
+import com.ssafy.migrationservice.domain.migration.dto.RuleSummaryResponse;
 import com.ssafy.migrationservice.domain.migration.dto.FixApplyRequest;
 import com.ssafy.migrationservice.domain.migration.dto.FixApplyResponse;
 import com.ssafy.migrationservice.domain.migration.dto.IssueListResponse;
@@ -89,6 +90,13 @@ public class MigrationAdminController {
     @GetMapping("/{migrationId}/files/{fileId}/formulas")
     public ResponseEntity<ApiResult<FormulaRulesResponse>> formulas(@PathVariable Long migrationId, @PathVariable Long fileId) {
         return ResponseEntity.ok(ApiResult.success(migrationService.formulas(migrationId, fileId)));
+    }
+
+    /** 수식 규칙을 사람 말로 정리 (LLM, 셀 값은 보내지 않음). 한 번 만들면 저장해 두고 refresh=true일 때만 다시 만든다 */
+    @GetMapping("/{migrationId}/files/{fileId}/rules/summary")
+    public ResponseEntity<ApiResult<RuleSummaryResponse>> ruleSummary(@PathVariable Long migrationId, @PathVariable Long fileId,
+                                                                      @RequestParam(defaultValue = "false") boolean refresh) {
+        return ResponseEntity.ok(ApiResult.success(migrationService.ruleSummary(migrationId, fileId, refresh)));
     }
 
     @PutMapping("/{migrationId}/files/{fileId}/mappings")

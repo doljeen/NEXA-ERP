@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
  * 열마다 수식 규칙을 뽑는다. 데이터 행의 90% 이상이 수식인 열을 '수식 열'로 보고
  * 대표 수식(가장 많은 모양), 숫자가 직접 들어간 행, 비어 있는 행, 대표와 모양이 다른 행을 찾는다.
  * 대표 수식이 둘로 갈리면(30% 넘게 다른 모양) 같은 양식의 다른 시트에서 쓰는 모양을 고른다.
+ * 참조하는 시트만 다른 행(총괄 시트의 부서별 행 등)은 대표와 같은 규칙으로 본다.
  */
 public final class FormulaInspector {
 
@@ -70,8 +71,9 @@ public final class FormulaInspector {
                 }
             }
             Map<Integer, String> other = new LinkedHashMap<>();
+            String dominantLoose = FormulaPattern.loose(dominant);
             patterns.forEach((rowNo, p) -> {
-                if (!p.equals(dominant)) {
+                if (!p.equals(dominant) && !FormulaPattern.loose(p).equals(dominantLoose)) {
                     other.put(rowNo, p);
                 }
             });
