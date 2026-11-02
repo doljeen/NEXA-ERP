@@ -2,6 +2,8 @@ package com.ssafy.migrationservice.domain.migration.validation;
 
 import com.ssafy.migrationservice.domain.migration.entity.MigrationFile;
 import com.ssafy.migrationservice.domain.migration.entity.enums.MigrationEntity;
+import com.ssafy.migrationservice.domain.migration.mapping.EnumValueSuggester;
+import com.ssafy.migrationservice.domain.migration.mapping.LlmMappingAdvisor;
 import com.ssafy.migrationservice.domain.migration.mapping.MappingService;
 import com.ssafy.migrationservice.domain.migration.reader.ParsedTable;
 import com.ssafy.migrationservice.domain.migration.repository.StagingRowRepository;
@@ -45,6 +47,7 @@ public class ValidationService {
     private final IssueRepository issueRepository;
     private final FormulaRuleService formulaRuleService;
     private final RosterReferenceChecker rosterReferenceChecker;
+    private final EnumValueSuggester enumValueSuggester;
     private final DependentsChecker dependentsChecker;
 
     @Transactional
@@ -82,6 +85,7 @@ public class ValidationService {
         }
 
         // ② 형식 · ③ 필수값. 형식이 맞는 날짜만 모아 업무 규칙에 넘긴다
+        Map<String, Map<String, LlmMappingAdvisor.Advice>> enumAdvice = enumAdvice(file, schema, fieldToColumn, rows);
         Map<Integer, Map<String, LocalDate>> validDates = new HashMap<>();
         for (ParsedTable.Row row : rows) {
             for (Map.Entry<String, String> e : fieldToColumn.entrySet()) {
@@ -96,6 +100,13 @@ public class ValidationService {
                     continue;
                 }
                 Optional<FieldValueChecker.Finding> finding = FieldValueChecker.check(f, value);
+                LlmMappingAdvisor.Advice advice = enumAdvice.getOrDefault(f.name(), Map.of()).get(value);
+                if (finding.isPresent() && finding.get().code() == IssueCode.INVALID_ENUM && advice != null) {
+                    // 허용 값이 아니지만 LLM이 뜻을 추천한 값: 자동 정리 제안으로 (사람이 적용해야 바뀜)
+                    finding = Optional.of(new FieldValueChecker.Finding(Severity.FIX, IssueCode.ENUM_VALUE_SUGGESTED,
+                            f.label() + " '" + value + "'을(를) '" + advice.field() + "'(으)로 바꿉니다 (LLM 추천: " + advice.reason() + ")",
+                            advice.field()));
+                }
                 finding.ifPresent(fd -> issues.add(new ValidationIssue(file.getFileId(), row.rowNo(), f.name(), column,
                         fd.severity(), fd.code(), fd.message(), value, fd.suggestion())));
                 if (f.type() == FieldType.DATE && finding.map(fd -> fd.severity() != Severity.BLOCK).orElse(true)) {
@@ -218,6 +229,29 @@ public class ValidationService {
                         parent, null));
             }
         }
+    }
+
+    /** 코드성(ENUM) 필드마다 허용 값이 아닌 값들 → LLM 추천 (파일·필드·값마다 한 번만 묻고 저장된 것을 씀) */
+    private Map<String, Map<String, LlmMappingAdvisor.Advice>> enumAdvice(MigrationFile file, EntitySchema schema,
+                                                                         Map<String, String> fieldToColumn, List<ParsedTable.Row> rows) {
+        Map<String, Map<String, LlmMappingAdvisor.Advice>> out = new HashMap<>();
+        fieldToColumn.forEach((name, column) -> {
+            FieldSpec f = schema.field(name).orElseThrow();
+            if (f.type() != FieldType.ENUM) {
+                return;
+            }
+            Set<String> unknown = new HashSet<>();
+            for (ParsedTable.Row row : rows) {
+                String v = row.values().get(column);
+                if (v != null && FieldValueChecker.check(f, v).map(fd -> fd.code() == IssueCode.INVALID_ENUM).orElse(false)) {
+                    unknown.add(v);
+                }
+            }
+            if (!unknown.isEmpty()) {
+                out.put(name, enumValueSuggester.suggest(file.getFileId(), f, unknown));
+            }
+        });
+        return out;
     }
 
     /** ⓪ 엑셀 구조: 합계 행, 합계 아래 행, 저장된 값이 오류인 수식 셀. 스키마가 없어도 본다 */

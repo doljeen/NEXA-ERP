@@ -29,6 +29,7 @@ public enum IssueCode {
     INVALID_EMAIL,
     INVALID_PHONE,
     INVALID_ENUM,
+    ENUM_VALUE_SUGGESTED,
     TOO_LONG,
     // 파일 안 정합성
     DUPLICATE_KEY,

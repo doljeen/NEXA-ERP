@@ -36,7 +36,14 @@ public class LlmMappingAdvisor {
             설명 없이 JSON만 답한다: {"mappings":[{"column":"원본 컬럼","field":"필드 이름 또는 null","reason":"한 줄 근거"}]}
             """;
 
-    /** 필드 이름과 한 줄 근거 */
+    private static final String VALUE_INSTRUCTIONS = """
+            너는 한국 회사 인사 엑셀의 코드성 값을 HR 시스템의 허용 값으로 바꾼다.
+            values의 각 값이 allowed 중 어느 것을 뜻하는지 고르고, 뜻이 분명하지 않으면 null로 둔다.
+            allowed의 key(한글 표기)를 그대로 답한다.
+            설명 없이 JSON만 답한다: {"values":[{"value":"원본 값","target":"허용 값 key 또는 null","reason":"한 줄 근거"}]}
+            """;
+
+    /** 필드 이름(값 추천이면 허용 값 한글 표기)과 한 줄 근거 */
     public record Advice(String field, String reason) {
     }
 
@@ -70,10 +77,42 @@ public class LlmMappingAdvisor {
             return Map.of();
         }
         try {
-            String text = call(prompt(schema, samples, taken));
+            String text = call(INSTRUCTIONS, prompt(schema, samples, taken));
             return parse(text, schema, samples.keySet(), taken);
         } catch (RuntimeException e) {
             log.warn("LLM 매핑 추천 실패, 동의어 추천만 사용: {}", e.getMessage());
+            return Map.of();
+        }
+    }
+
+    /**
+     * 허용 값 목록에 없는 값마다 어느 허용 값인지 추천 (재직 'Y' → '재직'). 값 자체를 보내므로 코드성 값만 넘길 것
+     *
+     * @return 원본 값 → 추천 (허용 값의 한글 표기)
+     */
+    public Map<String, Advice> adviseValues(FieldSpec field, List<String> values) {
+        if (!enabled() || values.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            String input = objectMapper.writeValueAsString(Map.of("field", field.label(), "allowed", field.enumValues(), "values", values));
+            String text = call(VALUE_INSTRUCTIONS, input);
+            int start = text.indexOf('{');
+            int end = text.lastIndexOf('}');
+            if (start < 0 || end < start) {
+                return Map.of();
+            }
+            Map<String, Advice> out = new LinkedHashMap<>();
+            for (JsonNode v : objectMapper.readTree(text.substring(start, end + 1)).path("values")) {
+                String value = v.path("value").asString(null);
+                String target = v.path("target").isNull() ? null : v.path("target").asString(null);
+                if (value != null && target != null && values.contains(value) && field.enumValues().containsKey(target)) {
+                    out.put(value, new Advice(target, v.path("reason").asString("")));
+                }
+            }
+            return out;
+        } catch (RuntimeException e) {
+            log.warn("LLM 값 추천 실패: {}", e.getMessage());
             return Map.of();
         }
     }
@@ -89,10 +128,10 @@ public class LlmMappingAdvisor {
         return objectMapper.writeValueAsString(Map.of("fields", fields, "takenFields", taken, "columns", columns));
     }
 
-    private String call(String input) {
+    private String call(String instructions, String input) {
         JsonNode res = restClient.post().uri("/responses")
                 .header("Authorization", "Bearer " + apiKey)
-                .body(Map.of("model", model, "instructions", INSTRUCTIONS, "input", input))
+                .body(Map.of("model", model, "instructions", instructions, "input", input))
                 .retrieve()
                 .body(JsonNode.class);
         StringBuilder text = new StringBuilder();

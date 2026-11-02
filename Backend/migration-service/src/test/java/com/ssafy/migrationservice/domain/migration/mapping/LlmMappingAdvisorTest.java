@@ -53,6 +53,35 @@ class LlmMappingAdvisorTest {
     }
 
     @Test
+    void 값_추천은_허용_값의_한글_표기만_받는다() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/v1/responses", ex -> {
+            String text = """
+                    {"values":[{"value":"Y","target":"재직","reason":"Y는 재직"},
+                      {"value":"N","target":"TERMINATED","reason":"코드로 답함"},{"value":"?","target":null,"reason":"모름"}]}""";
+            byte[] body = JSON.writeValueAsBytes(Map.of("output", List.of(Map.of("content",
+                    List.of(Map.of("type", "output_text", "text", text))))));
+            ex.getResponseHeaders().add("Content-Type", "application/json");
+            ex.sendResponseHeaders(200, body.length);
+            ex.getResponseBody().write(body);
+            ex.close();
+        });
+        server.start();
+        try {
+            String base = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
+            var status = EMPLOYEE.field("status").orElseThrow();
+
+            Map<String, LlmMappingAdvisor.Advice> advice = new LlmMappingAdvisor(base, "k", "m", JSON)
+                    .adviseValues(status, List.of("Y", "N", "?"));
+
+            assertThat(advice).containsOnlyKeys("Y");
+            assertThat(advice.get("Y").field()).isEqualTo("재직");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void Responses_API로_묻고_키가_없거나_실패하면_빈_결과() throws Exception {
         AtomicReference<String> sent = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
