@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public interface DocumentRepository extends JpaRepository<Document, Long> {
 
@@ -33,6 +34,9 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
                                                    @Param("drafterId") Long drafterId,
                                                    @Param("employeeId") Long employeeId,
                                                    @Param("admin") boolean admin);
+
+    /** 생성 요청 키로 조회 */
+    Optional<Document> findByRequestKey(UUID requestKey);
 
     /** 변경용 조회. 행 잠금(SELECT ... FOR UPDATE)으로 같은 문서의 변경 요청을 한 번에 하나씩 처리한다 */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

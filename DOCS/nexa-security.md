@@ -4,9 +4,16 @@
 의존성만 추가하면 자동 설정으로 등록되고, 서비스는 경로별 권한만 작성한다.
 
 - 소스: `Backend/nexa-security`
-- 좌표: `com.ssafy.nexa:nexa-security:1.0.0`
+- 좌표: `com.ssafy.nexa:nexa-security:1.1.0` (최신)
 - 저장소: 이 프로젝트의 GitLab Package Registry (익명 pull 허용, 토큰 불필요)
-- 적용 서비스: approval-service
+- 적용 서비스: approval, attendance, leave, payroll (2026-11-02 기준 모두 `1.0.0` 사용 중 → 1.1.0 으로 올리기 필요)
+
+## 버전 기록
+
+| 버전 | 변경 | 기존 서비스 영향 |
+|---|---|---|
+| 1.1.0 | `AuthUser` 에 `deptId()`, `gradeId()`, `dutyId()` 추가 (access 토큰의 소속 ID 클레임) | 없음. 버전만 올리면 됨. 기존 생성자 `AuthUser(employeeId, role)` 도 유지 |
+| 1.0.0 | 최초 배포 | — |
 
 ## 인증 흐름
 
@@ -26,7 +33,7 @@
 |---|---|
 | `JwtDecoder` (자동 등록) | user-service JWKS 공개키로 RS256 서명 확인, 만료(오차 0), `type=access`, `sub` 는 양수 사원 ID |
 | `NexaSecurityConfigurer` | 세션 없음, CSRF/폼/Basic 로그인 끔, Bearer 토큰 인증, `permit-urls` 열기, 401/403 응답 연결 |
-| `@CurrentUser AuthUser` | 컨트롤러에서 요청한 사원 (`employeeId()`, `role()`, `isAdmin()`) |
+| `@CurrentUser AuthUser` | 컨트롤러에서 요청한 사원 (`employeeId()`, `role()`, `isAdmin()`, 1.1.0부터 `deptId()`, `gradeId()`, `dutyId()`) |
 | `@CurrentEmployeeId Long` | 컨트롤러에서 요청한 사원 ID만 |
 | 401/403 응답 | 공통 응답 형식으로 직접 작성 (아래 표) |
 | `BearerTokenRelayInterceptor` (자동 등록) | 다른 서비스 호출 시 현재 토큰을 Bearer 로 전달 |
@@ -59,7 +66,7 @@ repositories {
 
 dependencies {
 	// spring-boot-starter-security, oauth2-resource-server 가 함께 들어온다
-	implementation 'com.ssafy.nexa:nexa-security:1.0.0'
+	implementation 'com.ssafy.nexa:nexa-security:1.1.0'
 }
 ```
 
@@ -214,7 +221,43 @@ public class JwtEmployeeAccess implements EmployeeAccess {
 `JwtAuthenticationToken` 은 `org.springframework.security.oauth2.server.resource.authentication` 패키지의 것이다.
 기존 `DevEmployeeAccess`, `UnavailableEmployeeAccess` 와 빈이 겹치지 않게 프로필을 정리한다.
 
-### 예시 5. 토큰 없이 열 경로 추가
+### 예시 5. 소속(부서·직급·직책)으로 권한 판단 (1.1.0)
+
+access 토큰에 요청한 사원의 **부서 ID, 직급 ID, 직책 ID**가 들어 있어 user-service 를 부르지 않고 꺼낼 수 있다.
+
+```java
+@GetMapping("/teams/{deptId}/requests")
+public ApiResult<...> teamRequests(@PathVariable Long deptId, @CurrentUser AuthUser user) {
+    // 관리자이거나 같은 부서 사원만
+    if (!user.isAdmin() && !deptId.equals(user.deptId())) {
+        throw new BusinessException(ErrorCode.ACCESS_DENIED);
+    }
+    ...
+}
+```
+
+| 메서드 | 클레임 | 내용 |
+|---|---|---|
+| `deptId()` | `deptId` | 부서 ID |
+| `gradeId()` | `gradeId` | 직급 ID |
+| `dutyId()` | `dutyId` | 직책 ID (팀장 등) |
+
+주의할 것
+
+- **null 일 수 있다.** user-service 가 소속 클레임을 넣기 전에 발급된 토큰이거나 소속 정보가 없는 사원이면 null. `Long` 비교는 `deptId.equals(user.deptId())` 처럼 null 이 아닌 쪽에서 호출한다.
+- **ID 만 있다. 이름은 없다.** 부서명·직급명은 바뀔 수 있어 토큰에 넣지 않았다. 권한은 ID 로 비교하고, 화면 표시용 이름은 user-service 에서 받는다 (직책명: `GET /api/v1/duties/{dutyId}`).
+- **최대 15분 늦게 반영된다.** 소속은 토큰을 발급할 때의 값이다. 부서 이동·직책 변경은 access 토큰이 재발급될 때(최대 15분) 반영된다. 즉시 반영이 꼭 필요한 동작은 user-service 에 실시간으로 확인한다.
+- **`gradeId` 크기로 서열을 비교하지 않는다.** ID 는 서열 순서로 매겨져 있다는 보장이 없다. "과장 이상" 같은 판단은 user-service 의 직급 정보로 한다.
+- **어떤 `dutyId` 가 팀장인지 아직 코드로 구분할 수 없다.** 직책에 코드·서열 필드가 아직 없어 `dutyId == 3` 같은 하드코딩이 필요해진다. 직책 기준 권한이 필요하면 user-service 담당자와 먼저 상의한다.
+
+테스트에서는 `jwt()` 에 클레임을 함께 넣는다.
+
+```java
+mvc.perform(get("/api/v1/xxx").with(jwt().jwt(j -> j.subject("7").claim("type", "access").claim("role", "USER")
+        .claim("deptId", 12L).claim("gradeId", 3L).claim("dutyId", 5L))));
+```
+
+### 예시 6. 토큰 없이 열 경로 추가
 
 웹훅처럼 토큰 없이 받아야 하는 경로가 있으면 properties 에 추가한다. 기본값을 대체하므로 기본 경로도 함께 적는다.
 

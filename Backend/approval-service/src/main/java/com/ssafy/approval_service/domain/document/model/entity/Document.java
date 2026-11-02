@@ -18,6 +18,8 @@ import lombok.NoArgsConstructor;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.Objects;
+import java.util.UUID;
 
 /** 결재 문서 (approval_document) */
 @Entity
@@ -61,16 +63,31 @@ public class Document {
     @Column(name = "source_id")
     private Long sourceId;                  // 출처 서비스의 원본 신청 ID (DIRECT 면 null)
 
+    @Column(name = "request_key", unique = true)
+    private UUID requestKey;                // 생성 요청 키. 같은 키로 다시 요청하면 이 문서를 돌려준다
+
     @Builder
     private Document(FormType formType, String title, Long drafterId,
-                     SourceType sourceType, Long sourceId) {
+                     SourceType sourceType, Long sourceId, UUID requestKey) {
         this.formType = formType;
         this.title = title;
         this.drafterId = drafterId;
         this.sourceType = sourceType == null ? SourceType.DIRECT : sourceType;
         this.sourceId = sourceId;
+        this.requestKey = requestKey;
         this.status = DocumentStatus.INPROGRESS;
         this.draftedAt = OffsetDateTime.now();
+    }
+
+    /**
+     * 같은 요청 키로 온 재요청이 이 문서를 만든 요청과 같은 신청인지.
+     * 기안자·양식·출처가 같으면 같은 신청으로 본다 (제목·결재선은 재시도 중 바뀔 수 있어 비교하지 않음)
+     */
+    public boolean isSameRequest(Long drafterId, FormType formType, SourceType sourceType, Long sourceId) {
+        return Objects.equals(this.drafterId, drafterId)
+                && this.formType == formType
+                && this.sourceType == sourceType
+                && Objects.equals(this.sourceId, sourceId);
     }
 
     /** 문서번호 연도는 서버 시간대와 상관없이 한국 시간 기준 상신 연도 */

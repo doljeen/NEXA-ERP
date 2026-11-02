@@ -4,6 +4,7 @@ import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateReques
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentInfoResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentListResponse;
+import com.ssafy.approval_service.domain.document.service.DocumentCreateResult;
 import com.ssafy.approval_service.domain.document.service.DocumentService;
 import com.ssafy.approval_service.global.dto.ApiResult;
 import com.ssafy.approval_service.global.security.SecurityConstants;
@@ -21,6 +22,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.UUID;
 
 @RestController
 @RequestMapping(SecurityConstants.DOCUMENT_BASE_PATH)
@@ -57,12 +60,28 @@ public class DocumentController {
     }
 
     /** 문서 생성 + 상신. 기안자는 access 토큰의 sub(사원 ID)로 식별 */
+    /**
+     * 문서 생성 + 상신. 새로 만들면 201, 같은 요청 키로 이미 만든 문서를 돌려주면 200
+     */
     @PostMapping
     public ResponseEntity<ApiResult<DocumentCreateResponse>> createDocument(
             @CurrentEmployeeId Long drafterId,
             @Valid @RequestBody DocumentCreateRequest request
     ) {
-        DocumentCreateResponse response = documentService.create(request, drafterId);
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResult.success(response));
+        DocumentCreateResult result = documentService.create(request, drafterId);
+        HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
+        return ResponseEntity.status(status).body(ApiResult.success(result.response()));
+    }
+
+    /**
+     * 생성 요청 키로 문서 조회. 원본 서비스가 생성 결과를 모르거나 결과 이벤트를 놓쳤을 때 쓴다.
+     * 404 면 이 키로 만든 문서가 없다 (또는 조회 권한 없음)
+     */
+    @GetMapping("/by-request/{requestKey}")
+    public ResponseEntity<ApiResult<DocumentInfoResponse>> getDocumentByRequestKey(
+            @CurrentUser AuthUser requester,
+            @PathVariable UUID requestKey
+    ) {
+        return ResponseEntity.ok(ApiResult.success(documentService.findByRequestKey(requestKey, requester)));
     }
 }
