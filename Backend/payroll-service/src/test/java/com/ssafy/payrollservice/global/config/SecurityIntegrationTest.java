@@ -64,10 +64,10 @@ class SecurityIntegrationTest {
 
     @Test
     void 토큰의_sub가_사원_ID로_들어감() throws Exception {
-        mvc.perform(get(CONTRACT).with(user(7)))
+        mvc.perform(get("/api/v1/pay/me/payslips?year=2026").with(user(7)))
                 .andExpect(status().isOk());
 
-        verify(payslipService).getMyContract(7L);
+        verify(payslipService).getMyPayslips(7L, 2026);
     }
 
     @Test
@@ -75,6 +75,14 @@ class SecurityIntegrationTest {
         mvc.perform(generate().with(user(7)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("AUTH_009"));
+    }
+
+    @Test
+    void 토큰의_gradeId가_급여_정보_조회에_들어감() throws Exception {
+        mvc.perform(get(CONTRACT).with(user(7, 3)))
+                .andExpect(status().isOk());
+
+        verify(payslipService).getMyContract(3L);
     }
 
     @Test
@@ -105,5 +113,11 @@ class SecurityIntegrationTest {
     private static RequestPostProcessor admin(long empId) {
         return jwt().jwt(j -> j.subject(String.valueOf(empId)).claim("type", "access").claim("role", "ADMIN"))
                 .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
+    }
+
+    private static RequestPostProcessor user(long empId, long gradeId) {
+        return jwt().jwt(j -> j.subject(String.valueOf(empId)).claim("type", "access").claim("role", "USER")
+                        .claim("gradeId", gradeId))
+                .authorities(new SimpleGrantedAuthority("ROLE_USER"));
     }
 }
