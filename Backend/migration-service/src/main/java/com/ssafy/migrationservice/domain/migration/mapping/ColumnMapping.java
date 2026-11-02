@@ -11,7 +11,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/** 원본 컬럼 → 이관 필드. confirmed=false면 시스템 추천, true면 사람이 확정 */
+/** 원본 컬럼 → 이관 필드. confirmed=false면 시스템 추천, true면 사람이 확정. suggestedBy: SYNONYM(동의어)·LLM·USER */
 @Entity
 @Table(name = "column_mapping")
 @Getter
@@ -35,11 +35,19 @@ public class ColumnMapping {
     @Column(name = "confirmed", nullable = false)
     private boolean confirmed;
 
+    @Column(name = "suggested_by", length = 20)
+    private String suggestedBy;
+
+    @Column(name = "reason", length = 300)
+    private String reason;
+
     @Builder
-    private ColumnMapping(Long fileId, String sourceColumn, String targetField, boolean confirmed) {
+    private ColumnMapping(Long fileId, String sourceColumn, String targetField, boolean confirmed, String suggestedBy, String reason) {
         this.fileId = fileId;
         this.sourceColumn = sourceColumn;
         this.targetField = targetField;
         this.confirmed = confirmed;
+        this.suggestedBy = suggestedBy;
+        this.reason = reason;
     }
 }

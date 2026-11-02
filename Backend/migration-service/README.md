@@ -30,6 +30,9 @@ MIGRATION_DB_PASSWORD=localpw \
 | `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5433/nexa_migration` | |
 | `MIGRATION_DB_PASSWORD` | (없음) | |
 | `HR_SERVICE_URL` | `http://localhost:8081` | user-service 이관용 내부 API 주소 |
+| `GMS_KEY` | (없음) | 매핑 추천 LLM 키. 없으면 동의어 추천만 씀. 저장소·설정 파일에 넣지 말 것 |
+| `MIGRATION_LLM_BASE_URL` | `https://gms.ssafy.io/gmsapi/api.openai.com/v1` | OpenAI Responses API 형식이면 바꿔 끼울 수 있음 (팀 vLLM 등) |
+| `MIGRATION_LLM_MODEL` | `gpt-6-luna` | |
 
 ## 테스트
 
@@ -55,6 +58,14 @@ user-service의 이관용 내부 API는 아직 없어서, 적재 테스트는 `F
 | POST | `/{id}/loads?dryRun=` | 적재 / 미리보기 (차단·자동정리 0건일 때만) |
 | DELETE | `/{id}/batches/{batchId}` | 묶음 되돌리기 |
 | GET | `/{id}/reconciliation` | 대사 |
+
+## 매핑 추천
+
+- 동의어 사전(필드 이름·한글 라벨·동의어)으로 먼저 연결하고, 못 찾은 컬럼만 LLM에게 묻는다 (`LlmMappingAdvisor`)
+- LLM에게 보내는 것: 컬럼 이름, 값의 모양(숫자 → 9, 한글 → 가, 영문 → a, 숫자 바로 뒤 년·월·일·원만 유지), 대상 필드 목록. 실제 값은 보내지 않음
+- 응답은 보낸 컬럼·스키마에 있는 필드·아직 안 쓴 필드만, 한 필드 한 컬럼으로 걸러 받는다. 실패·키 없음이면 동의어 추천만
+- 매핑 응답의 `suggestedBy`(SYNONYM·LLM·USER)와 `reason`(LLM 근거)으로 화면에서 구분. 추천은 확정이 아니라 사람이 확인
+- 평가(가상 회사 7곳): 동의어만 59/74 → LLM 추가 73/74. 기존 3곳은 그대로 맞음
 
 ## 엑셀 읽기·검사
 
