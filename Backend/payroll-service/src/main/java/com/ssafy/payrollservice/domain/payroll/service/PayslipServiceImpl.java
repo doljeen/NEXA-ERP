@@ -7,6 +7,7 @@ import com.ssafy.payrollservice.domain.payroll.dto.PayslipDetailResponse;
 import com.ssafy.payrollservice.domain.payroll.dto.PayslipListResponse;
 import com.ssafy.payrollservice.domain.payroll.dto.RetirementEstimateResponse;
 import com.ssafy.payrollservice.domain.payroll.entity.Payslip;
+import com.ssafy.payrollservice.domain.payroll.repository.PayGradeRepository;
 import com.ssafy.payrollservice.domain.payroll.repository.PayslipItemRepository;
 import com.ssafy.payrollservice.domain.payroll.repository.PayslipRepository;
 import com.ssafy.payrollservice.global.exception.BusinessException;
@@ -25,7 +26,8 @@ import java.util.List;
 public class PayslipServiceImpl implements PayslipService {
 
     private final PayslipRepository payslipRepository;
-    private final PayslipItemRepository payslipItemRepository;   // 필드 추가
+    private final PayslipItemRepository payslipItemRepository;
+    private final PayGradeRepository payGradeRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -47,15 +49,14 @@ public class PayslipServiceImpl implements PayslipService {
 
     @Override
     @Transactional(readOnly = true)
-    public ContractResponse getMyContract(Long empId) {
-        // TODO: user-service 연동 후 현재 직급(pay_grade)과 사원 정보로 교체
-        Payslip latest = payslipRepository.findFirstByEmpIdOrderByPayYearDescPayMonthDesc(empId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.CONTRACT_NOT_FOUND));
-
-        int basePay = payslipItemRepository.findAmount(latest.getPayslipId(), "BASE_PAY")
-                .orElseThrow(() -> new BusinessException(ErrorCode.PAY_ITEM_NOT_FOUND));
-
-        return ContractResponse.of(latest, basePay);
+    public ContractResponse getMyContract(Long gradeId) {
+        // 직급 claim이 없는 토큰 (1.1.0 이전 발급분)
+        if (gradeId == null) {
+            throw new BusinessException(ErrorCode.PAY_GRADE_NOT_FOUND, "토큰에 직급 정보가 없습니다. 다시 로그인해 주세요.");
+        }
+        return payGradeRepository.findById(gradeId)
+                .map(ContractResponse::from)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PAY_GRADE_NOT_FOUND));
     }
 
     private static final int BASE_MONTHS = 3;   // 평균임금 산정 개월 수

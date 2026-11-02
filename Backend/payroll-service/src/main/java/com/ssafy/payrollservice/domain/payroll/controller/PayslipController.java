@@ -1,5 +1,7 @@
 package com.ssafy.payrollservice.domain.payroll.controller;
 
+import com.ssafy.nexa.security.AuthUser;
+import com.ssafy.nexa.security.CurrentUser;
 import com.ssafy.payrollservice.domain.payroll.dto.ContractResponse;
 import com.ssafy.payrollservice.domain.payroll.dto.PayslipDetailResponse;
 import com.ssafy.payrollservice.domain.payroll.dto.PayslipListResponse;
@@ -40,8 +42,8 @@ public class PayslipController {
 
     // 내 급여 정보 API
     @GetMapping("/contract")
-    public ResponseEntity<ApiResult<ContractResponse>> getMyContract(@CurrentEmployeeId Long empId) {
-        return ResponseEntity.ok(ApiResult.success(payslipService.getMyContract(empId)));
+    public ResponseEntity<ApiResult<ContractResponse>> getMyContract(@CurrentUser AuthUser user) {
+        return ResponseEntity.ok(ApiResult.success(payslipService.getMyContract(user.gradeId())));
     }
 
     // 예상 퇴직금 조회 API
