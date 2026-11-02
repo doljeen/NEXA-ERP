@@ -13,8 +13,11 @@ from . import base
 def build_all(df, used, out_dir, seed, only=None):
     """only: 회사 id 목록 (개발용). 인물은 회사별 조각에서 뽑으므로 일부만 만들어도 결과가 같다"""
     summary = []
-    for cid in base.PARTS:
+    for cid in base.PARTS + base.PARTS2:
         if only and cid not in only:
+            if cid in base.PARTS and any(c in base.PARTS2 for c in only):
+                # 2차 회사는 1차 4곳이 뽑은 인물을 빼고 뽑으므로 인물만 뽑아 둔다 (파일은 안 씀)
+                importlib.import_module("newco." + cid).people(df, used, seed)
             continue
         m = importlib.import_module("newco." + cid)
         key = m.build(df, used, out_dir, seed)

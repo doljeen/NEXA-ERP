@@ -31,15 +31,23 @@ def rng_for(cid, part, seed):
 
 
 PARTS = ["saalabs", "jachaprec", "katamart", "pahagongdan"]
+# 2차 추가 회사. 1차 4곳의 조각(uuid 앞 8자리 % 4)을 건드리지 않으려고 따로 둔다:
+# 1차 4곳이 실제로 뽑은 인물(used에 더해짐)을 빼고, uuid 뒤 8자리로 나눈 조각에서 뽑는다
+PARTS2 = ["geoneomed", "deoreocon", "meobeologis", "seoeoedu", "jeocheocall", "peoheogroup"]
 
 
 def pick(df, used, n, rng, cid, weight=None, ages=(24, 59)):
     """기존 회사가 쓴 인물(used)을 빼고 n명. 추가 회사끼리는 uuid로 나눈 조각만 써서 서로 겹치지 않고,
-    한 회사만 다시 만들어도 다른 회사의 인물이 바뀌지 않는다. weight(occupation) → 가중치"""
-    k = PARTS.index(cid)
-    pool = df[~df.uuid.isin(used) & df.age.between(*ages) & (df.uuid.map(lambda u: int(u[:8], 16) % len(PARTS)) == k)]
+    한 회사만 다시 만들어도 다른 회사의 인물이 바뀌지 않는다. weight(occupation) → 가중치.
+    뽑은 인물은 used에 더한다 (1차 4곳은 조각이 서로 달라 used가 늘어도 뽑기 결과가 같다)"""
+    if cid in PARTS:
+        part = df.uuid.map(lambda u: int(u[:8], 16) % len(PARTS)) == PARTS.index(cid)
+    else:
+        part = df.uuid.map(lambda u: int(u[-8:], 16) % len(PARTS2)) == PARTS2.index(cid)
+    pool = df[~df.uuid.isin(used) & df.age.between(*ages) & part]
     w = pool.occupation.map(weight) if weight else None
     picked = pool.sample(n=n, weights=w, random_state=rng.randint(0, 10_000))
+    used.update(picked.uuid)
     return picked.to_dict("records")
 
 
@@ -75,6 +83,8 @@ def fmt_date(d, style):
         "compact": lambda: d.strftime("%Y%m%d"),
         "slash": lambda: d.strftime("%Y/%m/%d"),
         "korean": lambda: "%d년 %d월 %d일" % (d.year, d.month, d.day),
+        "hwp": lambda: "%d. %d. %d." % (d.year, d.month, d.day),
+        "mdy": lambda: d.strftime("%m/%d/%Y"),
         "cell": lambda: d,
         "serial": lambda: (d - EXCEL_EPOCH).days,
     }[style]()
@@ -217,3 +227,75 @@ def summary_of(key):
         for a in f["accidents"]:
             by_type[a["type"]] = by_type.get(a["type"], 0) + 1
     return {"company": key["company"], **key["counts"], "errors": by_code, "accidents": by_type}
+
+
+# ---------------------------------------------------------------- 2차 추가 회사 공통 (1차 4곳은 쓰지 않음)
+
+DOW = "월화수목금토일"
+
+
+def days_of(y, m):
+    d, out = dt.date(y, m, 1), []
+    while d.month == m:
+        out.append(d)
+        d += dt.timedelta(days=1)
+    return out
+
+
+def tax_of(taxable, family):
+    """단순화한 간이세액표(hrfiles.payroll.TAX_ROWS) VLOOKUP(…, TRUE). 첫 구간 미만은 0. family는 1~5"""
+    from hrfiles.payroll import TAX_ROWS
+    from hrfiles.xl import vlookup_approx
+    return 0 if taxable < TAX_ROWS[0][0] else vlookup_approx(taxable, TAX_ROWS, min(max(family, 1), 5) + 2)
+
+
+def tax_formula(base_expr, family_cell, sheet="세액표"):
+    from hrfiles.payroll import TAX_ROWS
+    return "IF(%s<%d,0,VLOOKUP(%s,%s!$A$2:$G$%d,MIN(MAX(%s,1),5)+2,TRUE))" % (
+        base_expr, TAX_ROWS[0][0], base_expr, sheet, 1 + len(TAX_ROWS), family_cell)
+
+
+def write_tax_sheet(book, name="세액표"):
+    from hrfiles.payroll import TAX_ROWS
+    sh = book.sheet(name)
+    for c, h in zip("ABCDEFG", ["이상", "미만", "1인", "2인", "3인", "4인", "5인↑"]):
+        sh.put(c, 1, h, "head")
+    for n, row in enumerate(TAX_ROWS):
+        for c, v in zip("ABCDEFG", row):
+            sh.put(c, 2 + n, v, "won")
+    return {"role": "lookupTable", "note": "단순화한 간이세액표 (실제 국세청 표 아님)"}
+
+
+class Settings2:
+    """설정 시트: 1행 머리글, A열 항목, B열 값. items: [(키, 항목, 값, 서식)]"""
+
+    def __init__(self, book, name, items):
+        self.name, self.items = name, items
+        sh = book.sheet(name)
+        sh.put("A", 1, "항목", "head")
+        sh.put("B", 1, "값", "head")
+        self.row = {k: 2 + i for i, (k, *_r) in enumerate(items)}
+        self.val = {k: v for k, _l, v, _f in items}
+        for k, label, v, fmt in items:
+            sh.put("A", self.row[k], label)
+            sh.put("B", self.row[k], v, fmt)
+        sh.widths({"A": 28, "B": 12})
+
+    def ref(self, k):
+        return "%s!$B$%d" % (self.name, self.row[k])
+
+    def meta(self):
+        return {"role": "settings", "values": self.val, "cells": {k: "%s!B%d" % (self.name, r) for k, r in self.row.items()}}
+
+
+def float_boundary(x, digits=-1):
+    """ROUNDDOWN(x, digits)에서 이진 부동소수 꼬리(24569.999999999996) 때문에 15자리 기준 결과와 이진 버림 결과가 다른 경우.
+    생성기(hrfiles.xl)는 엑셀 ROUND 계열처럼 15자리 기준으로 계산한다 — 이 셀은 검산 도구에 따라 10원 차이가 날 수 있다"""
+    import math
+    from hrfiles.xl import ROUNDDOWN
+    q = 10 ** (-digits)
+    return ROUNDDOWN(x, digits) != math.floor(x / q) * q if x >= 0 else False
+
+
+def money(v):
+    return "won" if isinstance(v, (int, float)) and not isinstance(v, bool) and abs(v) >= 1000 else None
