@@ -16,7 +16,7 @@ build-config:
 
   artifacts:
     when: always
-    expire_in: 7 days
+    expire_in: 2 days
     paths:
       - Backend/config-server/build/libs/*.jar
     reports:
