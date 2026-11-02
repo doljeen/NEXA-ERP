@@ -56,7 +56,7 @@ public class DocumentServiceImplV1 implements DocumentService {
     }
 
     /*
-     * 결재 이력 생성
+     * 문서 생성 + 상신: 출처·요청 키 검증 → 결재선 검증 → 문서번호 채번 → 문서·결재선·SUBMIT 이력 저장
      */
     @Override
     @Transactional

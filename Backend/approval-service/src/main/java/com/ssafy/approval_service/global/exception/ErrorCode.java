@@ -8,17 +8,9 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum ErrorCode {
 
-    // 인증/인가
+    // 인증/인가 (토큰 검증 실패 응답은 nexa-security 가 직접 작성한다. 여기는 컨트롤러까지 온 예외용)
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "AUTH_001", "인증이 필요합니다."),
-    TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED, "AUTH_002", "토큰이 만료되었습니다."),
-    TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "AUTH_003", "유효하지 않은 토큰입니다."),
-    TOKEN_BLACKLISTED(HttpStatus.UNAUTHORIZED, "AUTH_004", "로그아웃된 토큰입니다."),
-    LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "AUTH_005", "이메일 또는 비밀번호가 올바르지 않습니다."),
-    ACCOUNT_TERMINATED(HttpStatus.UNAUTHORIZED, "AUTH_006", "퇴직 처리된 계정입니다."),
-    REFRESH_TOKEN_MISSING(HttpStatus.UNAUTHORIZED, "AUTH_007", "refreshToken이 없습니다."),
-    REFRESH_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "AUTH_008", "유효하지 않은 refreshToken입니다."),
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "AUTH_009", "접근 권한이 없습니다."),
-    ACCOUNT_LOCKED(HttpStatus.LOCKED, "AUTH_010", "로그인 실패가 반복되어 계정이 잠시 잠겼습니다. 잠시 후 다시 시도하세요."),
 
     // 결재
     DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "APPROVAL_001", "문서를 찾을 수 없습니다."),
