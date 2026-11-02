@@ -1,18 +1,16 @@
 package com.ssafy.leaveservice.global.config;
 
+import com.ssafy.leaveservice.support.PostgresTestConfiguration;
 import com.ssafy.leaveservice.domain.account.repository.LeaveAccountRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -26,20 +24,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * nexa-security 적용 확인: 토큰 없으면 401, 관리자 경로 권한, 토큰의 sub 가 TokenEmployeeAccess 로 들어가는지.
  * 인증은 jwt() 로 흉내 내므로 JWKS 서버가 필요 없다. 저장소는 mock 으로 두고 보안 설정만 본다.
  */
-@SpringBootTest(properties = {"spring.cloud.config.enabled=false",
+@SpringBootTest(properties = {
+        "leave.test.database-owner=SecurityIntegrationTest",
+        "spring.cloud.config.enabled=false",
         "eureka.client.enabled=false",
         "eureka.client.service-url.defaultZone=http://localhost:8761/eureka/",
         "spring.jpa.open-in-view=false"})
 @AutoConfigureMockMvc
-@Testcontainers
+@Import(PostgresTestConfiguration.class)
 class SecurityIntegrationTest {
 
     private static final String MY_BALANCES = "/api/v1/leaves/me/balances";
     private static final String ADMIN_BALANCES = "/api/v1/leaves/admin/employees/42/balances";
-
-    @Container
-    @ServiceConnection
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17-alpine");
 
     @Autowired
     MockMvc mvc;

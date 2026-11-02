@@ -1,5 +1,6 @@
 package com.ssafy.leaveservice.domain.adjustment;
 
+import com.ssafy.leaveservice.support.PostgresTestConfiguration;
 import com.ssafy.leaveservice.client.attendance.HolidayClient;
 import com.ssafy.leaveservice.domain.adjustment.dto.LeaveAdjustmentRequest;
 import com.ssafy.leaveservice.domain.adjustment.dto.LeaveAdjustmentResponse;
@@ -21,7 +22,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -29,8 +30,6 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.sql.Connection;
@@ -59,16 +58,19 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(properties = {"spring.cloud.config.enabled=false", "eureka.client.enabled=false",
+@SpringBootTest(properties = {
+        "leave.test.database-owner=LeaveAdjustmentPostgresIntegrationTest",
+        "spring.cloud.config.enabled=false", "eureka.client.enabled=false",
         "eureka.client.service-url.defaultZone=http://localhost:8761/eureka/", "spring.jpa.open-in-view=false",
         "spring.jpa.hibernate.ddl-auto=validate"})
 @AutoConfigureMockMvc
-@Testcontainers
+@Import(PostgresTestConfiguration.class)
 class LeaveAdjustmentPostgresIntegrationTest {
 
     private static final String URL = "/api/v1/leaves/admin/employees/42/adjustments";
-    @Container @ServiceConnection
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17-alpine");
+
+    @Autowired
+    private PostgreSQLContainer postgres;
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
     @Autowired LeaveAdjustmentService adjustments;

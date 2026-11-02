@@ -65,4 +65,6 @@ dependencyManagement {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // 클래스별 DB 격리를 유지하며 사용을 마친 Context와 컨테이너를 함께 정리한다.
+    systemProperty 'spring.test.context.cache.maxSize', '1'
 }

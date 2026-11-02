@@ -1,5 +1,6 @@
 package com.ssafy.leaveservice.domain.account;
 
+import com.ssafy.leaveservice.support.PostgresTestConfiguration;
 import com.ssafy.leaveservice.domain.account.repository.LeaveAccountRepository;
 import com.ssafy.leaveservice.domain.account.repository.projection.LeaveAccountBalance;
 import com.ssafy.leaveservice.global.auth.EmployeeAccess;
@@ -11,12 +12,11 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -25,8 +25,6 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.context.WebApplicationContext;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -50,12 +48,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest(properties = {
+        "leave.test.database-owner=MyLeaveBalancePostgresIntegrationTest",
         "spring.cloud.config.enabled=false", "eureka.client.enabled=false",
         "eureka.client.service-url.defaultZone=http://localhost:8761/eureka/", "spring.jpa.open-in-view=false",
         "spring.jpa.properties.hibernate.session_factory.statement_inspector=com.ssafy.leaveservice.domain.account.MyLeaveBalancePostgresIntegrationTest$SqlCapture"
 })
 @ActiveProfiles("dev")
-@Testcontainers
+@Import(PostgresTestConfiguration.class)
 class MyLeaveBalancePostgresIntegrationTest {
 
     public static class SqlCapture implements StatementInspector {
@@ -89,15 +88,8 @@ class MyLeaveBalancePostgresIntegrationTest {
             "leave_policy_version", "leave_policy_group"
     );
 
-    @Container
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17-alpine");
-
-    @DynamicPropertySource
-    static void configureDatabase(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-    }
+    @Autowired
+    private PostgreSQLContainer postgres;
 
     @Autowired private WebApplicationContext applicationContext;
     @Autowired private JdbcTemplate jdbcTemplate;

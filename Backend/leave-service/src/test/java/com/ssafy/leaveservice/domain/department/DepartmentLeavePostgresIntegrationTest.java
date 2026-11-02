@@ -1,5 +1,6 @@
 package com.ssafy.leaveservice.domain.department;
 
+import com.ssafy.leaveservice.support.PostgresTestConfiguration;
 import com.ssafy.leaveservice.client.hr.HrClient;
 import com.ssafy.leaveservice.client.hr.HrClient.*;
 import com.ssafy.leaveservice.domain.account.repository.LeaveAccountRepository;
@@ -11,20 +12,17 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import java.time.*;
 import java.util.*;
@@ -33,7 +31,9 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest(properties={"spring.cloud.config.enabled=false","eureka.client.enabled=false",
+@SpringBootTest(properties={
+        "leave.test.database-owner=DepartmentLeavePostgresIntegrationTest",
+        "spring.cloud.config.enabled=false","eureka.client.enabled=false",
         "eureka.client.service-url.defaultZone=http://localhost:8761/eureka/","spring.jpa.open-in-view=false",
         "leave.hr.enabled=true","leave.hr.employee-info-uri=urn:test:employee",
         "leave.hr.department-members-uri=urn:test:members","leave.hr.duty-info-uri=urn:test:duty",
@@ -41,17 +41,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "leave.hr.jwt-claims.position-id=test_position",
         "spring.jpa.properties.hibernate.session_factory.statement_inspector=com.ssafy.leaveservice.domain.department.DepartmentLeavePostgresIntegrationTest$SqlCapture"})
 @AutoConfigureMockMvc
-@Testcontainers
+@Import(PostgresTestConfiguration.class)
 class DepartmentLeavePostgresIntegrationTest {
-    @Container
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17-alpine");
 
-    @DynamicPropertySource
-    static void database(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url",postgres::getJdbcUrl);
-        registry.add("spring.datasource.username",postgres::getUsername);
-        registry.add("spring.datasource.password",postgres::getPassword);
-    }
+    @Autowired
+    private PostgreSQLContainer postgres;
 
     public static class SqlCapture implements StatementInspector {
         static final ThreadLocal<List<String>> statements = ThreadLocal.withInitial(ArrayList::new);
@@ -315,7 +309,6 @@ class DepartmentLeavePostgresIntegrationTest {
                 .isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);
         verifyNoInteractions(hrClient);
     }
-
 
     @Test
     void largeDepartmentStillUsesOneSelect() throws Exception {
