@@ -45,12 +45,13 @@ public final class LegalStandardChecker {
     private static final double MOSTLY = 0.8;
     private static final int MIN_ROWS = 3;
     private static final Pattern YEAR = Pattern.compile("(20\\d{2})");
+    private static final Pattern REPORTED_WAGE = Pattern.compile(".*(기준소득월액|신고소득월액|보수월액)");
     private static final Pattern NOT_PREMIUM = Pattern.compile("율|rate|기준|보수|월액|여부|번호|코드");
 
     private enum Insurance {
         PENSION("^(국민연금|nps|pension)", StatutoryRates::pension),
-        HEALTH("^(건강보험|nhis|health)", StatutoryRates::health),
-        LONG_TERM_CARE("^(장기요양|요양보험|ltc|longtermcare)", StatutoryRates::longTermCare),
+        HEALTH("^(건강보험|건보료|nhis|health)", StatutoryRates::health),
+        LONG_TERM_CARE("^(장기요양|노인장기요양|요양보험|ltc|longtermcare)", StatutoryRates::longTermCare),
         EMPLOYMENT("^(고용보험|eis|employment)", StatutoryRates::employment);
 
         final Pattern header;
@@ -122,6 +123,12 @@ public final class LegalStandardChecker {
         int taxable = find(headers, TAXABLE);
         int meal = find(headers, MEAL);
         List<Base> wageBases = new ArrayList<>();
+        // 공단에 신고한 보수월액·기준소득월액 열이 있으면 그것부터 (국민연금은 월 급여가 아니라 이 금액에 요율을 곱한다)
+        for (String h : headers) {
+            if (REPORTED_WAGE.matcher(normalize(h)).matches() && numeric(rows, h)) {
+                wageBases.add(new Base("'" + h + "'", value(h), false));
+            }
+        }
         if (taxable >= 0) {
             wageBases.add(new Base("'" + headers.get(taxable) + "'", value(headers.get(taxable)), false));
         }

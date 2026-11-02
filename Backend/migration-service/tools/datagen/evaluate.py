@@ -46,7 +46,7 @@ LEGAL_CODES = {
     "holidayPremium": {"PREMIUM_BELOW_STATUTORY"},
 }
 REF_CODES = {"EMP_NOT_IN_ROSTER", "EMP_NAME_MISMATCH", "EMPNO_ZERO_PADDED"}
-NEW_CODES = set().union(*ACCIDENT_CODES.values(), *LEGAL_CODES.values())
+NEW_CODES = set().union(*ACCIDENT_CODES.values(), *LEGAL_CODES.values(), {"BELOW_MINIMUM_WAGE"})  # 최저임금은 정답지에 사례가 없어 오탐만 센다
 SKIP_ROLES = {"settings", "lookupTable"}  # 설정·세액표 시트는 데이터가 아니라서 올리지 않음
 
 
@@ -200,7 +200,7 @@ def evaluate_hr_file(base, mid, cdir, fname, hk):
         res["accidents"].append(item)
     res["legal"] = []
     for d in hk.get("legalDeviations", []):
-        codes = LEGAL_CODES.get(d["rule"])
+        codes = LEGAL_CODES.get(d["rule"]) if "급여" in fname else None   # 다른 파일의 같은 규칙은 파일 사이 대조가 필요
         item = {"rule": d["rule"], "sheet": d.get("sheet") or d.get("cells"), "codes": sorted(codes) if codes else None, "detected": False}
         # 시트를 적은 편차는 그 시트, '열 전체'처럼 시트가 없으면 올린 시트 전부
         sheets = [item["sheet"]] if item["sheet"] in issues_by_sheet else list(issues_by_sheet)
