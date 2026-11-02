@@ -7,6 +7,7 @@ import com.ssafy.approval_service.domain.approval.model.entity.ApprovalLine;
 import com.ssafy.approval_service.domain.document.model.entity.Document;
 import com.ssafy.approval_service.domain.document.model.entity.enums.DocumentStatus;
 import com.ssafy.approval_service.domain.document.model.entity.enums.FormType;
+import com.ssafy.approval_service.domain.document.model.entity.enums.SourceType;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -21,6 +22,8 @@ public record DocumentInfoResponse(
         Long drafterId,                             // 기안자 사원ID
         OffsetDateTime draftedAt,                   // 상신일시
         OffsetDateTime completedAt,                 // 완료일시
+        SourceType sourceType,                      // 출처 서비스
+        Long sourceId,                              // 출처 서비스의 원본 신청 ID
         List<ApprovalLineResponse> approvalLines,   // 결재선 (step 순)
         List<ApprovalHistoryResponse> histories     // 변경 이력 (발생 순)
 ) {
@@ -36,6 +39,8 @@ public record DocumentInfoResponse(
                 document.getDrafterId(),
                 document.getDraftedAt(),
                 document.getCompletedAt(),
+                document.getSourceType(),
+                document.getSourceId(),
                 lines.stream().map(ApprovalLineResponse::from).toList(),
                 histories.stream().map(ApprovalHistoryResponse::from).toList()
         );
