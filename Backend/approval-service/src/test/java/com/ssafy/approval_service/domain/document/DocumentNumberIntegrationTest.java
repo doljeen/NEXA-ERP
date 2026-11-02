@@ -21,6 +21,7 @@ import static com.ssafy.approval_service.support.ApprovalTestFixtures.line;
 import static com.ssafy.approval_service.support.ApprovalTestFixtures.user;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** 문서번호는 서버가 양식·연도별 일련번호로 채번하고, 요청에 docNo 가 있어도 무시한다 */
@@ -58,6 +59,17 @@ class DocumentNumberIntegrationTest extends AbstractIntegrationTest {
         create(9105L, "GENERAL", "");
         // 출장 신청은 이 테스트에서만 만들므로 1번부터 시작한다
         assertThat(create(9107L, "BUSINESS_TRIP", "")).isEqualTo("BUSINESS_TRIP-" + YEAR + "-0001");
+    }
+
+    @Test
+    void 결재자_없이_참조자만_있으면_400() throws Exception {
+        mvc.perform(post(BASE).with(user(9111L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"결재자 없음","formType":"GENERAL","approvalLines":[%s,%s]}"""
+                                .formatted(line(9112L, 1, "REFERENCE"), line(9113L, 2, "AGREEMENT"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("APPROVAL_011"));
     }
 
     @Test
