@@ -38,6 +38,8 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
 	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
 	testImplementation 'org.testcontainers:testcontainers-postgresql'
+	testImplementation 'org.testcontainers:testcontainers-kafka'
+	testImplementation 'org.springframework.kafka:spring-kafka-test'
 	testCompileOnly 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
@@ -49,11 +51,17 @@ dependencies {
 	// Eureka
 	implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
 
+	// Config Server (Kafka 주소 등 공통 설정)
+	implementation 'org.springframework.cloud:spring-cloud-starter-config'
+
 	// Actuator 추가
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
 	// JWT 검증 공통 라이브러리 (user-service JWKS 공개키로 access 토큰 서명 확인, 리소스 서버 포함)
 	implementation 'com.ssafy.nexa:nexa-security:1.1.0'
+
+	// 결재 결과 이벤트 발행 (아웃박스 → Kafka)
+	implementation 'org.springframework.boot:spring-boot-starter-kafka'
 
 }
 

@@ -1,6 +1,6 @@
 # 결재 연동 결정 문서
 
-> 상태: **논의 중** — D1 확정(Kafka, 세부는 추천안), D2 구현 완료, D3·D4 논의 전
+> 상태: **논의 중** — D1 확정·approval 발행 구현 완료(수신은 각 서비스), D2 구현 완료, D3·D4 논의 전
 > 작성: approval-service 담당 / 대상: leave-service, attendance-service, 프런트엔드, infra 담당
 > 각 항목의 **권장안**은 제안입니다. 논의 후 `결정` 칸을 채웁니다.
 
@@ -106,6 +106,20 @@
 - 개발 환경: approval-service `compose.yaml`에 KRaft 단일 브로커 (approval 담당자)
 - 공용 개발·운영 환경 반영, 서비스별 접속 설정(`spring.kafka.bootstrap-servers`)은 config-server로 관리 (각 담당자)
 - 테스트: Testcontainers Kafka
+
+### 구현 현황 (approval-service) — ✅ 발행 쪽 완료
+
+| 항목 | 구현 |
+|---|---|
+| 아웃박스 | `V7__approval_outbox.sql` (`approval_outbox`, 미발행 부분 인덱스) |
+| 이벤트 기록 | 최종 승인·전결·반려·회수 직후 같은 트랜잭션에서 기록. 출처 문서만, 중간 결재는 기록 안 함 |
+| 발행기 | 1초 주기, `FOR UPDATE SKIP LOCKED`, 브로커 확인 후 발행 완료 표시, 실패 시 그 자리에서 멈춤(순서 유지), 발행 완료 행 7일 후 삭제 |
+| 프로듀서 | `acks=all`, idempotence, `max.block.ms=5s`, `delivery.timeout.ms=10s` |
+| 토픽 | 앱 기동 시 `approval.document.result`, `.DLT` 생성 (파티션 3) |
+| 브로커 | approval-service `compose.yaml` `kafka` (`apache/kafka:3.9.1`, 호스트 `localhost:19092`) |
+| 테스트 | Testcontainers Kafka 통합 4개(롤백 시 이벤트 없음 포함), 발행기 단위 3개 |
+
+수신 측 계약과 예시 코드: `DOCS/approval-result-event.md`
 
 ### 남은 논의
 
@@ -214,7 +228,7 @@ GET /api/v1/documents/by-request/{requestKey}
 1. 이 문서 공유 → 각 담당자가 질문에 의견 남기기
 2. 회의로 D1 남은 논의(재기안·멱등 방식), D3, D4 결정 (D2 확인, M1~M3는 메시지로)
 3. 구현
-   - approval: ~~D2 요청 키·조회 API~~ (완료) → 출처 문서 재기안 금지 → 브로커(compose) + 아웃박스 + Kafka 발행(D1) → 취소 API(D3)
+   - approval: ~~D2 요청 키·조회 API~~ (완료) → ~~브로커(compose) + 아웃박스 + Kafka 발행(D1)~~ (완료) → 출처 문서 재기안 금지 → 취소 API(D3)
    - leave/attendance: 생성 요청에 `requestKey` 추가, 조회 클라이언트(D2) → Kafka 수신·멱등 처리·DLQ(D1) → 취소 호출(D3)
 
 ## 결정 기록
@@ -224,3 +238,4 @@ GET /api/v1/documents/by-request/{requestKey}
 | 2026-11-02 | D1 | 결재 결과 알림은 Kafka 이벤트. 문서 생성·취소(원본 → approval)는 HTTP 유지, D2 조회 API는 복구용으로 유지 | 아웃박스·멱등 수신·DLQ 필수 |
 | 2026-11-02 | D1 | 브로커 구축은 approval 담당자가 approval-service compose 범위에서 진행. 세부 설계는 추천안 기준 | 재기안 금지·멱등 방식은 합의 필요 |
 | 2026-11-02 | D2 | `requestKey` 구현: 출처 문서 필수, 같은 신청 재요청은 200으로 기존 문서, 다른 신청은 409, `GET /by-request/{key}` 조회 | 필드 이름·404 의미는 leave 확인 필요 |
+| 2026-11-02 | D1 | approval 발행 구현: 아웃박스(V7) + 1초 발행기 + 토픽 생성 + compose 브로커 | 수신 가이드 `DOCS/approval-result-event.md` |

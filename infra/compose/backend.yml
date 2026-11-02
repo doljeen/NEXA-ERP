@@ -48,9 +48,19 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      config-server:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
 
     environment:
       SERVER_PORT: "8083"
+
+      # Kafka 주소(spring.kafka.bootstrap-servers) 등 공통 설정을 config-server 에서 받는다
+      CONFIG_SERVER_URL: http://config-server:8888
+      SPRING_CLOUD_CONFIG_USERNAME: config-client
+      SPRING_CLOUD_CONFIG_PASSWORD: ${CONFIG_SERVER_PASSWORD:?CONFIG_SERVER_PASSWORD is required}
+
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nexa_approval
       SPRING_DATASOURCE_USERNAME: nexa_approval_app
       SPRING_DATASOURCE_PASSWORD: ${APPROVAL_DB_PASSWORD:?APPROVAL_DB_PASSWORD is required}

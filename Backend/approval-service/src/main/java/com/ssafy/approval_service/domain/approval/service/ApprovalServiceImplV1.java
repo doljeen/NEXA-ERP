@@ -1,5 +1,6 @@
 package com.ssafy.approval_service.domain.approval.service;
 
+import com.ssafy.approval_service.domain.approval.event.ApprovalResultEventRecorder;
 import com.ssafy.approval_service.domain.approval.model.dto.ApprovalHistoryResponse;
 import com.ssafy.approval_service.domain.approval.model.dto.ResubmitRequest;
 import com.ssafy.approval_service.domain.approval.model.entity.ApprovalHistory;
@@ -35,6 +36,7 @@ public class ApprovalServiceImplV1 implements ApprovalService {
     private final ApprovalHistoryRepository approvalHistoryRepository;
     private final DocumentService documentService;
     private final ApprovalLineValidator approvalLineValidator;
+    private final ApprovalResultEventRecorder resultEventRecorder;
 
     @Override
     public List<ApprovalHistoryResponse> getHistories(Long documentId, AuthUser requester) {
@@ -57,6 +59,7 @@ public class ApprovalServiceImplV1 implements ApprovalService {
         // 남은 결재자가 없으면 최종 승인
         if (approvers.stream().noneMatch(ApprovalLine::isPending)) {
             document.approve();
+            resultEventRecorder.recordCompleted(document);
         }
         recordHistory(document, currentRound(documentId), employeeId, HistoryAction.APPROVE, null);
     }
@@ -69,6 +72,7 @@ public class ApprovalServiceImplV1 implements ApprovalService {
 
         myLine.disagree();
         document.reject();
+        resultEventRecorder.recordCompleted(document);
         recordHistory(document, currentRound(documentId), employeeId, HistoryAction.REJECT, comment);
     }
 
@@ -88,6 +92,7 @@ public class ApprovalServiceImplV1 implements ApprovalService {
                 .filter(ApprovalLine::isPending)
                 .forEach(ApprovalLine::skip);
         document.approve();
+        resultEventRecorder.recordCompleted(document);
         recordHistory(document, currentRound(documentId), employeeId, HistoryAction.FINAL_APPROVE, null);
     }
 
@@ -104,6 +109,7 @@ public class ApprovalServiceImplV1 implements ApprovalService {
         }
 
         document.cancel();
+        resultEventRecorder.recordCompleted(document);
         recordHistory(document, currentRound(documentId), employeeId, HistoryAction.CANCEL, null);
     }
 
