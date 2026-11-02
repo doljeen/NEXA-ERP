@@ -15,13 +15,9 @@ CUDA_VISIBLE_DEVICES="$GPU_ID" vllm serve "$MODEL_PATH" \
   --host 0.0.0.0 \
   --port "$PORT" \
   --api-key "$VLLM_API_KEY" \
-
   --gpu-memory-utilization "$GPU_MEM_UTIL" \
   --max-model-len "$MAX_MODEL_LEN" \
   --max-num-seqs "$MAX_NUM_SEQS" \
-
   --limit-mm-per-prompt '{"image": 4, "video": 0}' \
-
   --reasoning-parser qwen3 \
-
   2>&1 | tee -a "$HOME/ai/logs/vllm-$(date +%F).log"
