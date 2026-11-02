@@ -13,6 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
+import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import static com.ssafy.approval_service.support.ApprovalTestFixtures.BASE;
@@ -21,12 +22,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Postgres 컨테이너를 띄우는 통합 테스트 베이스. Docker 가 필요하다.
+ * Postgres·Kafka 컨테이너를 띄우는 통합 테스트 베이스. Docker 가 필요하다.
  * 컨테이너는 JVM 당 한 번만 띄우고 모든 테스트 클래스가 공유한다(싱글턴, user-service 와 같은 방식).
  * Eureka 등록은 끈다. 인증은 각 테스트에서 jwt() 로 흉내 내므로 JWKS 서버도 필요 없다.
  * user-service 는 FakeUserServiceClient 로 대신한다 (지정하지 않은 사원은 모두 재직 중).
+ * config-server 는 쓰지 않는다 (Kafka 주소는 @ServiceConnection 이 넣어 준다). 아웃박스 스케줄러는 끈다. 발행은 테스트가 OutboxPublisher 를 직접 호출해 확인한다.
  */
-@SpringBootTest(properties = "eureka.client.enabled=false")
+@SpringBootTest(properties = {"eureka.client.enabled=false", "spring.cloud.config.enabled=false",
+        "app.outbox.scheduler.enabled=false"})
 @AutoConfigureMockMvc
 @Import(AbstractIntegrationTest.FakeUserServiceConfig.class)
 public abstract class AbstractIntegrationTest {
@@ -34,8 +37,13 @@ public abstract class AbstractIntegrationTest {
     @ServiceConnection
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
 
+    /** compose 와 같은 공식 이미지·버전 (KRaft 단일 노드) */
+    @ServiceConnection
+    protected static final KafkaContainer KAFKA = new KafkaContainer("apache/kafka:3.9.1");
+
     static {
         POSTGRES.start();
+        KAFKA.start();
     }
 
     @Autowired
