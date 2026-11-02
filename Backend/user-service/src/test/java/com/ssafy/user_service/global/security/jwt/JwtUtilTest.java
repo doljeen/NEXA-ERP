@@ -46,7 +46,7 @@ class JwtUtilTest {
     void 임시키로_발급한_토큰을_검증하고_claim을_읽는다() throws Exception {
         JwtUtil util = jwtUtil(props("", ""));
 
-        IssuedToken access = util.generateAccessToken(7L, Role.ADMIN);
+        IssuedToken access = util.generateAccessToken(7L, Role.ADMIN, null, null, null);
         IssuedToken refresh = util.generateRefreshToken(7L);
 
         Claims ac = util.parseClaims(access.value());
@@ -60,6 +60,27 @@ class JwtUtilTest {
         assertEquals(JwtUtil.TYPE_REFRESH, util.getType(rc));
         assertNull(util.getRole(rc));
         assertNotEquals(access.id(), refresh.id());
+    }
+
+    @Test
+    void access_토큰에_소속_ID를_싣고_읽는다() throws Exception {
+        JwtUtil util = jwtUtil(props("", ""));
+
+        Claims withJob = util.parseClaims(util.generateAccessToken(7L, Role.USER, 12L, 3L, 5L).value());
+        assertEquals(12L, util.getDeptId(withJob));
+        assertEquals(3L, util.getGradeId(withJob));
+        assertEquals(5L, util.getDutyId(withJob));
+
+        // 값이 없으면 claim 자체를 넣지 않는다
+        Claims withoutJob = util.parseClaims(util.generateAccessToken(7L, Role.USER, null, null, null).value());
+        assertFalse(withoutJob.containsKey("deptId"));
+        assertNull(util.getDeptId(withoutJob));
+        assertNull(util.getGradeId(withoutJob));
+        assertNull(util.getDutyId(withoutJob));
+
+        // refresh 토큰에는 소속 정보를 싣지 않는다
+        Claims refresh = util.parseClaims(util.generateRefreshToken(7L).value());
+        assertNull(util.getDeptId(refresh));
     }
 
     @Test
@@ -87,7 +108,7 @@ class JwtUtilTest {
     void 다른_키로_서명한_토큰은_거부된다() throws Exception {
         JwtUtil signer = jwtUtil(props("", ""));
         JwtUtil verifier = jwtUtil(props("", ""));
-        String token = signer.generateAccessToken(1L, Role.USER).value();
+        String token = signer.generateAccessToken(1L, Role.USER, null, null, null).value();
         assertThrows(JwtException.class, () -> verifier.parseClaims(token));
     }
 
@@ -95,7 +116,7 @@ class JwtUtilTest {
     void 만료된_토큰도_서명이_맞으면_claims를_읽을_수_있다() throws Exception {
         JwtProperties props = new JwtProperties("", "", -1_000L, 604_800_000L); // 이미 만료된 access
         JwtUtil util = jwtUtil(props);
-        String expired = util.generateAccessToken(3L, Role.USER).value();
+        String expired = util.generateAccessToken(3L, Role.USER, null, null, null).value();
         assertThrows(JwtException.class, () -> util.parseClaims(expired));
         assertEquals(3L, util.getUserId(util.parseClaimsAllowExpired(expired)));
     }

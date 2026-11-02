@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
 import java.util.Date;
+import java.util.Map;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -61,6 +62,25 @@ class NexaSecurityIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.employeeId").value(7))
                 .andExpect(jsonPath("$.admin").value(false));
+    }
+
+    @Test
+    void 토큰의_소속_ID가_들어온다() throws Exception {
+        String token = token(KEY, "7", "access", "USER", 60, Map.of("deptId", 12, "gradeId", 3L, "dutyId", 5));
+        mvc.perform(get("/me").header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deptId").value(12))
+                .andExpect(jsonPath("$.gradeId").value(3))
+                .andExpect(jsonPath("$.dutyId").value(5));
+    }
+
+    @Test
+    void 소속_claim이_없으면_null() throws Exception {
+        mvc.perform(get("/me").header("Authorization", bearer(token(KEY, "7", "access", "USER", 60))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deptId").doesNotExist())
+                .andExpect(jsonPath("$.gradeId").doesNotExist())
+                .andExpect(jsonPath("$.dutyId").doesNotExist());
     }
 
     @Test
@@ -120,14 +140,20 @@ class NexaSecurityIntegrationTest {
 
     private static String token(RSAKey key, String subject, String type, String role, long expiresInSeconds)
             throws JOSEException {
+        return token(key, subject, type, role, expiresInSeconds, Map.of());
+    }
+
+    private static String token(RSAKey key, String subject, String type, String role, long expiresInSeconds,
+                                Map<String, Object> extraClaims) throws JOSEException {
         Instant now = Instant.now();
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
                 .subject(subject)
                 .claim("type", type)
                 .claim("role", role)
                 .issueTime(Date.from(now.minusSeconds(120)))
-                .expirationTime(Date.from(now.plusSeconds(expiresInSeconds)))
-                .build();
+                .expirationTime(Date.from(now.plusSeconds(expiresInSeconds)));
+        extraClaims.forEach(builder::claim);
+        JWTClaimsSet claims = builder.build();
         SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(), claims);
         jwt.sign(new RSASSASigner(key));
         return jwt.serialize();
@@ -171,7 +197,8 @@ class NexaSecurityIntegrationTest {
 
             @GetMapping({"/me", "/admin"})
             AuthUserView me(@CurrentUser AuthUser user) {
-                return new AuthUserView(user.employeeId(), user.isAdmin());
+                return new AuthUserView(user.employeeId(), user.isAdmin(),
+                        user.deptId(), user.gradeId(), user.dutyId());
             }
 
             @GetMapping("/me/id")
@@ -180,7 +207,7 @@ class NexaSecurityIntegrationTest {
             }
         }
 
-        record AuthUserView(Long employeeId, boolean admin) {
+        record AuthUserView(Long employeeId, boolean admin, Long deptId, Long gradeId, Long dutyId) {
         }
     }
 }
