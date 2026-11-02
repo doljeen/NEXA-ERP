@@ -73,6 +73,9 @@ user-service의 이관용 내부 API는 아직 없어서, 적재 테스트는 `F
   - ROUND·VLOOKUP 등이 섞인 수식(통상시급, 4대보험, 소득세)은 아직 다시 계산하지 않음
 - 직원명부 대조: 직원명부가 아닌 파일의 사번이 같은 작업의 직원명부에 있는지 `EMP_NOT_IN_ROSTER`, 이름이 같은지 `EMP_NAME_MISMATCH`,
   사번 빈 칸 `EMP_KEY_MISSING`(이름으로 찾은 사번 제안). 숫자 셀이라 앞자리 0이 빠진 사번은 명부 자리수로 채워 대조하고 `EMPNO_ZERO_PADDED`
+- 직원명부 날짜 대조 (경고): 다른 파일의 입사일 ≠ 명부 입사일 `ROSTER_HIRE_DATE_MISMATCH`, 4대보험 취득일 ≠ 입사일 `INSURANCE_ACQ_DATE_MISMATCH`(보험별 열은 한 건으로),
+  상실일 ≠ 퇴사일 다음 날·퇴사자인데 상실일 없음 `INSURANCE_LOSS_DATE_MISMATCH`. 명부에 사번이 중복이거나 퇴사일 < 입사일(명부 오류)이면 그 날짜는 쓰지 않고,
+  명부에 퇴사일 열이 없으면 상실일은 보지 않음
 - 코드값 오타: 직위·직급 등에서 드문 값이 흔한 값과 한글 자모 하나만 다르면 `CODE_TYPO_SUSPECTED` + 제안값
 - `REFERENCE` entity: 적재하지 않는 참고 자료(근태기록·발령대장 등)를 올려 위 검사·규칙 추출만 한다
 
