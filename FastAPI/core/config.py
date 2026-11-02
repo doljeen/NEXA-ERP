@@ -9,7 +9,16 @@ class Settings(BaseSettings):
     db_user: str
     db_password: str
 
+    # Local LLM (vLLM on GPU server, via SSAFY VPN)
+    local_llm_base_url: str = ""
+    local_llm_api_key: str = ""
+    local_llm_model: str = "qwen3.8-27b"
+    local_llm_timeout: float = 60.0
+
+    # GMS (fallback when the local LLM is down)
     GMS_API_KEY: str = ""
+    gms_base_url: str = ""
+    gms_model: str = ""
 
     eureka_server_url: str = ""
     instance_host: str = ""
