@@ -21,6 +21,13 @@ public final class FieldValueChecker {
     // 2024-01-02, 2024.1.2, 2024. 1. 2., 2024/01/02
     private static final Pattern YMD = Pattern.compile("(\\d{4})\\s*[-./]\\s*(\\d{1,2})\\s*[-./]\\s*(\\d{1,2})\\.?");
     private static final Pattern YMD_COMPACT = Pattern.compile("(\\d{4})(\\d{2})(\\d{2})");
+    // 2015년 3월 2일
+    private static final Pattern YMD_KOREAN = Pattern.compile("(\\d{4})\\s*년\\s*(\\d{1,2})\\s*월\\s*(\\d{1,2})\\s*일?");
+    // 24-03-02, 24.3.2 (연도 두 자리)
+    private static final Pattern YY_MD = Pattern.compile("(\\d{2})\\s*[-./]\\s*(\\d{1,2})\\s*[-./]\\s*(\\d{1,2})\\.?");
+    // 날짜 서식이 빠진 엑셀 날짜 셀은 1899-12-30부터의 일수로 읽힌다 (10000 = 1927년, 80000 = 2119년)
+    private static final Pattern EXCEL_SERIAL = Pattern.compile("[1-7]\\d{4}");
+    private static final LocalDate EXCEL_EPOCH = LocalDate.of(1899, 12, 30);
     private static final Pattern ISO_DATE = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
     private static final Pattern NUMBER = Pattern.compile("-?\\d+(\\.\\d+)?");
     private static final Pattern NUMBER_WITH_COMMA = Pattern.compile("-?\\d{1,3}(,\\d{3})+(\\.\\d+)?");
@@ -52,19 +59,26 @@ public final class FieldValueChecker {
         if (value == null) {
             return Optional.empty();
         }
-        Matcher m = YMD.matcher(value);
-        if (!m.matches()) {
-            m = YMD_COMPACT.matcher(value);
-            if (!m.matches()) {
-                return Optional.empty();
+        String v = value.strip();
+        if (EXCEL_SERIAL.matcher(v).matches()) {
+            return Optional.of(EXCEL_EPOCH.plusDays(Long.parseLong(v)));
+        }
+        for (Pattern p : new Pattern[]{YMD, YMD_COMPACT, YMD_KOREAN, YY_MD}) {
+            Matcher m = p.matcher(v);
+            if (m.matches()) {
+                int year = Integer.parseInt(m.group(1));
+                if (p == YY_MD) {
+                    // 두 자리 연도: 올해 이하면 2000년대, 아니면 1900년대 (26 → 2026, 85 → 1985)
+                    year += year <= LocalDate.now().getYear() % 100 ? 2000 : 1900;
+                }
+                try {
+                    return Optional.of(LocalDate.of(year, Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3))));
+                } catch (DateTimeException e) {
+                    return Optional.empty();
+                }
             }
         }
-        try {
-            return Optional.of(LocalDate.of(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)),
-                    Integer.parseInt(m.group(3))));
-        } catch (DateTimeException e) {
-            return Optional.empty();
-        }
+        return Optional.empty();
     }
 
     private static Optional<Finding> checkDate(FieldSpec f, String value) {
@@ -75,8 +89,10 @@ public final class FieldValueChecker {
         if (ISO_DATE.matcher(value).matches()) {
             return Optional.empty();
         }
+        String how = EXCEL_SERIAL.matcher(value.strip()).matches() ? " (엑셀 날짜 일련번호로 읽음)"
+                : YY_MD.matcher(value.strip()).matches() ? " (앞 두 자리를 연도로 읽음)" : "";
         return Optional.of(new Finding(Severity.FIX, IssueCode.DATE_FORMAT,
-                f.label() + " 날짜 형식을 YYYY-MM-DD로 통일합니다", date.get().toString()));
+                f.label() + " 날짜 형식을 YYYY-MM-DD로 통일합니다" + how, date.get().toString()));
     }
 
     private static Optional<Finding> checkNumber(FieldSpec f, String value) {

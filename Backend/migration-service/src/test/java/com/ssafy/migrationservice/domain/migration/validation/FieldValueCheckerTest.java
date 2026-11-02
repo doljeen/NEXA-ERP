@@ -33,6 +33,23 @@ class FieldValueCheckerTest {
                 .isEqualTo("2025-07-01");
         assertThat(FieldValueChecker.check(employee("hireDate"), "2024. 1. 2.").orElseThrow().suggestion())
                 .isEqualTo("2024-01-02");
+        assertThat(FieldValueChecker.check(employee("hireDate"), "2015년 3월 2일").orElseThrow().suggestion())
+                .isEqualTo("2015-03-02");
+    }
+
+    @Test
+    void 두_자리_연도와_엑셀_날짜_일련번호는_어떻게_읽었는지_알려준다() {
+        var yy = FieldValueChecker.check(employee("hireDate"), "24-03-02").orElseThrow();
+        assertThat(yy.suggestion()).isEqualTo("2024-03-02");
+        assertThat(yy.message()).contains("두 자리를 연도로");
+        assertThat(FieldValueChecker.check(employee("birthDate"), "85.11.3").orElseThrow().suggestion()).isEqualTo("1985-11-03");
+
+        var serial = FieldValueChecker.check(employee("hireDate"), "33169").orElseThrow();
+        assertThat(serial.suggestion()).isEqualTo("1990-10-23");
+        assertThat(serial.message()).contains("일련번호");
+        // 다섯 자리가 아닌 숫자(사번 등)는 날짜로 보지 않는다
+        assertThat(FieldValueChecker.parseDate("123")).isEmpty();
+        assertThat(FieldValueChecker.parseDate("123456")).isEmpty();
     }
 
     @Test
