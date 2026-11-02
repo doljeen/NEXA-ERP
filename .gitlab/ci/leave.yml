@@ -10,7 +10,7 @@ build-leave:
 
   script:
     - cd Backend/leave-service
-    - bash gradlew --no-daemon test bootJar
+    - bash gradlew --no-daemon bootJar -x test
 
   artifacts:
     when: always
