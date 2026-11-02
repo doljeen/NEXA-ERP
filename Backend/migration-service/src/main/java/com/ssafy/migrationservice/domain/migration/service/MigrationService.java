@@ -30,6 +30,7 @@ import com.ssafy.migrationservice.domain.migration.reader.TableReader;
 import com.ssafy.migrationservice.domain.migration.repository.MigrationFileRepository;
 import com.ssafy.migrationservice.domain.migration.repository.MigrationJobRepository;
 import com.ssafy.migrationservice.domain.migration.repository.StagingRowRepository;
+import com.ssafy.migrationservice.domain.migration.validation.DependentsChecker;
 import com.ssafy.migrationservice.domain.migration.validation.ValidationService;
 import com.ssafy.migrationservice.domain.migration.validation.issue.IssueRepository;
 import com.ssafy.migrationservice.domain.migration.validation.issue.Severity;
@@ -58,6 +59,7 @@ public class MigrationService {
     private final StagingChangeRepository stagingChangeRepository;
     private final MigrationBatchRepository batchRepository;
     private final FormulaRuleService formulaRuleService;
+    private final DependentsChecker dependentsChecker;
 
     @Transactional
     public MigrationCreateResponse create(MigrationCreateRequest r) {
@@ -102,6 +104,8 @@ public class MigrationService {
         validationService.validate(file);
         // 같은 양식의 다른 시트는 시트끼리 수식 비교 결과가 바뀌므로 다시 검증
         formulaRuleService.siblings(file).forEach(validationService::validate);
+        // 월별 급여 시트를 나중에 올려도 부양가족 공제가족수 대조가 되게 다시 검증
+        dependentsChecker.related(file).forEach(validationService::validate);
         // 직원명부를 새로 올리면 다른 파일의 사번 대조 결과가 바뀐다
         if (entity == MigrationEntity.HR_EMPLOYEE) {
             fileRepository.findByMigrationIdOrderByFileIdAsc(migrationId).stream()
