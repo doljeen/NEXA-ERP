@@ -107,6 +107,43 @@ class LegalStandardCheckerTest {
         });
     }
 
+    @Test
+    void 고정_지급_합이_최저임금_월_환산액보다_적은_행을_알린다() {
+        List<ParsedTable.Row> rows = sheet(Options.normal());
+        ParsedTable.Row r = rows.get(2);
+        Map<String, String> v = new LinkedHashMap<>(r.values());
+        v.put("기본급", "1800000");     // 1,800,000 + 식대 200,000 < 2,156,880 (연장·휴일수당은 산입하지 않음)
+        rows.set(2, new ParsedTable.Row(r.rowNo(), v));
+
+        List<ValidationIssue> issues = check("2026-10", rows).stream()
+                .filter(i -> i.code() == IssueCode.BELOW_MINIMUM_WAGE).toList();
+
+        assertThat(issues).singleElement().satisfies(i -> {
+            assertThat(i.rowNo()).isEqualTo(r.rowNo());
+            assertThat(i.message()).contains("'기본급' + '식대' 2,000,000원", "2,156,880원");
+        });
+        // 귀속연도를 모르면 하지 않는다
+        assertThat(check("10월", rows)).noneMatch(i -> i.code() == IssueCode.BELOW_MINIMUM_WAGE);
+    }
+
+    @Test
+    void 최저임금_미달이_많으면_단시간_근로자_자료로_보고_한_건으로_묶는다() {
+        List<ParsedTable.Row> rows = new ArrayList<>();
+        for (ParsedTable.Row r : sheet(Options.normal())) {
+            Map<String, String> v = new LinkedHashMap<>(r.values());
+            v.put("기본급", "1000000");
+            rows.add(new ParsedTable.Row(r.rowNo(), v));
+        }
+
+        List<ValidationIssue> issues = check("2026-10", rows).stream()
+                .filter(i -> i.code() == IssueCode.BELOW_MINIMUM_WAGE).toList();
+
+        assertThat(issues).singleElement().satisfies(i -> {
+            assertThat(i.rowNo()).isNull();
+            assertThat(i.message()).contains("12/12행", "단시간 근로자");
+        });
+    }
+
     // ---------- 데이터 ----------
 
     private static List<ValidationIssue> check(String sheet, List<ParsedTable.Row> rows) {

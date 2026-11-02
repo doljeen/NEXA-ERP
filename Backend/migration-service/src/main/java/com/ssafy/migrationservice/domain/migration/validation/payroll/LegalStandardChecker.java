@@ -22,7 +22,9 @@ import java.util.stream.Stream;
 import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.GROSS;
 import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.HOURLY;
 import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.MEAL;
+import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.NOT_AMOUNT;
 import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.PAY_ITEM;
+import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.SUBTOTAL;
 import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.TAXABLE;
 import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.find;
 import static com.ssafy.migrationservice.domain.migration.validation.payroll.PayrollColumns.normalize;
@@ -34,6 +36,7 @@ import static com.ssafy.migrationservice.domain.migration.validation.payroll.Pay
  * - 4대보험: 열마다 (기준 금액, 요율) 조합 중 가장 많은 행을 설명하는 것을 찾아, 귀속연도 요율과 다르면 경고.
  *   기준 금액이 비과세 식대를 포함한 지급계이면 경고. 국민연금은 기준소득월액·상하한 때문에 행마다 맞지 않을 수 있어 시트 단위로만 본다
  * - 가산수당: 통상시급 × 시간 × 법정 배율(연장 1.5, 야간 0.5, 휴일 8시간까지 1.5·초과 2.0)보다 적은 행
+ * - 최저임금: 고정 지급 항목(가산수당 제외) 합 ÷ 209시간이 귀속연도 최저시급보다 적은 행
  */
 public final class LegalStandardChecker {
 
@@ -86,6 +89,7 @@ public final class LegalStandardChecker {
         List<ValidationIssue> issues = new ArrayList<>();
         insurance(fileId, year, headers, rows, issues);
         premiums(fileId, headers, rows, issues);
+        minimumWage(fileId, year, headers, rows, issues);
         return issues;
     }
 
@@ -291,6 +295,66 @@ public final class LegalStandardChecker {
                             + "원)보다 " + won(s.required().subtract(s.pay())) + "원 적습니다 (상시 5인 미만 사업장은 적용 제외)",
                     s.pay().stripTrailingZeros().toPlainString(), s.required().setScale(0, RoundingMode.DOWN).toPlainString()));
         }
+    }
+
+    // ---------- 최저임금 ----------
+
+    private static final double MINIMUM_WAGE_COLLAPSE = 0.3;
+
+    /**
+     * 지급계 왼쪽의 지급 항목 중 연장·야간·휴일 수당을 뺀 열의 합을 월 209시간으로 나눠 최저시급과 비교한다
+     * (2024년부터 정기상여·복리후생비도 전액 산입). 단시간 근로자·월 중 입사자는 209시간 기준이 아니어서
+     * 시트의 30% 넘게 걸리면 행마다 알리지 않고 한 건으로 묶는다. 귀속연도를 모르면 하지 않는다
+     */
+    private static void minimumWage(Long fileId, Integer year, List<String> headers, List<ParsedTable.Row> rows,
+                                    List<ValidationIssue> issues) {
+        StatutoryRates target = year == null ? null : StatutoryRates.of(year).orElse(null);
+        int gross = find(headers, GROSS);
+        if (target == null || target.minimumWage() == null || gross < 0) {
+            return;
+        }
+        List<String> items = new ArrayList<>();
+        for (String h : headers.subList(0, gross)) {
+            String n = normalize(h);
+            boolean premium = Stream.of(Premium.values()).anyMatch(p -> p.keyword.matcher(n).find());
+            if (PAY_ITEM.matcher(n).find() && !NOT_AMOUNT.matcher(n).find() && !SUBTOTAL.matcher(n).matches()
+                    && !premium && numeric(rows, h)) {
+                items.add(h);
+            }
+        }
+        if (items.isEmpty()) {
+            return;
+        }
+        BigDecimal monthly = target.minimumWage().multiply(StatutoryRates.MONTHLY_HOURS);
+        Map<Integer, BigDecimal> below = new LinkedHashMap<>();     // 행 → 고정 지급 합
+        int checked = 0;
+        for (ParsedTable.Row r : rows) {
+            if (items.stream().anyMatch(r.errors()::containsKey)) {
+                continue;
+            }
+            BigDecimal sum = items.stream().map(h -> value(h).apply(r).orElse(BigDecimal.ZERO)).reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (sum.signum() <= 0) {
+                continue;
+            }
+            checked++;
+            if (sum.compareTo(monthly) < 0) {
+                below.put(r.rowNo(), sum);
+            }
+        }
+        String basis = items.stream().map(h -> "'" + h + "'").collect(Collectors.joining(" + "));
+        String standard = target.year() + "년 최저시급 " + won(target.minimumWage()) + "원 × 209시간 = " + won(monthly) + "원";
+        if (below.size() > checked * MINIMUM_WAGE_COLLAPSE) {
+            issues.add(new ValidationIssue(fileId, null, null, items.get(0), Severity.WARN, IssueCode.BELOW_MINIMUM_WAGE,
+                    below.size() + "/" + checked + "행의 " + basis + "이(가) " + standard + "보다 적습니다. 단시간 근로자·월 중 입사자 자료이면 "
+                            + "209시간 기준이 아니므로 근로시간에 맞춰 확인해 주세요", String.valueOf(below.size()), null));
+            return;
+        }
+        below.forEach((rowNo, sum) -> {
+            issues.add(new ValidationIssue(fileId, rowNo, null, items.get(0), Severity.WARN, IssueCode.BELOW_MINIMUM_WAGE,
+                    basis + " " + won(sum) + "원이 " + standard + "보다 " + won(monthly.subtract(sum)) + "원 적습니다. "
+                            + "주 40시간 근로자 기준이며, 단시간 근로·월 중 입사·무급 휴직이면 정상일 수 있습니다",
+                    sum.toPlainString(), monthly.toPlainString()));
+        });
     }
 
     // ---------- 공통 ----------
