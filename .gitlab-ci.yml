@@ -24,6 +24,7 @@ include:
   - local: /.gitlab/ci/leave.yml
   - local: /.gitlab/ci/nexa-security.yml
   - local: /.gitlab/ci/deploy.yml
+  - local: /.gitlab/ci/payroll.yml
 check-ci-environment:
   stage: verify
   image: eclipse-temurin:21-jdk
