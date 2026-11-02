@@ -54,7 +54,7 @@ public class AttendanceRequest {
     private Long approvalDocId;                     // 결재문서 ID
 
     @Column(name = "doc_no")
-    private Long docNo;                             // 문서번호
+    private String docNo;                           // 문서번호 (결재 서비스가 채번, 예: OVERTIME-2026-0001)
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
@@ -85,5 +85,11 @@ public class AttendanceRequest {
     public void addItem(AttendanceRequestItem item) {
         items.add(item);
         item.assignRequest(this);
+    }
+
+    /** 결재 문서 연결 (상신 시 결재 서비스가 만든 문서) */
+    public void linkApprovalDocument(Long approvalDocId, String docNo) {
+        this.approvalDocId = approvalDocId;
+        this.docNo = docNo;
     }
 }

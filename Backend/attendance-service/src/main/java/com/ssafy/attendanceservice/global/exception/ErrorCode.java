@@ -28,6 +28,8 @@ public enum ErrorCode {
     DUPLICATE_PENDING_REQUEST(HttpStatus.CONFLICT, "ATTN_010", "같은 날짜에 결재 대기 중인 신청이 있습니다."),
     WEEKLY_MAX_HOURS_EXCEEDED(HttpStatus.CONFLICT, "ATTN_011", "주 최대 근로시간을 초과합니다."),
     ATTENDANCE_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "ATTN_012", "근태 신청서를 찾을 수 없습니다."),
+    APPROVAL_REQUEST_REJECTED(HttpStatus.BAD_REQUEST, "ATTN_013", "결재 문서를 만들 수 없습니다."),
+    APPROVAL_CALL_FAILED(HttpStatus.BAD_GATEWAY, "ATTN_014", "결재 서비스 호출에 실패했습니다."),
 
     // 공통 (user-service와 동일)
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),

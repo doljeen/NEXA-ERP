@@ -19,3 +19,8 @@ spring:
 eureka:
   client:
     enabled: false
+
+attendance:
+  clients:
+    approval:
+      base-url: http://localhost:8083
