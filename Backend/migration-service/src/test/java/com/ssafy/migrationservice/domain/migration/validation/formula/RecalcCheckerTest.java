@@ -147,6 +147,27 @@ class RecalcCheckerTest {
     }
 
     @Test
+    void 지급계가_수당계를_더하면_수당계가_더하는_열은_빠진_것으로_보지_않는다() {
+        // A 기본급, B 연장수당, C 휴일수당, D 수당계, E 지급계
+        List<String> headers = List.of("기본급", "연장수당", "휴일수당", "수당계", "지급계");
+        List<ParsedTable.Row> withFormulas = new ArrayList<>();
+        List<ParsedTable.Row> valuesOnly = new ArrayList<>();
+        for (int n = 2; n <= 11; n++) {
+            Map<String, String> v = new LinkedHashMap<>();
+            v.put("기본급", String.valueOf(base(n)));
+            v.put("연장수당", String.valueOf(n * 1_000));
+            v.put("휴일수당", "30000");
+            v.put("수당계", String.valueOf(n * 1_000 + 30_000));
+            v.put("지급계", String.valueOf(base(n) + n * 1_000 + 30_000));
+            withFormulas.add(new ParsedTable.Row(n, v, Map.of("수당계", "SUM(B" + n + ":C" + n + ")", "지급계", "A" + n + "+D" + n), Map.of()));
+            valuesOnly.add(new ParsedTable.Row(n, v));
+        }
+
+        assertThat(RecalcChecker.check(1L, headers, withFormulas, FormulaInspector.inspect(headers, withFormulas, List.of()))).isEmpty();
+        assertThat(RecalcChecker.check(1L, headers, valuesOnly, List.of())).isEmpty();
+    }
+
+    @Test
     void 정상_시트_빈칸_오류_행은_검산하지_않는다() {
         assertThat(check(sheet(10, true))).isEmpty();
         assertThat(check(sheet(10, false))).isEmpty();

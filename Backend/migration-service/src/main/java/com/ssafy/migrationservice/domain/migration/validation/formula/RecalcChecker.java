@@ -9,12 +9,14 @@ import com.ssafy.migrationservice.domain.migration.validation.issue.ValidationIs
 import java.math.BigDecimal;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -36,6 +38,7 @@ public final class RecalcChecker {
     private static final Pattern DEDUCTION_TOTAL = Pattern.compile("공제(액)?(합계|총액|계)|총공제(액)?|dedtotal|totalded(uction)?s?|deductiontotal");
     private static final Pattern NET = Pattern.compile("(실|차인|차감)지급(액)?|실수령(액)?|netpay|net");
     private static final Pattern PAY_ITEM = Pattern.compile("기본급|급여|수당|식대|상여|성과급|보너스|인센티브|pay|alw|allowance|meal|bonus");
+    private static final Pattern SUBTOTAL = Pattern.compile(".*(계|총액|total)");    // 수당계·과세계·비과세계·소계
     private static final Pattern NOT_AMOUNT = Pattern.compile("시간(?!외)|시급|일수(?!당)|가족수(?!당)|과세(대상|표준|소득|급여|합계)|율|hrs|hour|rate|taxable|cnt|count");
 
     private static final Pattern TOKEN = Pattern.compile("\\s*(SUM\\(|\\$?[A-Z]{1,3}\\[0]|[-+(),:])");
@@ -71,11 +74,11 @@ public final class RecalcChecker {
         missingItems(fileId, headers, rows, formulaColumns, gross, payItems, "지급", issues);
         missingItems(fileId, headers, rows, formulaColumns, ded, dedItems, "공제", issues);
 
-        // 수식이 없는 합계 열: 열 이름으로 추정한 항목 합으로 다시 계산
-        if (gross >= 0 && payItems.size() >= 2) {
+        // 수식이 없는 합계 열: 열 이름으로 추정한 항목 합으로 다시 계산. 사이에 소계 열이 있으면 구성을 알 수 없어 하지 않는다
+        if (gross >= 0 && payItems.size() >= 2 && !hasSubtotal(headers, 0, gross)) {
             estimate(fileId, headers, rows, formulaColumns, gross, plus(payItems), "지급 항목", issues);
         }
-        if (ded >= 0 && dedItems.size() >= 2) {
+        if (ded >= 0 && dedItems.size() >= 2 && !hasSubtotal(headers, gross + 1, ded)) {
             estimate(fileId, headers, rows, formulaColumns, ded, plus(dedItems), "공제 항목", issues);
         }
         if (net >= 0 && gross >= 0 && ded >= 0) {
@@ -231,7 +234,20 @@ public final class RecalcChecker {
         if (terms == null || terms.values().stream().anyMatch(c -> c < 0)) {
             return;
         }
-        List<String> missing = items.stream().filter(c -> !terms.containsKey(c)).map(headers::get).toList();
+        // 합계가 소계 열을 더하면 그 소계 수식이 더하는 열도 들어간 것으로 본다 (수당계 = SUM(연장수당:휴일수당))
+        Set<Integer> covered = new HashSet<>(terms.keySet());
+        for (int c : terms.keySet()) {
+            if (c >= headers.size() || !SUBTOTAL.matcher(normalize(headers.get(c))).matches()) {
+                continue;
+            }
+            ColumnRule sub = formulaColumns.get(headers.get(c));
+            Map<Integer, Integer> subTerms = sub == null ? null : linear(sub.pattern());
+            if (subTerms == null) {
+                return;     // 값만 있는 소계: 무엇을 더했는지 모름
+            }
+            covered.addAll(subTerms.keySet());
+        }
+        List<String> missing = items.stream().filter(c -> !covered.contains(c)).map(headers::get).toList();
         if (missing.isEmpty()) {
             return;
         }
@@ -297,13 +313,17 @@ public final class RecalcChecker {
         return -1;
     }
 
+    private static boolean hasSubtotal(List<String> headers, int from, int to) {
+        return headers.subList(from, to).stream().map(RecalcChecker::normalize).anyMatch(h -> SUBTOTAL.matcher(h).matches());
+    }
+
     /** [from, to) 안의 금액 열. 지급 쪽은 이름이 지급 항목 같은 열만, 공제 쪽은 시간·요율·과세표준이 아닌 숫자 열 전부 */
     private static List<Integer> amountColumns(List<String> headers, List<ParsedTable.Row> rows, int from, int to, boolean payOnly) {
         List<Integer> out = new ArrayList<>();
         for (int c = from; c < to; c++) {
             String h = normalize(headers.get(c));
             if (NOT_AMOUNT.matcher(h).find() || (payOnly && !PAY_ITEM.matcher(h).find())
-                    || GROSS.matcher(h).matches() || DEDUCTION_TOTAL.matcher(h).matches() || NET.matcher(h).matches()) {
+                    || SUBTOTAL.matcher(h).matches() || GROSS.matcher(h).matches() || NET.matcher(h).matches()) {
                 continue;
             }
             String header = headers.get(c);
