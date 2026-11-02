@@ -28,7 +28,7 @@ build-config:
         - Backend/config-server/**/*
         - .gitlab/ci/config.yml
         - .gitlab/ci/deploy.yml
-        - .gitlab-ci.yml
+        - .gitlab/ci/gradle.yml
         - compose.dev.yml
         - infra/compose/**/*
         - infra/docker/**/*

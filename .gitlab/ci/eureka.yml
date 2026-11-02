@@ -28,7 +28,7 @@ build-eureka:
         - Backend/eureka-server/**/*
         - .gitlab/ci/eureka.yml
         - .gitlab/ci/deploy.yml
-        - .gitlab-ci.yml
+        - .gitlab/ci/gradle.yml
         - compose.dev.yml
         - infra/compose/**/*
         - infra/docker/**/*

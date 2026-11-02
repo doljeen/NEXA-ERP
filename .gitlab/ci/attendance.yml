@@ -26,7 +26,7 @@ build-attendance:
         - Backend/attendance-service/**/*
         - .gitlab/ci/attendance.yml
         - .gitlab/ci/testcontainers.yml
-        - .gitlab-ci.yml
+        - .gitlab/ci/gradle.yml
         - compose.dev.yml
         - infra/compose/**/*
         - .gitlab/ci/deploy.yml
