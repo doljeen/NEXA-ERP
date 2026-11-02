@@ -19,6 +19,9 @@ public final class FormulaPattern {
             "((?:'[^']+'|[A-Za-z0-9_가-힣.]+)!)\\$?[A-Z]{1,3}\\$?\\d+(?::\\$?[A-Z]{1,3}\\$?\\d+)?");
     private static final Pattern NUMBER = Pattern.compile("(?<![A-Za-z$\\[\\d.-])\\d+(\\.\\d+)?(?![\\d\\]])");
     private static final Pattern RELATIVE = Pattern.compile("(\\$?)([A-Z]{1,3})\\[(-?\\d+)]");
+    // 다른 시트 참조 (범위 끝이 상대 행 [n]으로 바뀐 것 포함)
+    private static final Pattern ANY_SHEET_REF = Pattern.compile(
+            "(?:'[^']+'|[A-Za-z0-9_가-힣.]+)!\\$?[A-Z]{1,3}\\$?\\d+(?::\\$?[A-Z]{1,3}(?:\\$?\\d+|\\[-?\\d+]))?");
 
     private FormulaPattern() {
     }
@@ -43,6 +46,14 @@ public final class FormulaPattern {
         String s = STRING.matcher(pattern).replaceAll("\"\"");
         s = SHEET_REF.matcher(s).replaceAll(r -> Matcher.quoteReplacement(r.group(1) + "REF"));
         return NUMBER.matcher(s).replaceAll("#");
+    }
+
+    /**
+     * 어느 시트를 참조하는지까지 지운 서명. 총괄 시트의 부서별 행(='가공1팀'!U71, ='프레스팀'!U89)이나
+     * 사람마다 소속 시트를 찾는 SUMIFS처럼, 행마다 참조 시트만 다른 것은 같은 규칙으로 본다
+     */
+    public static String loose(String pattern) {
+        return ANY_SHEET_REF.matcher(pattern).replaceAll("REF");     // 숫자·문자열은 그대로 (작년 기준일 DATE(2025,…) 같은 차이는 잡아야 함)
     }
 
     /** 사람이 읽는 규칙: 같은 행 참조는 {헤더}, 다른 행은 {헤더}[-1] */

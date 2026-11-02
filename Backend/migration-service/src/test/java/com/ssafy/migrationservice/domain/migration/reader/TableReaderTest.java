@@ -139,6 +139,36 @@ class TableReaderTest {
     }
 
     @Test
+    void 이름이_붙은_소계와_위쪽_행을_더하는_수식만_있는_행도_소계로_뺀다() throws IOException {
+        byte[] xlsx;
+        try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet s = wb.createSheet("12월");
+            String[][] data = {{"사번", "점포", "기본급", "공제"}, {"00123", "강남점", "100", "10"}, {"00124", "강남점", "200", "20"},
+                    {"", "강남점 소계", "", ""}, {"00125", "잠실점", "300", "30"}, {"", "", "", ""}, {"00126", "잠실점", "400", "40"}};
+            for (int i = 0; i < data.length; i++) {
+                Row r = s.createRow(i);
+                for (int c = 0; c < data[i].length; c++) {
+                    if (!data[i][c].isEmpty()) {
+                        r.createCell(c).setCellValue(data[i][c]);
+                    }
+                }
+            }
+            s.getRow(3).createCell(2).setCellFormula("SUM(C2:C3)");      // 4행: 이름 붙은 소계
+            s.getRow(3).createCell(3).setCellFormula("SUM(D2:D3)");
+            s.getRow(5).createCell(2).setCellFormula("SUM(C5:C5)");      // 6행: 이름 없이 위쪽 행만 더함
+            s.getRow(5).createCell(3).setCellFormula("SUM(D5:D5)");
+            wb.write(out);
+            xlsx = out.toByteArray();
+        }
+
+        ParsedTable t = reader.read("급여.xlsx", xlsx);
+
+        assertThat(t.rows()).extracting(ParsedTable.Row::rowNo).containsExactly(2, 3, 5, 7);
+        assertThat(t.totalRows()).containsExactly(4, 6);
+        assertThat(t.rowsAfterTotal()).isEmpty();        // 소계는 총계가 아니므로 아래 행을 '합계 아래 행'으로 보지 않음
+    }
+
+    @Test
     void csv_UTF8_BOM을_읽는다() {
         byte[] body = "사번,이름\n00123,홍길동\n".getBytes(StandardCharsets.UTF_8);
         byte[] withBom = new byte[body.length + 3];

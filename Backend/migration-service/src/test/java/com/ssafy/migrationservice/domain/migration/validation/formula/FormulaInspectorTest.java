@@ -38,6 +38,25 @@ class FormulaInspectorTest {
     }
 
     @Test
+    void 참조하는_시트만_다른_행은_같은_규칙으로_보고_계산이_다른_행만_다르다고_본다() {
+        List<String> headers = List.of("부서", "지급계");
+        List<ParsedTable.Row> rows = new ArrayList<>();
+        String[] sheets = {"'프레스팀'!U89", "'가공1팀'!U71", "'도장팀'!U70", "'조립팀'!U68", "'물류팀'!U50"};
+        for (int i = 0; i < sheets.length; i++) {
+            rows.add(new ParsedTable.Row(i + 2, Map.of("부서", "x", "지급계", "1"), Map.of("지급계", sheets[i]), Map.of()));
+        }
+        rows.add(new ParsedTable.Row(7, Map.of("부서", "x", "지급계", "1"), Map.of("지급계", "'영업팀'!U40*2"), Map.of()));
+
+        ColumnRule rule = FormulaInspector.inspect(headers, rows, List.of()).get(0);
+
+        assertThat(rule.otherRows()).containsOnlyKeys(7);
+
+        // 시트 참조가 아닌 숫자 차이(작년 기준일)는 계속 다른 규칙으로 본다
+        assertThat(FormulaPattern.loose(FormulaPattern.pattern("DATE(2025,12,31)-D5+1", 5)))
+                .isNotEqualTo(FormulaPattern.loose(FormulaPattern.pattern("DATE(2026,12,31)-D5+1", 5)));
+    }
+
+    @Test
     void 읽기_좋은_규칙은_헤더_이름으로_쓴다() {
         String p = FormulaPattern.pattern("ROUNDDOWN((A5+B5)/209,0)", 5);
         assertThat(FormulaPattern.readable(p, HEADERS)).isEqualTo("=ROUNDDOWN(({기본급}+{직책수당})/209,0)");
