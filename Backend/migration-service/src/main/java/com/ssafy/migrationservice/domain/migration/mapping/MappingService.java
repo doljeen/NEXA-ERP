@@ -3,6 +3,7 @@ package com.ssafy.migrationservice.domain.migration.mapping;
 import com.ssafy.migrationservice.domain.migration.dto.ColumnMappingView;
 import com.ssafy.migrationservice.domain.migration.dto.MappingUpdateRequest;
 import com.ssafy.migrationservice.domain.migration.entity.MigrationFile;
+import com.ssafy.migrationservice.domain.migration.repository.StagingRowRepository;
 import com.ssafy.migrationservice.domain.migration.validation.schema.EntitySchema;
 import com.ssafy.migrationservice.domain.migration.validation.schema.EntitySchemas;
 import com.ssafy.migrationservice.domain.migration.validation.schema.FieldSpec;
@@ -12,40 +13,68 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class MappingService {
 
-    private final ColumnMappingRepository mappingRepository;
+    private static final int SAMPLE_ROWS = 50;
 
-    /** 업로드 직후: 헤더마다 추천 매핑을 만든다 (confirmed=false) */
+    private final ColumnMappingRepository mappingRepository;
+    private final StagingRowRepository stagingRowRepository;
+    private final LlmMappingAdvisor llmMappingAdvisor;
+
+    /** 업로드 직후: 헤더마다 추천 매핑을 만든다 (confirmed=false). 동의어로 못 찾은 컬럼은 LLM 추천을 받는다 */
     @Transactional
     public void suggest(MigrationFile file) {
         mappingRepository.deleteByFileId(file.getFileId());
-        Map<String, String> suggested = EntitySchemas.of(file.getEntity())
-                .map(schema -> ColumnMappingSuggester.suggest(List.of(file.getHeaders()), schema))
-                .orElseGet(() -> {
-                    Map<String, String> none = new HashMap<>();
-                    for (String h : file.getHeaders()) {
-                        none.put(h, null);
-                    }
-                    return none;
-                });
+        Optional<EntitySchema> schema = EntitySchemas.of(file.getEntity());
+        Map<String, String> suggested = new HashMap<>();
+        schema.ifPresent(s -> suggested.putAll(ColumnMappingSuggester.suggest(List.of(file.getHeaders()), s)));
+        Map<String, LlmMappingAdvisor.Advice> llm = schema.map(s -> llmAdvice(file, s, suggested)).orElse(Map.of());
         for (String header : file.getHeaders()) {
+            String synonym = suggested.get(header);
+            LlmMappingAdvisor.Advice advice = llm.get(header);
             mappingRepository.save(ColumnMapping.builder()
                     .fileId(file.getFileId())
                     .sourceColumn(header)
-                    .targetField(suggested.get(header))
+                    .targetField(synonym != null ? synonym : advice == null ? null : advice.field())
                     .confirmed(false)
+                    .suggestedBy(synonym != null ? "SYNONYM" : advice == null ? null : "LLM")
+                    .reason(synonym != null || advice == null ? null : truncate(advice.reason()))
                     .build());
         }
+    }
+
+    private Map<String, LlmMappingAdvisor.Advice> llmAdvice(MigrationFile file, EntitySchema schema, Map<String, String> suggested) {
+        List<String> unmapped = List.of(file.getHeaders()).stream().filter(h -> suggested.get(h) == null).toList();
+        if (unmapped.isEmpty() || !llmMappingAdvisor.enabled()) {
+            return Map.of();
+        }
+        Map<String, List<String>> samples = new LinkedHashMap<>();
+        unmapped.forEach(h -> samples.put(h, new ArrayList<>()));
+        stagingRowRepository.findByFileId(file.getFileId()).stream().limit(SAMPLE_ROWS).forEach(r -> unmapped.forEach(h -> {
+            String v = r.values().get(h);
+            if (v != null) {
+                samples.get(h).add(v);
+            }
+        }));
+        Set<String> taken = new HashSet<>(suggested.values());
+        taken.remove(null);
+        return llmMappingAdvisor.advise(schema, samples, taken);
+    }
+
+    private static String truncate(String s) {
+        return s == null || s.length() <= 300 ? s : s.substring(0, 300);
     }
 
     /**
@@ -59,8 +88,10 @@ public class MappingService {
         Set<String> headers = Set.of(file.getHeaders());
 
         Map<String, String> next = new HashMap<>();
+        Map<String, ColumnMapping> before = new HashMap<>();
         for (ColumnMapping cm : mappingRepository.findByFileIdOrderByMappingIdAsc(file.getFileId())) {
             next.put(cm.getSourceColumn(), cm.getTargetField());
+            before.put(cm.getSourceColumn(), cm);
         }
         for (MappingUpdateRequest.Item item : request.columnMappings()) {
             if (!headers.contains(item.sourceColumn())) {
@@ -80,11 +111,15 @@ public class MappingService {
 
         mappingRepository.deleteByFileId(file.getFileId());
         for (String header : file.getHeaders()) {
+            ColumnMapping old = before.get(header);
+            boolean same = old != null && Objects.equals(old.getTargetField(), next.get(header));
             mappingRepository.save(ColumnMapping.builder()
                     .fileId(file.getFileId())
                     .sourceColumn(header)
                     .targetField(next.get(header))
                     .confirmed(true)
+                    .suggestedBy(same ? old.getSuggestedBy() : "USER")
+                    .reason(same ? old.getReason() : null)
                     .build());
         }
     }
@@ -95,7 +130,7 @@ public class MappingService {
         EntitySchemas.of(file.getEntity()).ifPresent(s -> s.fields().forEach(f -> labels.put(f.name(), f.label())));
         return mappingRepository.findByFileIdOrderByMappingIdAsc(file.getFileId()).stream()
                 .map(cm -> new ColumnMappingView(cm.getSourceColumn(), cm.getTargetField(),
-                        labels.get(cm.getTargetField()), cm.isConfirmed()))
+                        labels.get(cm.getTargetField()), cm.isConfirmed(), cm.getSuggestedBy(), cm.getReason()))
                 .toList();
     }
 
