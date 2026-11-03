@@ -3,12 +3,17 @@ package com.ssafy.attendanceservice.domain.attendance.repository;
 import com.ssafy.attendanceservice.domain.attendance.entity.AttendanceRequest;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequestStatus;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequestType;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 public interface AttendanceRequestRepository extends JpaRepository<AttendanceRequest, Long> {
 
@@ -24,6 +29,10 @@ public interface AttendanceRequestRepository extends JpaRepository<AttendanceReq
     boolean existsByEmpIdAndReqTypeAndSubstDateAndStatusIn(
             Long empId, AttendanceRequestType reqType, LocalDate substDate, Collection<AttendanceRequestStatus> statuses);
 
+    // 대상일의 특정 종류·상태 신청 (재계산 시 승인된 초과근무 조회)
+    List<AttendanceRequest> findByEmpIdAndTargetDateAndReqTypeAndStatus(
+            Long empId, LocalDate targetDate, AttendanceRequestType reqType, AttendanceRequestStatus status);
+
     // 상신 일시 기간 내 내 신청 (최신순, 전체 유형)
     List<AttendanceRequest> findByEmpIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
             Long empId, OffsetDateTime from, OffsetDateTime to);
@@ -31,4 +40,9 @@ public interface AttendanceRequestRepository extends JpaRepository<AttendanceReq
     // 상신 일시 기간 내 내 신청 (최신순, 특정 유형)
     List<AttendanceRequest> findByEmpIdAndReqTypeAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
             Long empId, AttendanceRequestType reqType, OffsetDateTime from, OffsetDateTime to);
+
+    // 결재 결과 반영용. 같은 신청의 결과가 동시에 와도 하나씩 처리한다
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from AttendanceRequest r where r.attReqId = :attReqId")
+    Optional<AttendanceRequest> findByIdForUpdate(@Param("attReqId") Long attReqId);
 }

@@ -92,4 +92,27 @@ public class AttendanceRequest {
         this.approvalDocId = approvalDocId;
         this.docNo = docNo;
     }
+
+    /** 결재 대기 중인가 */
+    public boolean isPending() {
+        return status == AttendanceRequestStatus.PENDING;
+    }
+
+    /** 결재 승인 */
+    public void approve(OffsetDateTime completedAt) {
+        this.status = AttendanceRequestStatus.APPROVED;
+        this.completedAt = completedAt;
+    }
+
+    /** 결재 반려 (최종. 다시 하려면 새로 신청) */
+    public void reject(OffsetDateTime completedAt) {
+        this.status = AttendanceRequestStatus.REJECTED;
+        this.completedAt = completedAt;
+    }
+
+    /** 결재 회수 */
+    public void cancel(OffsetDateTime completedAt) {
+        this.status = AttendanceRequestStatus.CANCELED;
+        this.completedAt = completedAt;
+    }
 }

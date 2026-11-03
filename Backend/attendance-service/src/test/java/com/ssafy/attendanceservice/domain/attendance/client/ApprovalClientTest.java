@@ -1,6 +1,5 @@
 package com.ssafy.attendanceservice.domain.attendance.client;
 
-import com.ssafy.attendanceservice.domain.attendance.client.ApprovalDocumentCreateRequest.ApprovalLine;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequestType;
 import com.ssafy.attendanceservice.global.exception.BusinessException;
 import com.ssafy.attendanceservice.global.exception.ErrorCode;
@@ -16,8 +15,6 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
-
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -57,7 +54,7 @@ class ApprovalClientTest {
 
     private static ApprovalDocumentCreateRequest overtimeRequest() {
         return ApprovalDocumentCreateRequest.ofAttendance("초과근무 신청 (2026-11-05)",
-                AttendanceRequestType.OVERTIME, 42L, List.of(new ApprovalLine(12L, 1, "APPROVER")));
+                AttendanceRequestType.OVERTIME, 42L, new ApprovalDocumentCreateRequest.Attributes(120, 600));
     }
 
     @Test
@@ -68,7 +65,8 @@ class ApprovalClientTest {
                 .andExpect(content().json("""
                         {"title":"초과근무 신청 (2026-11-05)","formType":"OVERTIME",
                          "sourceType":"ATTENDANCE","sourceId":42,
-                         "approvalLines":[{"empId":12,"step":1,"role":"APPROVER"}]}"""))
+                         "attributes":{"overtimeMinutes":120,"monthlyOvertimeMinutes":600}}"""))
+                .andExpect(jsonPath("$.approvalLines").doesNotExist())
                 .andExpect(jsonPath("$.requestKey").value(ApprovalDocumentCreateRequest.requestKeyOf(42L).toString()))
                 .andRespond(withSuccess("""
                         {"success":true,"data":{"documentId":128,"docNo":"OVERTIME-2026-0001"}}""",
@@ -109,5 +107,20 @@ class ApprovalClientTest {
         assertThat(ApprovalDocumentCreateRequest.requestKeyOf(42L))
                 .isEqualTo(ApprovalDocumentCreateRequest.requestKeyOf(42L))
                 .isNotEqualTo(ApprovalDocumentCreateRequest.requestKeyOf(43L));
+    }
+
+    @Test
+    void 초과근무가_아니면_attributes를_보내지_않음() {
+        server.expect(requestTo(DOCUMENTS_URL))
+                .andExpect(jsonPath("$.formType").value("TIME_FIX"))
+                .andExpect(jsonPath("$.attributes").doesNotExist())
+                .andRespond(withSuccess("""
+                        {"success":true,"data":{"documentId":129,"docNo":"TIME_FIX-2026-0001"}}""",
+                        MediaType.APPLICATION_JSON));
+
+        client.createDocument(ApprovalDocumentCreateRequest.ofAttendance("근무시간 수정 신청 (2026-11-05)",
+                AttendanceRequestType.TIME_FIX, 43L, null));
+
+        server.verify();
     }
 }

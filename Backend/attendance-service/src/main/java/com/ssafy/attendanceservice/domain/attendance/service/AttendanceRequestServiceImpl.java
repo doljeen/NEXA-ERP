@@ -29,6 +29,7 @@ import com.ssafy.attendanceservice.global.exception.BusinessException;
 import com.ssafy.attendanceservice.global.exception.ErrorCode;
 import com.ssafy.attendanceservice.global.util.DateTimeUtils;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +37,7 @@ import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.YearMonth;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -43,6 +45,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AttendanceRequestServiceImpl implements AttendanceRequestService {
@@ -107,7 +110,7 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
         AttendanceRequestType reqType = request.reqType();
 
         // 1. 미리보기와 같은 검증 (중복 신청, 주 최대 근로시간, 대상 로그 등)
-        preview(empId, request.toPreviewRequest());
+        AttendanceRequestPreviewResponse preview = preview(empId, request.toPreviewRequest());
 
         // 2. 신청서 저장. 결재 문서에 신청 ID를 넘기려고 먼저 저장한다
         AttendanceRequest attendanceRequest = AttendanceRequest.builder()
@@ -124,7 +127,7 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
 
         // 3. 결재 문서 생성 (신청한 사원의 토큰으로 호출). 실패하면 예외로 신청서 저장도 롤백된다
         ApprovalDocument document = approvalClient.createDocument(ApprovalDocumentCreateRequest.ofAttendance(
-                titleOf(request), reqType, attendanceRequest.getAttReqId(), toApprovalLines(request.approvalLines())));
+                titleOf(request), reqType, attendanceRequest.getAttReqId(), attributesOf(empId, request, preview)));
         attendanceRequest.linkApprovalDocument(document.documentId(), document.docNo());
 
         return AttendanceRequestDetailResponse.from(attendanceRequest);
@@ -160,11 +163,70 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
         };
     }
 
-    private static List<ApprovalDocumentCreateRequest.ApprovalLine> toApprovalLines(
-            List<AttendanceRequestSubmitRequest.ApprovalLine> lines) {
-        return lines.stream()
-                .map(line -> new ApprovalDocumentCreateRequest.ApprovalLine(line.empId(), line.step(), line.role()))
-                .toList();
+    /** 결재 전결 판단 값. 초과근무만 신청 시간과 그 달 누적(이번 신청 포함)을 보낸다 */
+    private ApprovalDocumentCreateRequest.Attributes attributesOf(Long empId, AttendanceRequestSubmitRequest request,
+                                                                 AttendanceRequestPreviewResponse preview) {
+        if (request.reqType() != AttendanceRequestType.OVERTIME) {
+            return null;
+        }
+        int requestedMin = preview.overtime().requestedMin();
+        return new ApprovalDocumentCreateRequest.Attributes(
+                requestedMin, monthlyOvertimeMinExcept(empId, request.targetDate()) + requestedMin);
+    }
+
+    /** 대상일이 속한 달에서 대상일을 제외한 초과근로(연장 + 휴일) 합 */
+    private int monthlyOvertimeMinExcept(Long empId, LocalDate targetDate) {
+        YearMonth month = YearMonth.from(targetDate);
+        return attendanceDailyRepository
+                .findByEmpIdAndWorkDateBetweenOrderByWorkDateAsc(empId, month.atDay(1), month.atEndOfMonth()).stream()
+                .filter(d -> !d.getWorkDate().equals(targetDate))
+                .mapToInt(d -> d.getOtExtendedMin() + d.getOtHolidayMin())
+                .sum();
+    }
+
+    @Override
+    @Transactional
+    public void applyApprovalResult(Long attReqId, AttendanceRequestStatus result) {
+        if (result == AttendanceRequestStatus.PENDING) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "결재 결과는 승인·반려·회수 중 하나여야 합니다.");
+        }
+
+        // 1. 같은 신청의 결과가 동시에 와도 하나씩 처리
+        AttendanceRequest request = attendanceRequestRepository.findByIdForUpdate(attReqId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ATTENDANCE_REQUEST_NOT_FOUND));
+
+        // 2. 이미 반영된 신청이면 무시 (같은 결과 중복 수신, 반려 후 승인 등)
+        if (!request.isPending()) {
+            log.info("결재 결과 무시 (이미 처리됨): attReqId={}, 현재={}, 받은 결과={}",
+                    attReqId, request.getStatus(), result);
+            return;
+        }
+
+        // 3. 상태 변경. 승인이면 신청 내용을 근태에 반영 (재계산이 승인 상태를 조회하므로 상태를 먼저 바꾼다)
+        OffsetDateTime now = DateTimeUtils.now();
+        switch (result) {
+            case APPROVED -> {
+                request.approve(now);
+                applyApproved(request);
+            }
+            case REJECTED -> request.reject(now);
+            case CANCELED -> request.cancel(now);
+            case PENDING -> throw new IllegalStateException("위에서 걸러짐");
+        }
+    }
+
+    /** 승인된 신청을 근태에 반영 */
+    private void applyApproved(AttendanceRequest request) {
+        Long empId = request.getEmpId();
+        switch (request.getReqType()) {
+            case TIME_FIX -> processor.applyTimeFix(request);
+            case OVERTIME -> attendanceDailyRepository.findByEmpIdAndWorkDate(empId, request.getTargetDate())
+                    .ifPresent(processor::syncDaily);
+            case HOLIDAY_SUBST -> {
+                processor.resyncHoliday(empId, request.getTargetDate());
+                processor.resyncHoliday(empId, request.getSubstDate());
+            }
+        }
     }
 
     // ===== 휴일대체 =====
@@ -181,12 +243,12 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
         }
 
         // 1. 대상일은 휴일 (공휴일 또는 근무 요일 아님)
-        if (!processor.isHoliday(targetDate, processor.resolveWorkGroup(empId, targetDate))) {
+        if (!processor.isHoliday(empId, targetDate, processor.resolveWorkGroup(empId, targetDate))) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "대상일(targetDate)은 휴일이어야 합니다.");
         }
 
         // 2. 대체일은 근무일
-        if (processor.isHoliday(substDate, processor.resolveWorkGroup(empId, substDate))) {
+        if (processor.isHoliday(empId, substDate, processor.resolveWorkGroup(empId, substDate))) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "대체일(substDate)은 근무일이어야 합니다.");
         }
 
@@ -303,7 +365,7 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
         WorkGroup workGroup = daily.map(AttendanceDaily::getWorkGroup)
                 .orElseGet(() -> processor.resolveWorkGroup(empId, targetDate));
         boolean isHoliday = daily.map(AttendanceDaily::getIsHoliday)
-                .orElseGet(() -> processor.isHoliday(targetDate, workGroup));
+                .orElseGet(() -> processor.isHoliday(empId, targetDate, workGroup));
 
         OffsetDateTime clockOut = after.stream()
                 .filter(log -> WorkStatusCode.CLOCK_OUT.equals(log.statusCode()))
@@ -315,7 +377,8 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
                 clockOut,
                 workGroup.getDailyStdMinutes(),
                 workGroup.getBreakMinutes(),
-                isHoliday);
+                isHoliday,
+                processor.approvedOvertimes(empId, targetDate));
 
         // 6. 주간 총 근로시간 (그날은 수정 후 값으로 대체)
         int weeklyTotalMin = weeklyTotalMinExcept(empId, targetDate) + afterWorkTime.totalMin();

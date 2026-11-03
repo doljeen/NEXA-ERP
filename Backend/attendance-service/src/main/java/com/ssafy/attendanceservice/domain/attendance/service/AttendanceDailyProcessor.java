@@ -1,12 +1,18 @@
 package com.ssafy.attendanceservice.domain.attendance.service;
 
 import com.ssafy.attendanceservice.domain.attendance.calculator.AnomalyJudge;
+import com.ssafy.attendanceservice.domain.attendance.calculator.ApprovedOvertime;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkLogEntry;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeCalculator;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeResult;
 import com.ssafy.attendanceservice.domain.attendance.entity.*;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AnomalyType;
+import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequestStatus;
+import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequestType;
+import com.ssafy.attendanceservice.domain.attendance.entity.enums.WorkStatusSource;
 import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceAnomalyRepository;
+import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceDailyRepository;
+import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceRequestRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.EmployeeWorkGroupRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.HolidayRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.WorkGroupRepository;
@@ -16,6 +22,7 @@ import com.ssafy.attendanceservice.global.exception.BusinessException;
 import com.ssafy.attendanceservice.global.exception.ErrorCode;
 import com.ssafy.attendanceservice.global.util.DateTimeUtils;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -26,6 +33,7 @@ import java.util.List;
  * 일일 근태 공통 처리. 본인 출퇴근, 관리자 로그 수정, 결재 반영이 같은 규칙으로 동작하도록 한 곳에 모은다.
  * 트랜잭션은 호출하는 서비스 메서드의 트랜잭션에 참여한다.
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class AttendanceDailyProcessor {
@@ -36,6 +44,11 @@ public class AttendanceDailyProcessor {
     private final EmployeeWorkGroupRepository employeeWorkGroupRepository;
     private final WorkGroupRepository workGroupRepository;
     private final HolidayRepository holidayRepository;
+    private final AttendanceRequestRepository attendanceRequestRepository;
+    private final AttendanceDailyRepository attendanceDailyRepository;
+
+    // 휴일 판정에 반영하는 휴일대체 상태 (승인된 것만)
+    private static final List<AttendanceRequestStatus> APPROVED_ONLY = List.of(AttendanceRequestStatus.APPROVED);
 
     /** 해당 날짜에 배정된 근무그룹. 배정이 없으면 기본 그룹 */
     public WorkGroup resolveWorkGroup(Long empId, LocalDate date) {
@@ -44,8 +57,19 @@ public class AttendanceDailyProcessor {
                 .orElseThrow(() -> new BusinessException(ErrorCode.DEFAULT_WORK_GROUP_NOT_FOUND));
     }
 
-    /** 휴일 여부: 공휴일이거나 근무그룹의 근무 요일이 아님 */
-    public boolean isHoliday(LocalDate date, WorkGroup workGroup) {
+    /**
+     * 휴일 여부. 승인된 휴일대체가 우선이다: 근무한 휴일(targetDate)은 근무일, 대신 쉬는 날(substDate)은 휴일.
+     * 그 외에는 공휴일이거나 근무그룹의 근무 요일이 아니면 휴일
+     */
+    public boolean isHoliday(Long empId, LocalDate date, WorkGroup workGroup) {
+        if (attendanceRequestRepository.existsByEmpIdAndReqTypeAndTargetDateAndStatusIn(
+                empId, AttendanceRequestType.HOLIDAY_SUBST, date, APPROVED_ONLY)) {
+            return false;
+        }
+        if (attendanceRequestRepository.existsByEmpIdAndReqTypeAndSubstDateAndStatusIn(
+                empId, AttendanceRequestType.HOLIDAY_SUBST, date, APPROVED_ONLY)) {
+            return true;
+        }
         return holidayRepository.existsById(date) || !workGroup.isWorkDay(date.getDayOfWeek());
     }
 
@@ -65,6 +89,16 @@ public class AttendanceDailyProcessor {
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORK_STATUS_CODE_NOT_FOUND));
     }
 
+    /** 그 근무일에 승인된 초과근무 신청의 시간 구간 (재계산과 근무시간 수정 미리보기가 같이 쓴다) */
+    public List<ApprovedOvertime> approvedOvertimes(Long empId, LocalDate workDate) {
+        return attendanceRequestRepository.findByEmpIdAndTargetDateAndReqTypeAndStatus(
+                        empId, workDate, AttendanceRequestType.OVERTIME, AttendanceRequestStatus.APPROVED).stream()
+                .flatMap(request -> request.getItems().stream())
+                .filter(item -> item.getEndAt() != null)
+                .map(item -> new ApprovedOvertime(item.getStartAt(), item.getEndAt()))
+                .toList();
+    }
+
     /** 그 근무일의 로그로 근로시간을 다시 계산해서 반영 (퇴근 전이면 0) */
     public WorkTimeResult recalculate(AttendanceDaily daily) {
         List<WorkLogEntry> entries = workStatusLogRepository
@@ -79,7 +113,8 @@ public class AttendanceDailyProcessor {
                 daily.getClockOut(),
                 workGroup.getDailyStdMinutes(),
                 workGroup.getBreakMinutes(),
-                daily.getIsHoliday());
+                daily.getIsHoliday(),
+                approvedOvertimes(daily.getEmpId(), daily.getWorkDate()));
         daily.applyWorkTime(result);
         return result;
     }
@@ -146,5 +181,115 @@ public class AttendanceDailyProcessor {
 
         // 5. 조퇴, 소정근로 미달, 미승인 초과근로
         refreshClockOutAnomalies(daily, workTime);
+    }
+
+    /**
+     * 그날 근태 기록의 휴일 여부를 다시 판정하고 근태를 재계산한다 (휴일대체 승인 후).
+     * 기록이 없는 날은 할 일이 없다 (조회 시 isHoliday로 판정)
+     */
+    public void resyncHoliday(Long empId, LocalDate date) {
+        attendanceDailyRepository.findByEmpIdAndWorkDate(empId, date).ifPresent(daily -> {
+            daily.changeHoliday(isHoliday(empId, date, daily.getWorkGroup()));
+            syncDaily(daily);
+        });
+    }
+
+    /**
+     * 승인된 근무시간 수정 신청을 상태 로그에 적용하고 그날을 재계산한다.
+     * 신청 후 대상 로그가 바뀌었거나 출퇴근이 겹치는 항목은 건너뛴다 (경고 로그)
+     */
+    public void applyTimeFix(AttendanceRequest request) {
+        Long empId = request.getEmpId();
+        LocalDate workDate = request.getTargetDate();
+
+        for (AttendanceRequestItem item : request.getItems()) {
+            switch (item.getAction()) {
+                case ADD -> {
+                    if (hasOtherClockLog(empId, workDate, item.getWorkStatusCode(), null)) {
+                        skip(request, item, "같은 출근/퇴근 기록이 이미 있음");
+                        continue;
+                    }
+                    saveApprovalLog(request, item.getWorkStatusCode(), item.getStartAt());
+                }
+                case MODIFY -> {
+                    WorkStatusLog target = findTargetLog(empId, workDate, item.getTargetLogId());
+                    if (target == null) {
+                        skip(request, item, "대상 로그가 없거나 바뀜");
+                        continue;
+                    }
+                    if (hasOtherClockLog(empId, workDate, item.getWorkStatusCode(), target)) {
+                        skip(request, item, "같은 출근/퇴근 기록이 이미 있음");
+                        continue;
+                    }
+                    target.delete();
+                    saveApprovalLog(request, item.getWorkStatusCode(), item.getStartAt());
+                }
+                case DELETE -> {
+                    WorkStatusLog target = findTargetLog(empId, workDate, item.getTargetLogId());
+                    if (target == null) {
+                        skip(request, item, "대상 로그가 없거나 이미 삭제됨");
+                        continue;
+                    }
+                    target.delete();
+                }
+            }
+        }
+
+        // 그날 근태가 없으면 만들고 로그 기준으로 재계산
+        syncDaily(getOrCreateDaily(empId, workDate));
+    }
+
+    /** 수정·삭제 대상: 그 사원·그 날짜의 삭제되지 않은 로그 (퇴근취소 제외). 아니면 null */
+    private WorkStatusLog findTargetLog(Long empId, LocalDate workDate, Long logId) {
+        if (logId == null) {
+            return null;
+        }
+        return workStatusLogRepository.findById(logId)
+                .filter(log -> !log.getIsDeleted())
+                .filter(log -> log.getEmpId().equals(empId) && log.getWorkDate().equals(workDate))
+                .filter(log -> !WorkStatusCode.CLOCK_OUT_CANCEL.equals(log.getWorkStatusCode().getStatusCode()))
+                .orElse(null);
+    }
+
+    /** 출근/퇴근은 하루에 하나: 바꿀 대상(target)을 빼고 같은 출근/퇴근 로그가 이미 있는가 */
+    private boolean hasOtherClockLog(Long empId, LocalDate workDate, WorkStatusCode statusCode, WorkStatusLog target) {
+        String code = statusCode.getStatusCode();
+        if (!WorkStatusCode.CLOCK_IN.equals(code) && !WorkStatusCode.CLOCK_OUT.equals(code)) {
+            return false;
+        }
+        boolean targetIsSameCode = target != null && code.equals(target.getWorkStatusCode().getStatusCode());
+        return !targetIsSameCode && workStatusLogRepository
+                .existsByEmpIdAndWorkDateAndWorkStatusCode_StatusCodeAndIsDeletedFalse(empId, workDate, code);
+    }
+
+    private void saveApprovalLog(AttendanceRequest request, WorkStatusCode statusCode, OffsetDateTime startAt) {
+        workStatusLogRepository.save(WorkStatusLog.builder()
+                .workStatusCode(statusCode)
+                .empId(request.getEmpId())
+                .workDate(request.getTargetDate())
+                .startAt(startAt)
+                .source(WorkStatusSource.APPROVAL)
+                .createdBy(request.getEmpId())
+                .reason(request.getReason())
+                .build());
+    }
+
+    private void skip(AttendanceRequest request, AttendanceRequestItem item, String why) {
+        log.warn("근무시간 수정 항목 건너뜀: attReqId={}, itemId={}, action={}, targetLogId={}, 이유={}",
+                request.getAttReqId(), item.getItemId(), item.getAction(), item.getTargetLogId(), why);
+    }
+
+    /** 그날 근태 기록. 없으면 그날 근무그룹과 휴일 여부로 만든다 */
+    private AttendanceDaily getOrCreateDaily(Long empId, LocalDate workDate) {
+        return attendanceDailyRepository.findByEmpIdAndWorkDate(empId, workDate).orElseGet(() -> {
+            WorkGroup workGroup = resolveWorkGroup(empId, workDate);
+            return attendanceDailyRepository.save(AttendanceDaily.builder()
+                    .workGroup(workGroup)
+                    .empId(empId)
+                    .workDate(workDate)
+                    .clockIn(null)
+                    .isHoliday(isHoliday(empId, workDate, workGroup))
+                    .build());
+        });
     }
 }

@@ -66,7 +66,7 @@ public class AttendanceServiceImpl implements AttendanceService {
 
         // 3. 적용 근무그룹, 휴일 여부
         WorkGroup workGroup = processor.resolveWorkGroup(empId, today);
-        boolean isHoliday = processor.isHoliday(today, workGroup);
+        boolean isHoliday = processor.isHoliday(empId, today, workGroup);
 
         // 4. 일일 근태 생성
         AttendanceDaily daily = attendanceDailyRepository.save(AttendanceDaily.builder()
@@ -236,7 +236,7 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .orElseGet(() -> {
                     // 기록이 없는 날: 그날 적용될 근무그룹과 휴일 여부만 채움
                     WorkGroup workGroup = processor.resolveWorkGroup(empId, date);
-                    return DailyAttendanceResponse.empty(date, workGroup.getName(), processor.isHoliday(date, workGroup));
+                    return DailyAttendanceResponse.empty(date, workGroup.getName(), processor.isHoliday(empId, date, workGroup));
                 });
     }
 
@@ -327,7 +327,7 @@ public class AttendanceServiceImpl implements AttendanceService {
                                 daily, anomaliesByAttId.getOrDefault(daily.getAttId(), List.of()));
                     }
                     WorkGroup workGroup = processor.resolveWorkGroup(empId, date);
-                    return AttendanceDaySummaryResponse.empty(date, processor.isHoliday(date, workGroup));
+                    return AttendanceDaySummaryResponse.empty(date, processor.isHoliday(empId, date, workGroup));
                 })
                 .toList();
     }

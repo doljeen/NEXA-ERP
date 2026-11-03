@@ -161,7 +161,7 @@ public class AdminAttendanceServiceImpl implements AdminAttendanceService {
                 .empId(empId)
                 .workDate(workDate)
                 .clockIn(null)
-                .isHoliday(processor.isHoliday(workDate, workGroup))
+                .isHoliday(processor.isHoliday(empId, workDate, workGroup))
                 .build());
     }
 }
