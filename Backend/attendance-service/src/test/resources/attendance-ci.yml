@@ -2,6 +2,11 @@ spring:
   application:
     name: attendance-service
 
+  # 테스트에서는 Kafka 리스너를 띄우지 않는다 (브로커 없이 연결 시도 로그가 쌓이지 않게)
+  kafka:
+    listener:
+      auto-startup: false
+
   cloud:
     config:
       enabled: false
