@@ -157,6 +157,106 @@ Authorization: Bearer {access token}
 
 재기안(`POST /api/v1/documents/{documentId}/resubmit`, 본문 `{ "title": "..." }`)은 직접 기안 문서만 되고, 결재선을 **재기안 시점의 조직도**로 다시 만듭니다 (그 사이 부서장이 바뀌었으면 새 부서장).
 
+#### 예시
+
+아래는 사원 103(개발팀)이 200만 원 일반 기안(문서 1013)을 올려 결재선이 [팀장 105, 본부장 108]로 만들어진 뒤의 요청입니다. 모두 `Authorization: Bearer {기안자 access token}`.
+
+결재선 조회 (`required: true`가 규정상 결재자)
+
+```
+GET /api/v1/documents/1013/approvers
+```
+
+```json
+{
+  "success": true,
+  "data": [
+    { "lineId": 25, "step": 1, "role": "APPROVER", "action": "PENDING", "empId": 105, "actedAt": null, "required": true },
+    { "lineId": 26, "step": 2, "role": "APPROVER", "action": "PENDING", "empId": 108, "actedAt": null, "required": true }
+  ],
+  "error": null
+}
+```
+
+참조자·열람자 추가 (`201`, `data`는 `null`). 빼기는 `DELETE /api/v1/documents/1013/referrers/{empId}`
+
+```
+POST /api/v1/documents/1013/referrers
+{ "empId": 101 }
+
+POST /api/v1/documents/1013/viewers
+{ "empId": 104 }
+```
+
+결재자·합의자 추가 (`201`). `step`은 기존 결재자와 겹치지 않게, 이미 결재가 끝난 순서보다 뒤로
+
+```
+POST /api/v1/documents/1013/approvers
+{ "empId": 106, "step": 3, "role": "AGREEMENT" }
+```
+
+순서 변경 (`200`). **현재 결재자 전체**를 원하는 순서로. 규정상 결재자끼리(105 → 108)의 순서만 지키면 추가한 106은 어디든
+
+```
+PATCH /api/v1/documents/1013/approvers/order
+{ "empIds": [106, 105, 108] }     → 200
+{ "empIds": [108, 105, 106] }     → 409 APPROVAL_024 (105, 108 순서가 뒤집힘)
+```
+
+추가한 결재자 빼기는 되고, 규정상 결재자 빼기는 안 됩니다
+
+```
+DELETE /api/v1/documents/1013/approvers/106   → 200
+DELETE /api/v1/documents/1013/approvers/108   → 409 APPROVAL_024
+```
+
+전결 (본문 없음, 차례인 결재자의 토큰)
+
+```
+POST /api/v1/documents/1013/final-approve
+```
+
+- 105(팀장)가 전결 → 뒤에 규정상 결재자 108이 남아 있어 `409 APPROVAL_025`
+- 105 승인 후 108(본부장)이 전결 → 뒤에 기안자가 추가한 결재자만 있으면 그들은 `SKIPPED`, 문서 `APPROVED`
+
+재기안 (반려된 직접 기안 문서, `200`)
+
+```
+POST /api/v1/documents/1013/resubmit
+{ "title": "프로젝트 예산 집행 요청 (금액 수정)" }
+```
+
+결재선은 요청에 넣지 않습니다. 재기안 시점의 조직도로 다시 만들고 차수가 1 올라갑니다.
+
+오류 응답 형식 (모든 API 공통)
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "APPROVAL_024",
+    "message": "위임전결 규정상 결재자는 결재선에서 빼거나 순서를 바꿀 수 없습니다."
+  }
+}
+```
+
+| HTTP | 코드 | 언제 |
+|---|---|---|
+| 409 | `APPROVAL_024` | 규정상 결재자 제외, 규정상 결재자끼리 순서 변경 |
+| 409 | `APPROVAL_025` | 뒤에 규정상 결재자가 남았는데 전결 |
+| 409 | `APPROVAL_023` | 출처 문서(휴가·근태) 재기안 |
+| 409 | `APPROVAL_014` | 반려되지 않은 문서 재기안 |
+| 409 | `APPROVAL_006` | 진행 중이 아닌 문서의 결재선 변경 |
+| 409 | `APPROVAL_008` | 이미 결재한 결재자 제외·순서 변경 |
+| 403 | `APPROVAL_005` | 기안자가 아닌 사람의 결재선 변경·재기안 |
+| 403 | `APPROVAL_012` | 차례가 아닌 결재자의 승인·반려·전결 |
+| 400 | `APPROVAL_002` / `003` | 기안자 본인 / 이미 결재선에 있는 사원 추가 |
+| 400 | `APPROVAL_004` | 결재자 추가 시 `step` 중복 |
+| 400 | `APPROVAL_010` | 이미 결재가 끝난 순서 앞에 추가, 순서 변경 목록이 현재 결재자 전체와 다름 |
+| 400 | `APPROVAL_015` / `016` | 없는 사원 / 재직 중이 아닌 사원 추가 |
+| 404 | `APPROVAL_007` | 결재선에 없는 사원 제외 |
+
 ## 서비스별 호출 방법
 
 공통 규칙
