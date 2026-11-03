@@ -4,8 +4,9 @@
 파일: 직원명부.csv(CP949, 이메일 열 없음, 재직 Y/N, 시급에 전각 숫자·쉼표), 조직.csv(CP949),
      급여대장.xlsx(11월·12월 시트, 점포별 소계 행이 중간에, 정규직은 기본급 값·시급 수식 / 파트타임은 시급 값·기본급 수식),
      근무시간표_12월.xlsx(점포별 시트, 날짜가 열인 가로 배치, 2줄 헤더(일자·요일)).
-급여 규칙: 파트타임 기본급 = 시급 × 근무시간, 주휴수당(주 15시간 이상, 주 시간/40 × 8), 공휴일 근무 1.5배,
-         월 60시간 미만 단시간 근로자는 4대보험 제외, 10원 단위 반올림, 소득세는 전원 1인 기준.
+급여 규칙: 파트타임 기본급 = 시급 × 근무시간, 주휴수당(주 15시간 이상, 주 시간/40 × 8), 공휴일 근무 1.5배(회사 규칙, 단순화),
+         그달 근무 60시간 미만이면 4대보험 0(회사 규칙 — 고용보험은 3개월 이상 계속 근로자에게 법과 다름, legalDeviations),
+         10원 단위 반올림, 소득세는 전원 1인 기준.
 """
 import datetime as dt
 
@@ -14,7 +15,7 @@ from xlsxwriter.utility import xl_col_to_name
 from hrfiles.common import Accidents
 from hrfiles.facts import HOLIDAYS_2026
 from hrfiles.payroll import TAX_ROWS
-from hrfiles.xl import ROUND, ROUNDDOWN, Book, vlookup_approx
+from hrfiles.xl import ROUND, ROUNDDOWN, Book, datedif_m, vlookup_approx
 
 from . import base as B
 
@@ -172,6 +173,18 @@ def calc(v):
     return v
 
 
+def run(inp, over):
+    """행 입력 + 행 사고(over: inputs 덮어쓰기, hardZero 값 0) → 셀에 들어가는 값"""
+    inp = dict(inp, **over.get("inputs", {}))
+    v = calc(inp)
+    for k in over.get("hardZero", []):
+        v[k] = 0
+    if over.get("hardZero"):
+        v["ded"] = sum(v[k] for k in ("np", "hi", "ltc", "ei", "tax", "ltax"))
+        v["net"] = v["gross"] - v["ded"]
+    return v
+
+
 def formula(k, r, part):
     R = lambda c: "%s%d" % (L[c], r)  # noqa: E731
     base = "(%s-MIN(%s,%s))" % (R("gross"), R("meal"), SR("meal"))
@@ -223,13 +236,15 @@ def write_payroll(path, emps, hours, acc):
             sh.put(L[k], 3, h, "head")
         sh.ws.freeze_panes(3, 2)
         r = 4
-        row_of, vals, subtotal, after_sub = {}, {}, [], {}
+        row_of, vals, subtotal, after_sub, sub_of = {}, {}, [], {}, {}
         for dept in order:
             members = [e for e in emps if e["dept"] == dept and e["empNo"] in hours[mname]]
             outside = [e for e in members if acc["outsideSubtotal"] == (mname, e["empNo"])]
             first = r
+            sub_row = first + len(members) - len(outside)
             for e in [x for x in members if x not in outside] + ["SUBTOTAL"] + outside:
                 if e == "SUBTOTAL":
+                    assert r == sub_row
                     sh.put(L["name"], r, dept + " 소계", "totalLabel")
                     inside = [x for x in members if x not in outside]
                     for k in SUMMED:
@@ -248,14 +263,8 @@ def write_payroll(path, emps, hours, acc):
                     inp["hourly"] = B.MIN_WAGE[2025]
                     ideal_inp["hourly"] = WAGE_2026
                 over = acc["rowOver"].get((mname, e["empNo"]), {})
-                if "inputs" in over:
-                    inp.update(over["inputs"])
-                actual, ideal = calc(inp), calc(ideal_inp)
-                for k in over.get("hardZero", []):
-                    actual[k] = 0
-                if over.get("hardZero"):
-                    actual["ded"] = sum(actual[k] for k in ("np", "hi", "ltc", "ei", "tax", "ltax"))
-                    actual["net"] = actual["gross"] - actual["ded"]
+                pre = dict(inp)  # 행 사고(over)를 넣기 전 입력 (시급 사고는 들어 있음)
+                actual, ideal = run(inp, over), calc(ideal_inp)
                 if e in outside:
                     actual["memo"] = "12/15 신규"
                 for k, _ in COLS:
@@ -266,7 +275,8 @@ def write_payroll(path, emps, hours, acc):
                         x = actual[k]
                         sh.put(L[k], r, x, "won" if isinstance(x, (int, float)) and k not in ("work", "wh", "night", "hol") and x >= 1000 else None)
                 row_of[e["empNo"]] = r
-                vals[e["empNo"]] = {"actual": actual, "ideal": ideal}
+                sub_of[e["empNo"]] = sub_row
+                vals[e["empNo"]] = {"actual": actual, "ideal": ideal, "pre": pre, "over": over, "hire": e["hireDate"]}
                 if e in outside:
                     after_sub[e["empNo"]] = r
                 r += 1
@@ -278,42 +288,136 @@ def write_payroll(path, emps, hours, acc):
         sh.widths({L["name"]: 9, L["memo"]: 14})
         meta[mname] = {"role": "monthlyPayroll", "payMonth": "%d-%02d" % (y, m), "headerRows": [3], "firstDataRow": 4,
                        "lastDataRow": total_row - 1, "subtotalRows": subtotal, "totalRow": total_row, "titleRows": [1, 2],
-                       "rowsOutsideSubtotal": sorted(after_sub.values()), "rowOf": row_of}
+                       "rowsOutsideSubtotal": sorted(after_sub.values()), "rowOf": row_of, "_subOf": sub_of}
         values[mname] = vals
     book.close()
 
     # ------------ 정답지 사고
     hdr = dict(COLS)
-    aff = [{"sheet": mn, "rowNo": meta[mn]["rowOf"][x], "empNo": x} for mn in MONTHS for x in acc["staleWage"] if x in meta[mn]["rowOf"]]
+    money = [k for k, _ in COLS if k not in ("empNo", "name", "dept", "empType", "memo")]
+
+    def fixed(mn, emp, fix_wage, fix_row):
+        """사고 하나만 고쳤을 때의 행 값 (fix_wage: 시급 사고, fix_row: 행 사고)"""
+        x = values[mn][emp]
+        i = dict(x["pre"])
+        if fix_wage and emp in acc["staleWage"]:
+            i["hourly"] = WAGE_2026
+        return run(i, {} if fix_row else x["over"])
+
+    def row_diff(mn, emp, exp):
+        act = values[mn][emp]["actual"]
+        return {hdr[k]: {"actual": act[k], "expected": exp[k]} for k in money if act[k] != exp[k]}
+
+    def locs(mn, emps_):
+        """사고 행 + 그 행이 들어가야 할 점포 소계 + 총계"""
+        m = meta[mn]
+        out = [{"sheet": mn, "rowNo": m["rowOf"][x]} for x in emps_]
+        return out + [{"sheet": mn, "rowNo": r} for r in sorted({m["_subOf"][x] for x in emps_})] + [{"sheet": mn, "rowNo": m["totalRow"]}]
+
+    def row_values(mn, emps_, fix_wage, fix_row):
+        return [{"sheet": mn, "rowNo": meta[mn]["rowOf"][x], "empNo": x,
+                 "values": row_diff(mn, x, fixed(mn, x, fix_wage, fix_row))} for x in emps_]
+
+    def cascade_of(rv, skip):
+        order = [h for _, h in COLS]
+        return sorted({h for x in rv for h in x["values"]} - set(skip), key=order.index)
+
+    stale_rows = [(mn, x) for mn in MONTHS for x in acc["staleWage"] if x in meta[mn]["rowOf"]]
+    rv = [y for mn in MONTHS for y in row_values(mn, [x for m2, x in stale_rows if m2 == mn], True, False)]
+    aff = [{"sheet": mn, "rowNo": meta[mn]["rowOf"][x], "empNo": x} for mn, x in stale_rows]
+    for mn in MONTHS:
+        es = [x for m2, x in stale_rows if m2 == mn]
+        aff += locs(mn, es)[len(es):]
     A.add("MIN_WAGE_STALE", "11월", "파트타임 %d명 시급이 2025년 최저임금 10,030원 그대로 (2026년 10,320원) — 11·12월 모두" % len(acc["staleWage"]),
           ["LEGAL_RULE_COMPARE", "RATE_TABLE_BY_PERIOD"], legal=True, empNos=sorted(acc["staleWage"]), affected=aff,
-          cells=["%s%d" % (L["hourly"], x["rowNo"]) for x in aff],
-          values={"시급": {"actual": B.MIN_WAGE[2025], "expected": WAGE_2026}})
+          cells=["%s!%s%d" % (mn, L["hourly"], meta[mn]["rowOf"][x]) for mn, x in stale_rows],
+          values={"시급": {"actual": B.MIN_WAGE[2025], "expected": WAGE_2026}},
+          cascade=cascade_of(rv, ["시급"]), rowValues=rv)
+    by_type = {}
     for (mn, emp), over in sorted(acc["rowOver"].items()):
         r = meta[mn]["rowOf"][emp]
         v = values[mn][emp]
+        exp = fixed(mn, emp, False, True)
+        d = row_diff(mn, emp, exp)
         if over["type"] == "WEEKLY_HOLIDAY_PAY_MISSING":
-            A.add(over["type"], mn, "주 15시간 이상(계약 주 %d시간) 근무인데 주휴시간을 0으로 입력 → 주휴수당 %s원 누락"
-                  % (over["weekly"], format(v["ideal"]["whPay"], ",")), ["LEGAL_RULE_COMPARE", "CROSS_FILE_MATCH"], legal=True,
-                  empNo=emp, rowNo=r, cells=["%s%d" % (L["wh"], r)],
-                  values={"주휴시간": {"actual": 0, "expected": v["ideal"]["wh"]}, "주휴수당": {"actual": 0, "expected": v["ideal"]["whPay"]}})
+            A.add(over["type"], mn, "주 15시간 이상(계약 주 %d시간) 근무인데 주휴시간을 0으로 입력 → 주휴수당 %s원 누락 (지급계·공제·실지급도 달라짐)"
+                  % (over["weekly"], format(exp["whPay"], ",")), ["LEGAL_RULE_COMPARE", "CROSS_FILE_MATCH"], legal=True,
+                  empNo=emp, rowNo=r, cells=["%s%d" % (L[k], r) for k in money if hdr[k] in d],
+                  values=d, cascade=[h for h in d if h != "주휴시간"], affected=locs(mn, [emp]))
         elif over["type"] == "INSURANCE_EXEMPTION_WRONG":
-            A.add(over["type"], mn, "월 %.1f시간(60시간 이상) 근무인데 4대보험 칸을 수식 대신 0으로 입력 (전월 기준 '단시간 제외' 그대로)" % v["actual"]["work"],
+            prev = values["11월"].get(emp)
+            prev_txt = " (전월 11월은 %.1f시간, 4대보험 정상 공제 — 이번 달만 0)" % prev["actual"]["work"] if prev and prev["actual"]["np"] else ""
+            A.add(over["type"], mn, "월 %.1f시간(60시간 이상) 근무인데 4대보험 칸을 수식 대신 0으로 입력 → 공제계·실지급액도 틀림%s"
+                  % (v["actual"]["work"], prev_txt),
                   ["HARDCODED_IN_FORMULA_COLUMN", "FORMULA_READ", "LEGAL_RULE_COMPARE"], legal=True, empNo=emp, rowNo=r,
-                  cells=["%s%d" % (L[k], r) for k in over["hardZero"]],
-                  values={hdr[k]: {"actual": 0, "expected": v["ideal"][k]} for k in over["hardZero"]})
-        elif over["type"] == "HOLIDAY_PREMIUM_MISSING":
-            pass  # 아래에서 점포 단위로 한 건
-    hp = [(mn, emp) for (mn, emp), o in acc["rowOver"].items() if o["type"] == "HOLIDAY_PREMIUM_MISSING"]
-    if hp:
-        rows = sorted(meta[mn]["rowOf"][emp] for mn, emp in hp)
-        A.add("HOLIDAY_PREMIUM_MISSING", hp[0][0], "%s: 12/25(성탄절) 근무를 휴일시간이 아닌 근무시간에 넣어 휴일가산(0.5배분) 누락 — %d명"
-              % (acc["holidayStore"], len(hp)), ["HOLIDAY_CALENDAR", "CROSS_FILE_MATCH", "LEGAL_RULE_COMPARE"], legal=True,
-              rows=rows, empNos=sorted(e for _, e in hp), cells=["%s%d" % (L["hol"], x) for x in rows])
+                  cells=["%s%d" % (L[k], r) for k in over["hardZero"] + ["ded", "net"]],
+                  values=d, cascade=[hdr[k] for k in ("ded", "net")], affected=locs(mn, [emp]))
+        else:
+            by_type.setdefault((over["type"], v["actual"]["empType"] == "파트타임"), []).append((mn, emp, d))
+    hol_acc = {}
+    for part in (True, False):
+        hp = by_type.get(("HOLIDAY_PREMIUM_MISSING", part), [])
+        if not hp:
+            continue
+        mn = hp[0][0]
+        emps_ = [e for _, e, _d in hp]
+        rows = sorted(meta[mn]["rowOf"][e] for e in emps_)
+        rvh = [{"sheet": mn, "rowNo": meta[mn]["rowOf"][e], "empNo": e, "values": d} for _, e, d in hp]
+        hol_acc[part] = dict(sheet=mn, rows=rows, empNos=sorted(emps_), rowValues=rvh,
+                             cells=["%s%d" % (L[k], x) for x in rows for k in ("work", "hol")], cascade=cascade_of(rvh, ["근무시간", "휴일시간"]),
+                             affected=locs(mn, emps_))
+    if True in hol_acc:
+        x = hol_acc[True]
+        A.add("HOLIDAY_PREMIUM_MISSING", x.pop("sheet"), "%s 파트타임: 12/25(성탄절) 근무를 휴일시간이 아닌 근무시간에 넣음 → 시급×근무시간으로 1.0배만 받아 "
+              "휴일가산(0.5배분) 누락 — %d명" % (acc["holidayStore"], len(x["rows"])),
+              ["HOLIDAY_CALENDAR", "CROSS_FILE_MATCH", "LEGAL_RULE_COMPARE"], legal=True, **x)
     mn, emp = acc["outsideSubtotal"]
     r = meta[mn]["rowOf"][emp]
-    A.add("ROW_OUTSIDE_SUBTOTAL", mn, "12/15 신규 파트타이머 행을 점포 소계 아래에 추가 → 점포 소계·총계에서 빠짐", ["TOTAL_ROW_SKIP", "RECOMPUTE_CHECK"],
-          empNo=emp, rowNo=r, affected=[{"sheet": mn, "rowNo": r}, {"sheet": mn, "rowNo": meta[mn]["totalRow"]}])
+    sr, tr = meta[mn]["_subOf"][emp], meta[mn]["totalRow"]
+    row = values[mn][emp]["actual"]
+    sums = {k: _r(sum(values[mn][x]["actual"][k] for x in values[mn] if meta[mn]["_subOf"][x] == sr and x != emp)) for k in SUMMED}
+    tots = {k: _r(sum(values[mn][x]["actual"][k] for x in values[mn] if x != emp)) for k in SUMMED}
+    A.add("ROW_OUTSIDE_SUBTOTAL", mn, "12/15 신규 파트타이머 행을 %s 소계(%d행) 아래에 추가 → 소계·총계에서 빠짐 (총계 지급계 %s원 적음)"
+          % (row["dept"], sr, format(row["gross"], ",")), ["TOTAL_ROW_SKIP", "RECOMPUTE_CHECK"],
+          empNo=emp, rowNo=r, affected=[{"sheet": mn, "rowNo": r}, {"sheet": mn, "rowNo": sr}, {"sheet": mn, "rowNo": tr}],
+          cells=["%s%d" % (L[k], x) for x in (sr, tr) for k in SUMMED if row[k]],
+          rowValues=[{"sheet": mn, "rowNo": x, "values": {hdr[k]: {"actual": base[k], "expected": _r(base[k] + row[k])} for k in SUMMED if row[k]}}
+                     for x, base in ((sr, sums), (tr, tots))])
+    if False in hol_acc:  # 월급제 정규직은 휴일수당 전체(1.5배)가 빠짐 — 파트타임과 결과가 달라 따로 (뒤에 붙여 기존 id 유지)
+        x = hol_acc[False]
+        A.add("HOLIDAY_PREMIUM_MISSING", x.pop("sheet"), "%s 월급제 정규직: 12/25(성탄절) 8시간 근무를 근무시간(209→217)에 넣고 휴일시간 0 → 월급은 고정이라 "
+              "휴일수당(통상시급×8×1.5) 전액 누락 — %d명" % (acc["holidayStore"], len(x["rows"])),
+              ["HOLIDAY_CALENDAR", "CROSS_FILE_MATCH", "LEGAL_RULE_COMPARE"], legal=True, **x)
+    # 겹침: 같은 행에 시급 사고와 행 사고가 같이 있음
+    wage = A.items[0]
+    for a in A.items[1:]:
+        both = [z for z in a.get("rowValues", []) if z.get("empNo") in acc["staleWage"]]
+        if a.get("empNo") in acc["staleWage"] and a.get("rowNo") and a["type"] != "ROW_OUTSIDE_SUBTOTAL":
+            both.append({"sheet": a["sheet"], "rowNo": a["rowNo"], "empNo": a["empNo"]})
+        for z in both:
+            vv = values[z["sheet"]][z["empNo"]]
+            ks = [k for k in money if vv["actual"][k] != vv["ideal"][k]]
+            cells = ["%s!%s%d" % (z["sheet"], L[k], z["rowNo"]) for k in ks]
+            note = "%s %d행(%s)에 %s(시급)와 %s가 같이 있음. 각 사고의 expected는 그 사고만 고친 값, trueValue는 둘 다 고친 값" % (
+                z["sheet"], z["rowNo"], z["empNo"], wage["id"], a["id"])
+            tv = {hdr[k]: vv["ideal"][k] for k in ks}
+            a.setdefault("overlaps", []).append({"with": wage["id"], "cells": cells, "note": note, "trueValue": tv})
+            wage.setdefault("overlaps", []).append({"with": a["id"], "cells": cells, "note": note, "trueValue": tv})
+    # 법과 다른 회사 규칙: 60시간 미만이면 고용보험도 0 (입사 후 3개월 이상 계속 근로자는 법상 적용 대상)
+    short = {}
+    for mn, (y, m) in MONTHS.items():
+        end = dt.date(y + (m == 12), m % 12 + 1, 1) - dt.timedelta(days=1)
+        for x, vv in values[mn].items():
+            a = vv["actual"]
+            if a["empType"] == "파트타임" and a["work"] < SVAL["exempt"] and a["ei"] == 0 and datedif_m(vv["hire"], end) >= 3:
+                short.setdefault(mn, []).append(meta[mn]["rowOf"][x])
+    legal_short = [{"rule": "employmentInsuranceShortHours", "sheet": mn, "company": "월 근무 60시간 미만이면 고용보험도 0",
+                    "statutory": "고용보험법 시행령 제3조: 월 60시간 미만이라도 3개월 이상 계속 근로하면 고용보험 적용",
+                    "rows": sorted(rs), "note": "입사 후 3개월 이상인 60시간 미만 파트타이머 행 (고용보험 0). "
+                                               "국민연금·건강보험 제외는 이 생성기의 단순화(실제는 소정근로시간 기준이고 예외가 있음)"}
+                   for mn, rs in short.items()]
+    for mn in MONTHS:
+        meta[mn].pop("_subOf")
     key = {
         "file": path.name, "kind": "PAYROLL", "closestEntity": "PAY_RESULT_HISTORY", "supported": False,
         "sheetOrder": list(MONTHS) + ["기준", "세액표"],
@@ -324,12 +428,15 @@ def write_payroll(path, emps, hours, acc):
             "hourlyWorkers": "파트타임: 기본급 = ROUND(시급×근무시간), 시급은 값 / 정규직: 시급 = ROUND(기본급/209), 기본급은 값",
             "weeklyHolidayPay": "주 15시간 이상이면 주휴 = min(주 시간,40)/40×8 (월 안의 날짜만으로 주 계산, 일요일이 그 달인 주)",
             "nightPremium": {"rate": 0.5, "window": "22:00~06:00, 마감조 하루 2시간"},
-            "holidayPremium": {"rate": 1.5, "days": "공휴일(12/25)"},
-            "shortTimeExemption": "월 근무시간 60시간 미만이면 국민연금·건강·고용보험 0",
+            "holidayPremium": {"rate": 1.5, "days": "공휴일(12/25)",
+                               "note": "회사 규칙(단순화): 공휴일 근무시간 × 시급 × 1.5. 8시간 초과분 2배·파트타이머 소정근로일 여부는 반영하지 않음"},
+            "shortTimeExemption": "그달 실제 근무시간 60시간 미만이면 국민연금·건강·고용보험 0 (회사 규칙). 국민연금·건강보험 제외는 단순화한 가정"
+                                  "(법은 소정근로시간 기준이고 예외가 있음), 고용보험은 3개월 이상 계속 근로하면 60시간 미만도 적용이라 "
+                                  "legalDeviations(employmentInsuranceShortHours)에 행을 적음",
             "insuranceRounding": "round10 (10원 단위 반올림)", "localTax": "floor10",
             "incomeTax": "간이세액표 1인 열 고정 (부양가족 신고를 받지 않음)", "mealInInsuranceBase": False,
         },
-        "legalDeviations": [{"rule": "minimumWage", "company": "시급 10,030원 %d명" % len(acc["staleWage"]), "statutory": "10,320원"}],
+        "legalDeviations": [{"rule": "minimumWage", "company": "시급 10,030원 %d명" % len(acc["staleWage"]), "statutory": "10,320원"}] + legal_short,
         "accidents": A.items,
         "valueNoise": [
             {"type": "MIXED_FORMULA_VALUE", "detail": "같은 열에서 정규직 행은 값, 파트타임 행은 수식 (기본급·시급). 회사 양식이라 오류 아님"},

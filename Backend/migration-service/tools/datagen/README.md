@@ -16,7 +16,8 @@ pip install -r requirements.txt
 curl -L -o ~/personas/personas.parquet https://huggingface.co/datasets/nvidia/Nemotron-Personas-Korea/resolve/main/data/train-00000-of-00009.parquet
 
 # 2) 가상 회사 생성 → out/<회사>/조직.csv, 직원명부.xlsx|csv, 급여대장.xlsx …, answer_key.json
-#    기존 3곳 + 추가 4곳(newco/: saalabs, jachaprec, katamart, pahagongdan). 약 30초
+#    기존 3곳 + 추가 4곳(newco/: saalabs, jachaprec, katamart, pahagongdan) + 2차 6곳(geoneomed, deoreocon, meobeologis,
+#    seoeoedu, jeocheocall, peoheogroup). 약 31초 (2차 추가 전 약 25초)
 python -I generate.py ~/personas/personas.parquet out --seed 42
 
 # 3) 이관 서비스(localhost:8087)에 올리고 정답지와 비교 → out/evaluation.md
@@ -43,7 +44,7 @@ python -I check_formulas.py out/mabaservice/급여대장.xlsx
 | `hrfiles/xl.py` | 엑셀과 같은 결과를 내는 계산 함수(ROUND·ROUNDDOWN·VLOOKUP·오류값 전파) + 수식·계산값을 같이 쓰는 시트 도우미 |
 | `evaluate.py` | 직원·조직 평가 + 인사 엑셀은 '미지원'으로 올려 서비스가 실제로 읽은 것을 기록 |
 | `check_formulas.py` | 독립 구현(`formulas` 라이브러리)으로 다시 계산해 셀마다 비교 |
-| `newco/` | 추가 가상 회사 4곳 (회사마다 모듈 하나, `base.py`는 공통 도우미. 아래 '추가 가상 회사'). `generate.py`가 기존 3곳 다음에 만든다 |
+| `newco/` | 추가 가상 회사 10곳 (1차 4곳 + 2차 6곳, 회사마다 모듈 하나, `base.py`는 공통 도우미. 아래 '추가 가상 회사'). `generate.py`가 기존 3곳 다음에 만든다 |
 
 ## 가상 회사
 
@@ -56,8 +57,14 @@ python -I check_formulas.py out/mabaservice/급여대장.xlsx
 | 자차정밀 | 제조 | 600 | xlsx | 주야 2교대, 부서별 급여 시트·조 소계·결재란·숨긴 열 (newco) |
 | 카타마트 | 유통 | 150 | CP949 CSV + xlsx | 시급제 파트타이머 108명, 점포 소계, 가로 배치 근무시간표 (newco) |
 | 파하공단 | 공공 | 250 | xlsx | 호봉제 봉급표, 공무원 연가일수표, 마스킹된 주민번호 열 (newco) |
+| 거너요양병원 | 의료 | 160 | xlsx | 3교대 근무 코드(D/E/N) 근무표, 야간전담·면허·자격수당·당직, 시트마다 열이 다른 급여대장 (newco 2차) |
+| 더러건설 | 건설 | 140 | xlsx + CP949 CSV | 일용직 110명, 현장별 출역부(공수), 일용 소득세, 사번 없는 근로내용확인신고 (newco 2차) |
+| 머버로지스 | 물류 | 115 | UTF-8 CSV + xlsx | 고용허가제 외국인 50명, 기숙사·식비 공제, 지문인식기 원시 로그 (newco 2차) |
+| 서어에듀 | 학원 | 50 | xlsx(병합) + CP949 CSV | 근로자·위촉(3.3%) 강사 혼재, 한글 표 붙여넣기 명부, 이름뿐인 시수표 (newco 2차) |
+| 저처콜 | 콜센터 | 200 | CP949 CSV + xlsx | 회계 프로그램 내보내기(코드 열·고정폭), 세로 항목코드 급여, 인센티브 등급표 (newco 2차) |
+| 퍼허그룹 | 그룹 3법인 | 160 | xlsx | 노무법인 통합 양식, 법인마다 사번 겹침, 법인 블록·소계 급여대장, 계열사 전적 (newco 2차) |
 
-직업으로 부서를 정하고(개발·데이터 → 개발본부 …), 나이로 직위를 정한다. 팀마다 최연장 재직자가 팀장. (기존 3곳 기준. 추가 4곳은 회사마다 다름)
+직업으로 부서를 정하고(개발·데이터 → 개발본부 …), 나이로 직위를 정한다. 팀마다 최연장 재직자가 팀장. (기존 3곳 기준. 추가 10곳은 회사마다 다름)
 
 ## 일부러 넣는 오류 (정답지에 기록)
 
@@ -234,7 +241,8 @@ xlsxwriter로 **수식 + 파이썬으로 계산한 결과**를 같이 저장한�
 - 2025(사고용): 국민연금 4.5%, 건강보험 3.545%, 장기요양 12.95%
 - **간이세액표는 실제 국세청 표가 아니다.** 근로소득공제·인적공제·기본세율·근로소득세액공제를 단순 적용해 5만원 구간, 가족 1~5명으로 만든 표다
 - 4대보험 상·하한, 입사·퇴사 월 일할 계산, 비과세 한도 외 다른 비과세 항목은 넣지 않았다
-- 공휴일은 생성기 내장 목록(2026, 대체공휴일·지방선거일 포함)이다
+- 공휴일은 생성기 내장 목록(2026, 대체공휴일·6/3 지방선거일·2026년부터 공휴일인 7/17 제헌절 포함)이다. 추석(9/24~26)은 토요일과 겹쳐도 대체공휴일이 없다(설·추석은 일요일과 겹칠 때만)
+  - 연차 사용일은 첫 버전 달력(7/17 없음, 9/28 있음)의 근무일에서 뽑은 뒤, 7/17에 걸린 날만 다음 근무일로 옮긴다 (`facts.draw_days`·`shift_workday`). 그래서 목록을 고쳐도 다른 사용일과 난수열은 그대로다
 
 ### 정답지 (`answer_key.json`의 `hrFiles`)
 
@@ -291,20 +299,30 @@ xlsxwriter로 **수식 + 파이썬으로 계산한 결과**를 같이 저장한�
 기존 3곳은 검증 규칙을 만든 쪽이 같이 만들어 평가가 순환적이다. 그래서 **검증 규칙(`migration-service/src`)과 평가 결과를 보지 않고**,
 실제 한국 회사의 인사·급여 엑셀이 어떻게 틀어지는지만 보고 4곳을 더 만들었다. 규모·업종·파일 형식·급여 규칙·사고 유형을 기존 3곳과도, 서로도 다르게 했다.
 
-- 기존 3곳의 난수열·출력은 그대로다 (seed 42 기준선과 비교: json·csv는 바이트 동일, xlsx는 작성 시각이 들어가는 `docProps/core.xml` 말고 동일)
+- 기존 3곳의 난수열·출력은 그대로다 (seed 42 기준선과 비교: json·csv는 바이트 동일, xlsx는 작성 시각이 들어가는 `docProps/core.xml` 말고 동일).
+  예외: 공휴일 목록에 7/17 제헌절을 더하면서 7/17에 쓴 연차가 7/20으로 옮겨졌다 — 연차관리대장 사용내역 시트만 바뀜 (가나테크 1건, 다라물산 8건, 마바서비스 3건, 정답지는 그대로)
 - 회사마다 `random.Random("<id>:<용도>:<seed>")`만 쓰고, 인물은 기존 3곳이 쓴 인물을 뺀 뒤 uuid로 나눈 조각에서 뽑아 서로 겹치지 않는다
 - 파일 종류는 회사마다 다르다 (15명 스타트업에 퇴직금추계표가 없는 식). 없는 종류는 정답지 `hrFiles`에 없을 뿐 평가는 그대로 돈다
 - 정답지 형식은 같다. 더한 키: 최상위 `profile`·`rosterLayout`, 직원명부 오류의 `detail`, 인사 파일의 `cleanSheets`·`clean`, 시트의 `subtotalRows`·`hiddenColumns`
+- 사고 하나가 바꾼 셀은 모두 적는다 (평가 스크립트는 `affected`·`rowNo`·`rows`만 읽고 나머지 키는 무시한다):
+  - `affected`: 같은 파일에서 이 사고 때문에 값이 달라진 행 `{sheet, rowNo}` (사고 행 포함, 소계·합계·집계 행까지). `rowNo: null`은 시트 단위.
+    `affected`가 있으면 평가는 `rowNo` 대신 이 목록으로 위치를 본다. 항목 안에 `cells`·`values`·`empNo`를 더 적기도 한다
+  - `cells`·`values`: 바뀐 칸과 헤더별 `{actual, expected}`. 여러 시트에 걸치면 셀을 `시트!A1`로. 연쇄 칸은 `cascade`(헤더 또는 셀 목록)·`cascadeCells`·`cascadeValues`,
+    여러 행 사고의 행별 값은 `rowValues`. 수식 범위 자체는 `formulaCells`·`formulaRows`
+  - `crossFileAffected`: 다른 파일로 번진 행 `[{file, sheet, rowNo, cells, values}]` (CSV는 sheet = 파일 이름에서 확장자 뺀 것)
+  - `overlaps`: 같은 칸을 바꾼 다른 사고 `[{with, cells, note, trueValue}]`. 두 사고 모두에 적고, 사고의 `expected`는 그 사고만 고친 값, `trueValue`는 둘 다 고친 값
+- 법정 기준과 다른 회사 규칙은 사고가 아니라 `legalDeviations`에 적고, 행이 정해지면 `rows`도 적는다. 법 해석이 갈리거나 확인이 필요한 것은 `assumption`·`basis`·`note`로 가정임을 밝힌다
+- 직원명부 DUPLICATE_KEY(사번 중복) 오류 때문에 한 사람의 사번이 명부에서 사라져, 다른 파일에서는 그 사람 행이 '명부에 없는 사번'으로 보인다 (원인은 명부 `errors`에 있다)
 - CSV 인사 파일(사아랩스)은 시트가 없어 `sheets`의 이름을 파일 이름(확장자 제외)으로 두었다. 평가 스크립트가 이 이름을 `sheet`로 넘긴다
 
 | 회사 (id) | 파일 | 형식 특징 | 급여·근태 규칙 |
 |---|---|---|---|
 | 사아랩스 (`saalabs`) | 직원명부.csv, 조직.csv, 급여_2026하반기.csv, 연차현황.csv | UTF-8(명부·조직은 BOM 없음, 급여·연차는 BOM), 이름이 첫 열, 날짜 `24-03-02`·`19940302`·`1994.03.02` 혼재, 6개월이 한 파일에 세로로, 금액이 달마다 `1234560` / `"1,234,560"` / `"1,234,560원"`, 귀속월 `2026-10`·`2026.11` | 포괄임금제(고정연장 20시간), 입사·퇴사 월 달력일 일할, 대표이사 고용보험 0, 식대·자가운전·육아수당 각 20만 비과세 |
-| 자차정밀 (`jachaprec`) | 직원명부.xlsx, 조직.csv, 급여대장_2026-12.xlsx, 교대근무기록_2026-12.xlsx | 명부: 제목 2행 + 병합 묶음 헤더, 주민번호 열 숨김(마스킹 값), 사번 8자리 숫자, 날짜 셀 사이에 서식 없는 일련번호·문자. 급여: 총괄 + **부서마다 시트**, 1~3행 제목·결재란, 5~6행 2줄 헤더, A조·B조 **소계 행이 중간에**, 통상임금 열 숨김. 조직: 폐지 부서 행(사용여부 N) | 단협상 토 8시간 유급 → 통상시급 = 통상임금/**243**, 근속수당 DATEDIF, 국민연금은 **기준소득월액(신고값)에 상·하한**, 건강·고용은 그달 과세분. 근태: 주야 2교대(주 단위 교대), **자정 넘는 야간**, 22~06시 야간, 30분 미만 버림 |
-| 카타마트 (`katamart`) | 직원명부.csv, 조직.csv, 급여대장.xlsx, 근무시간표_12월.xlsx | 명부 CP949, 이메일 열 없음, 재직 `Y/N`, 시급에 쉼표·전각 숫자. 급여: 시트 `11월`·`12월`, **점포 소계 행**, 같은 열이 정규직 행은 값·파트타임 행은 수식. 근무시간표: **점포마다 시트, 날짜가 열**(가로 배치), 2행 일자·3행 요일 | 파트타임 기본급 = 시급×시간, **주휴수당**(주 15시간 이상), 공휴일 1.5배, 마감조 야간, **월 60시간 미만 4대보험 제외**, 10원 반올림, 소득세 1인 고정 |
+| 자차정밀 (`jachaprec`) | 직원명부.xlsx, 조직.csv, 급여대장_2026-12.xlsx, 교대근무기록_2026-12.xlsx | 명부: 제목 2행 + 병합 묶음 헤더, 주민번호 열 숨김(마스킹 값), 사번 8자리 숫자, 날짜 셀 사이에 서식 없는 일련번호·문자. 급여: 총괄 + **부서마다 시트**, 1~3행 제목·결재란, 5~6행 2줄 헤더, A조·B조 **소계 행이 중간에**, 통상임금 열 숨김. 조직: 폐지 부서 행(사용여부 N) | 단협상 토 8시간 유급 → 통상시급 = 통상임금/**243**, 근속수당 DATEDIF, 국민연금은 **기준소득월액(신고값)에 상·하한**, 건강·고용은 그달 과세분, 휴일근로는 전 시간 1.5배(8시간 초과분 2배를 따로 계산하지 않음 → 해당 행은 `legalDeviations`). 근태: 주야 2교대(주 단위 교대), **자정 넘는 야간**, 22~06시 야간, 30분 미만 버림 |
+| 카타마트 (`katamart`) | 직원명부.csv, 조직.csv, 급여대장.xlsx, 근무시간표_12월.xlsx | 명부 CP949, 이메일 열 없음, 재직 `Y/N`, 시급에 쉼표·전각 숫자. 급여: 시트 `11월`·`12월`, **점포 소계 행**, 같은 열이 정규직 행은 값·파트타임 행은 수식. 근무시간표: **점포마다 시트, 날짜가 열**(가로 배치), 2행 일자·3행 요일 | 파트타임 기본급 = 시급×시간, **주휴수당**(주 15시간 이상), 공휴일 1.5배(회사 규칙을 단순화), 마감조 야간, **그달 근무 60시간 미만 4대보험 제외**(회사 규칙 — 고용보험은 3개월 이상 근로자면 법과 다름, `legalDeviations`), 10원 반올림, 소득세 1인 고정 |
 | 파하공단 (`pahagongdan`) | 직원명부.xlsx, 조직.csv, 급여대장_2026.xlsx, 연가관리.xlsx | 명부: 마스킹 주민등록번호, 직원번호 앞자리 0 문자(`050012`), 임용일에 `2015년 3월 2일`·`2015/03/02`. 조직 3단계. 급여: 시트 `2026.10`~, 직급순 정렬, **봉급표(2026)와 봉급표(2025)가 같은 파일에** | 봉급 = `INDEX/MATCH(봉급표, 직급, 호봉)`, 임용 월마다 정기승급, 4급 이상 관리업무수당(봉급 9%)·시간외 없음, 시간외 단가 = 봉급×55%/209×1.5(공무원 방식), TRUNC 10원. 연가: 공무원 연가일수표 |
 
-사고 없는 비교군(오탐 측정용): 사아랩스 `연차현황.csv` 전체, 자차정밀 급여 부서 시트 5개, 카타마트 근무시간표 점포 시트 3개, 파하공단 `2026.12` 시트 (정답지 `cleanSheets`·`clean`).
+사고 없는 비교군(오탐 측정용): 사아랩스 `연차현황.csv` 전체, 자차정밀 급여 부서 시트 5개, 카타마트 근무시간표 점포 시트 2개(수원점·일산점), 파하공단 `2026.12` 시트 (정답지 `cleanSheets`·`clean`).
 사고 행이 아닌 행은 모두 회사 규칙대로 맞게 계산돼 있다.
 
 ### 추가 회사의 직원명부 오류
@@ -333,22 +351,22 @@ xlsxwriter로 **수식 + 파이썬으로 계산한 결과**를 같이 저장한�
 | DIVISOR_INCONSISTENT | 한 부서 시트만 통상시급 `/209` 숫자 (다른 시트는 설정!243) | 자차 급여 | FORMULA_READ, RULE_EXTRACTION, MULTI_SHEET |
 | SUBTOTAL_DOUBLE_COUNT | 합계 행이 SUM 범위로 조 소계 행까지 더해 2배 → 총괄 시트로 전파 | 자차 급여 | TOTAL_ROW_SKIP, RECOMPUTE_CHECK |
 | WRONG_YEAR_SHEET | 작년 12월 시트를 복사해 사람만 바꿈 (제목 `2025년`, 기본급 작년 금액, DATE(2025,12,31)) | 자차 급여 | PERIOD_LABEL_CHECK, CROSS_FILE_MATCH, FORMULA_READ |
-| STALE_CAP | 설정 시트의 국민연금 기준소득월액 상한이 작년 값 | 자차 급여 | RATE_TABLE_BY_PERIOD, LEGAL_RULE_COMPARE |
+| STALE_CAP | 설정 시트의 국민연금 기준소득월액 상한이 지난 고시값(2024-07~2025-06, 617만)으로 남음 (2026-12 귀속 상한 659만) | 자차 급여 | RATE_TABLE_BY_PERIOD, LEGAL_RULE_COMPARE |
 | HOURS_MISMATCH_CROSS_FILE | 근태 월집계에서 옮겨 적은 연장시간 숫자 순서가 바뀜 (seed 42: 17.5 → 71.5) | 자차 급여 | CROSS_FILE_MATCH |
-| MIDNIGHT_NOT_HANDLED | 주간 양식을 복사해 붙인 행의 근무(분) 수식에 MOD가 없어 야간 근무가 음수 | 자차 근태 | FORMULA_READ, RECOMPUTE_CHECK, RULE_EXTRACTION |
+| MIDNIGHT_NOT_HANDLED | 주간 양식을 복사해 붙인 행의 근무(분) 수식에 MOD가 없어 야간 근무가 음수 (`cells`는 MOD 없는 수식 범위 전체, `rows`는 값이 음수인 행) | 자차 근태 | FORMULA_READ, RECOMPUTE_CHECK, RULE_EXTRACTION |
 | HOLIDAY_WORK_AS_WEEKDAY | 성탄절 특근을 근무구분 '주간'으로 기록 | 자차 근태 | HOLIDAY_CALENDAR, CROSS_FIELD_RULE |
 | RESIGNED_STILL_PAID | 퇴사자에게 다음 달 급여 전액 | 사아 급여 | CROSS_FILE_MATCH |
 | MONTH_ROW_MISSING | 한 달 행이 없고 다음 달에 소급 합산 | 사아 급여 | PERIOD_CONTINUITY, CROSS_FILE_MATCH |
-| TOTAL_MISMATCH | 기본급만 고치고 지급합계·실지급은 그대로 (수식 없는 CSV) | 사아 급여 | RECOMPUTE_CHECK |
+| TOTAL_MISMATCH | 기본급 칸에만 일회성 소급분을 더하고 지급합계·공제·실지급은 그대로 (수식 없는 CSV) | 사아 급여 | RECOMPUTE_CHECK |
 | NEGATIVE_NET_PAY | 무급휴직 달에 보험료·대출상환만 공제해 실지급 음수 | 사아 급여 | RANGE_CHECK, RECOMPUTE_CHECK |
 | PRORATION_MISSING | 월 중간 입사자에게 한 달 치 전액 | 사아 급여 | CROSS_FILE_MATCH, RECOMPUTE_CHECK |
 | NP_CAP_NOT_APPLIED | 대표 국민연금을 상한 없이 계산 | 사아 급여 | LEGAL_RULE_COMPARE, RECOMPUTE_CHECK |
 | NONTAX_OVER_LIMIT | 자가운전보조금 30만원 전액 비과세 (한도 20만) | 사아 급여 | LEGAL_RULE_COMPARE, RECOMPUTE_CHECK |
-| MIN_WAGE_VIOLATION | 포괄임금 환산 시급 (기본급+식대)/209 < 최저임금 | 사아 급여 | LEGAL_RULE_COMPARE, RULE_EXTRACTION |
+| MIN_WAGE_VIOLATION | 포괄임금 환산 시급 (기본급+식대+육아수당)/209 < 최저임금 (고정연장수당·자가운전보조금 제외) | 사아 급여 | LEGAL_RULE_COMPARE, RULE_EXTRACTION |
 | MIN_WAGE_STALE | 파트타이머 시급이 2025년 최저임금 그대로 | 카타 급여 | LEGAL_RULE_COMPARE, RATE_TABLE_BY_PERIOD |
 | WEEKLY_HOLIDAY_PAY_MISSING | 주 15시간 이상인데 주휴시간 0 입력 | 카타 급여 | LEGAL_RULE_COMPARE, CROSS_FILE_MATCH |
 | INSURANCE_EXEMPTION_WRONG | 월 60시간 이상인데 4대보험 칸에 0 입력 (단시간 제외 오적용) | 카타 급여 | HARDCODED_IN_FORMULA_COLUMN, FORMULA_READ, LEGAL_RULE_COMPARE |
-| HOLIDAY_PREMIUM_MISSING | 한 점포가 공휴일 근무를 일반 근무시간에 넣어 가산 누락 | 카타 급여 | HOLIDAY_CALENDAR, CROSS_FILE_MATCH, LEGAL_RULE_COMPARE |
+| HOLIDAY_PREMIUM_MISSING | 한 점포가 공휴일 근무를 일반 근무시간에 넣어 가산 누락. 파트타임은 0.5배분, 월급제 정규직은 휴일수당 전체가 빠져 2건으로 나눔 | 카타 급여 | HOLIDAY_CALENDAR, CROSS_FILE_MATCH, LEGAL_RULE_COMPARE |
 | ROW_OUTSIDE_SUBTOTAL | 신규자 행을 점포 소계 아래에 추가 → 소계·총계에서 빠짐 | 카타 급여 | TOTAL_ROW_SKIP, RECOMPUTE_CHECK |
 | CROSS_SHEET_DUPLICATE | 타점 지원 근무를 두 점포 시트에 모두 기록 | 카타 근무시간표 | DUPLICATE_DETECT, MULTI_SHEET |
 | STALE_PAY_TABLE | 한 달 시트의 봉급 수식이 같은 파일의 작년 봉급표 참조 | 파하 급여 | FORMULA_READ, RATE_TABLE_BY_PERIOD, MULTI_SHEET |
@@ -356,7 +374,8 @@ xlsxwriter로 **수식 + 파이썬으로 계산한 결과**를 같이 저장한�
 | ALLOWANCE_RULE_CONFLICT | 관리업무수당 받는 4급에 시간외수당을 값으로 입력 | 파하 급여 | CROSS_FIELD_RULE, HARDCODED_IN_FORMULA_COLUMN, RULE_EXTRACTION |
 | LEAVE_OVERUSED | 병가를 종류 '연가'로 기록 → 사용 > 부여, 잔여 음수 | 파하 연가 | CROSS_FIELD_RULE, RECOMPUTE_CHECK |
 
-법정 기준과 다른 회사 규칙(사고 아님, `legalDeviations`): 파하공단 시간외 단가(봉급의 55% 기준)와 공무원 연가일수표(1~4년차는 법보다 적음),
+법정 기준과 다른 회사 규칙(사고 아님, `legalDeviations`): 파하공단 시간외 단가(봉급의 55% 기준)와 공무원 연가일수표(재직 1~3년·15년 이상은 법보다 적고 4~12년은 많음),
+카타마트 월 60시간 미만 고용보험 제외(입사 3개월 이상 파트타이머 행),
 그 밖에 STALE_CAP·NP_CAP_NOT_APPLIED·NONTAX_OVER_LIMIT·MIN_WAGE_*도 함께 기록.
 
 새 needs:
@@ -369,8 +388,136 @@ xlsxwriter로 **수식 + 파이썬으로 계산한 결과**를 같이 저장한�
 | RANGE_CHECK | 음수 실지급처럼 있을 수 없는 범위의 값 |
 | PERIODIC_STEP_RULE | 호봉 정기승급 같은 날짜 기반 규칙 |
 
-가정값: 국민연금 기준소득월액 하한 40만·상한 637만(작년 상한 617만)을 2026년 전체에 적용, 2025 최저임금 10,030원, 봉급표·직급보조비는 공무원 표를 흉내 낸 값(실제 표 아님).
-수식 검산(seed 42, `check_formulas.py`): 자차 급여 10,170셀, 카타 급여 3,801셀·근무시간표 92셀, 파하 급여 10,256셀·연가 972셀 불일치 0. 자차 교대근무기록 53,364셀도 불일치 0 (이 파일은 검사에 8분 넘게, 메모리 7GB 가까이 든다).
+국민연금 기준소득월액 하한·상한은 귀속월 기준이다: 2025-07~2026-06 40만·637만, **2026-07~ 41만·659만**(보건복지부고시 제2026-31호). 추가 회사의 급여는 모두 2026-07 이후 귀속이라 41만·659만을 쓴다 (`base.np_limits`).
+자차 STALE_CAP 사고의 617만은 2024-07~2025-06 고시값이다.
+가정값: 2025 최저임금 10,030원, 봉급표·직급보조비는 공무원 표를 흉내 낸 값(실제 표 아님).
+수식 검산(seed 42, `check_formulas.py`): 자차 급여 10,170셀, 카타 급여 3,801셀·근무시간표 92셀, 파하 급여 10,256셀·연가 972셀 불일치 0. 자차 교대근무기록 53,364셀도 불일치 0 (이 파일은 검사에 8분 넘게, 메모리 7GB 가까이 든다. 감사 반영 뒤에는 데이터가 같아 다시 돌리지 않음).
+파하 급여 `2026.10!S196`은 10원 경계 셀이라(2차 아래 설명) 시트 `floatBoundaryCells`에 적었다.
+
+## 추가 가상 회사 2차 (newco/)
+
+1차 4곳과 같은 원칙(검증 규칙·평가 결과를 보지 않고, 실제 한국 회사의 인사·급여·근태 엑셀이 틀어지는 방식만 보고 만듦)으로 6곳을 더했다.
+업종·근무 형태·파일 출처(사람이 만든 엑셀, 프로그램 내보내기, 한글 표 붙여넣기, 노무법인 양식, 신고 양식, 기계 로그)가 기존 7곳과도, 서로도 겹치지 않게 골랐다.
+
+- 기존 7곳 출력은 그대로다 (seed 42 기준선과 비교: json·csv 바이트 동일, xlsx는 `docProps/core.xml` 말고 동일, 56개 파일)
+- 인물: 1차 4곳의 조각(uuid 앞 8자리 % 4)은 그대로 두고 `base.pick`이 뽑은 인물을 `used`에 더한다(1차 4곳은 조각이 서로 달라 결과가 같음).
+  2차 6곳은 기존 7곳이 뽑은 인물을 뺀 뒤 uuid **뒤** 8자리 % 6으로 나눈 조각에서 뽑아 서로 겹치지 않는다 (10곳 모두 겹침 0 확인)
+- `build_all(only=[2차 회사])`로 일부만 만들 때는 1차 4곳의 `people()`만 먼저 돌려 `used`를 채운다 → 전체 생성과 결과가 같다 (6곳 모두 바이트 비교 확인)
+- 머버로지스 외국인 근로자 50명은 데이터셋(한국인)에서 뽑지 않고 국가별 흔한 이름 조각을 섞은 가상 이름이다. 주민·외국인등록번호는 모두 `850312-1******` 마스킹 형태만
+- 정답지 형식은 1차와 같다. 더한 키: `legitUnusual`(오류가 아닌데 이상해 보이는 값), 시트의 `summaryRows`·`signRows`·`blockHeaderRows`·`floatBoundaryCells`,
+  사고의 `source`(다른 사고에서 번진 것)·`crossFileLocation`, 급여대장의 `cleanBlocks`
+- 사번 열이 없는 파일(근로내용확인신고, 강의시수표, 법인별집계)은 `expectedMapping`에 `empNo`가 없다. 사고에는 `empNo`를 적었지만 평가 스크립트가 행 → 사번을 찾지 못한다
+
+| 회사 (id) | 파일 | 형식 특징 | 급여·근태 규칙 |
+|---|---|---|---|
+| 거너요양병원 (`geoneomed`) | 직원명부.xlsx, 조직.csv, 근무표_2026-12.xlsx, 급여대장_2026-12.xlsx | 명부: 제목 2행 + 헤더 4행, 직종·면허·자격번호 열. 근무표: **병동마다 시트, 칸 값이 시간이 아니라 근무 코드**(D/E/N/상/O/연), 날짜 머리글 `1(화)`, 오른쪽 COUNTIF 집계, 아래 날짜별 인원 행. 급여: 간호부(2줄 병합 헤더)와 진료지원(1줄) **시트마다 열 구성이 다름** | 3교대 21일 순환, 야간전담, 야간 = E 1.5h + N 6.5h, 나이트수당 1회 4만(회사) + 법정 야간가산 0.5, 통상시급에 면허·자격수당 포함, 당직 1회 10만, 국민연금 상한 659만(2026-07~) |
+| 더러건설 (`deoreocon`) | 직원명부.xlsx, 조직.csv(CP949), 출역부_2026-12.xlsx, 근로내용확인신고_2026-12.csv(CP949) | 명부: 상용·일용 한 시트(구분 열), 일용 사번 `D26-0012`, 일용 날짜에 `2026/03/04`·`20260304`. 출역부: **현장마다 시트**, 1~31일 칸에 **공수 1·0.5·1.5**, 날짜 머리글이 숫자, 계 아래 서명 행. 신고: 헤더 위 사업장 정보 3줄, **사번 없음**(성명·주민번호), 1~31일 `○` | 노무비 = 총공수 × 일당, 일용 소득세 (노무비 − 15만 × 출역일) × 2.7% · 1,000원 미만 소액부징수(월 합산), 고용보험 0.9%, 월 8일 이상만 국민연금·건강보험. 일용 입사일 = 최초 출역일 |
+| 머버로지스 (`meobeologis`) | 직원명부.csv(UTF-8 BOM), 조직.csv, 급여대장_2026-12.xlsx, 출퇴근기록_2026-12.csv | 명부: 한·영 병기 헤더 `성명(Name)`, 외국인은 여권 영문 대문자 + 한글표기 열, 체류자격·체류만료일(`MM/DD/YYYY` 혼재)·외국인등록번호·기숙사. 급여: 주간조·야간조 시트, 헤더 칸 안 줄바꿈 `사번\nID`, 외국인 성명은 **한글 표기**. 출퇴근: **지문인식기 원시 로그**(한 줄 = 한 번 찍음, 영문 헤더, 이름 10자 잘림, 야간 퇴근은 다음 날) | 통상시급 ROUND(기본급/209), 야간조 하루 야간 7h, 토요일은 연장, 12/25 시작일 기준 휴일, 주 52시간 안(창고·물류는 특례 업종 아님), 기숙사 거주자 식대 0 + 기숙사비 20만·식비 15만 공제(합계 상한 통상임금 20%, 회사 적용값) |
+| 서어에듀 (`seoeoedu`) | 직원명부.xlsx, 조직.csv, 강사료지급_2026-11_12.csv(CP949), 강의시수표_2026-12.xlsx | 명부: **한글(HWP) 표를 붙인 모양** — `Sheet1`, 논리 열 하나가 엑셀 2칸 병합, 구분·부서 **세로 병합**(아래 행 빈 칸), 날짜 `2019. 3. 4.`. 강사료: 학원 프로그램 내보내기, 11·12월 세로, **근로소득·사업소득 행이 한 파일**. 시수표: 부마다 시트, 강사·반별 행, **사번 없이 이름**, 강사별집계는 이름 SUMIF | 상근 = 기본급 + (시수 − 80) × 2.5만, 시간강사 = 시수 × 단가(월 60시간 이상만 4대보험 — 회사 규칙, 고용보험은 법과 다름), 위촉 = 시수 × 단가, 소득세 3%·지방세 = 소득세 × 10%. 명부의 퇴사 위촉강사 2명은 11·12월 강사료·시수표에 없음 |
+| 저처콜 (`jeocheocall`) | 직원명부.csv(CP949), 조직.csv(CP949), 급여지급내역_2026-12.csv(CP949), 인센티브산정_2026-12.xlsx | **회계 프로그램 내보내기**: 코드·이름 열 짝(부서·직급·직책), 사원코드 6자리 앞자리 0, 이름 뒤 공백 채움(고정폭), 재직구분 0/1. 급여: **한 줄 = 사원 × 항목코드**(P01 기본급 … D12 지방세), 0원 항목은 줄 없음, 금액 앞 공백. 인센티브: 팀마다 시트, VLOOKUP 등급표 | 통상시급 = (기본급+직책수당)/209 버림, 인센티브 = 종합점수 → 등급표(상한 50만), 지급일 재직자만. 달 중간 입사자는 기본급·식대를 재직 달력일로 일할(10원 버림)하고 입사 월 국민연금·건강보험은 없음(1일 입사가 아니면 다음 달부터, 고용보험은 그달 보수로) — 12/28 입사 교육생 1명 |
+| 퍼허그룹 (`peoheogroup`) | 직원명부.xlsx, 조직.csv, 급여대장_2026-12.xlsx, 연차대장_2026.xlsx | **노무법인이 계열사 3법인을 한 파일로**: 명부에 법인코드 열, **사번이 법인마다 0001부터라 법인끼리 겹침**(법인코드+사번이 키), 그룹입사일·입사일 두 날짜. 급여: 한 시트에 **법인 블록**(`■ 법인` 머리 행 → 직원 → 소계), 총계 = 소계 합, 법인별집계 시트가 소계 셀 참조. 연차: 법인마다 시트 | 법인 공통 양식, 식대만 법인별(푸드 15만), 연차는 홀딩스 회계연도·푸드 입사일(상한 없음)·테크 법정, 계열사 전적 시 근속 승계(그룹 규정, 가정) |
+
+사고 없는 비교군(오탐 측정용): 거너 근무표 `5병동`·급여 `진료지원`, 더러 출역부 `다솜교`, 머버 급여 `주간조`, 서어 시수표 `초등부`,
+저처 인센티브 `아웃바운드팀`, 퍼허 연차 `퍼허푸드` 시트·급여 `PH` 블록 (정답지 `cleanSheets`·`cleanBlocks`).
+오류가 아닌데 눈에 띄는 값은 `legitUnusual`에 적었다: 재입사자의 퇴직 처리된 예전 사번 행(거너·저처), 전적으로 퇴사 처리된 예전 법인 행·법인 간 같은 사번(퍼허),
+지문 두 번 찍힘·다음 날 날짜의 야간 퇴근(머버), 동명이인 강사·위촉강사가 명부에 있음(서어), 0원 항목 줄 없음(저처), 의사 국민연금 상한(2026-07~ 659만) 적용(거너) 등.
+비교군은 '사고가 없는' 시트다. 법정 기준과 다른 회사 규칙(`legalDeviations`)은 비교군에도 있을 수 있고, 그 행은 `legalDeviations`의 `rows`에 적었다:
+머버 `주간조` 12/25 휴일 8시간 초과분 1.5배 지급(`holidayPremium`), 퍼허 `퍼허푸드` 연차 25일 상한 없음(`annualLeaveCap`). 이 행의 경고는 오탐이 아니다.
+
+### 2차 회사의 직원명부 오류
+
+기존 코드(REQUIRED·INVALID_EMAIL·DUPLICATE_KEY·INVALID_ENUM·DATE_ORDER·DUPLICATE_SUSPECTED·POSITION_TYPO·DATE_FORMAT·RRN_BIRTH_MISMATCH)를 회사마다 넣고 아래를 더했다 (모두 `detectable: false`).
+DUPLICATE_SUSPECTED는 재입사·전환·재입국·계열사 전적 때 예전 행을 닫지 않은 경우로, 예전 행이 제대로 닫힌 경우는 오류로 세지 않았다(`legitUnusual`).
+
+| 코드 | 내용 | 회사 |
+|---|---|---|
+| LICENSE_MISSING | 직종 간호사인데 면허·자격번호 빈 칸 (`field`는 헤더 이름 `면허·자격번호`) | 거너 |
+| LICENSE_MISMATCH | 직종 '간호사'인데 면허·자격번호는 '간호조무사' 자격 | 거너 |
+| VISA_EXPIRED | 재직인데 체류만료일이 기준일보다 이름 (재입국 전 행 포함) | 머버 |
+| MISCLASSIFIED_CONTRACTOR | 고용형태 '위촉(사업소득)'인데 비고 '주5일 상근·담임' (위장 프리랜서) | 서어 |
+| CODE_NAME_MISMATCH | 직급코드 110(상담사)인데 직급명 '선임상담사' — 코드·이름 짝 불일치 | 저처 |
+| GROUP_HIRE_AFTER_CORP_HIRE | 그룹입사일 > 법인 입사일 | 퍼허 |
+
+### 2차 추가 사고 유형
+
+기존 유형(KIND_TYPO·MIN_WAGE_STALE·HOURS_MISMATCH_CROSS_FILE·TEXT_NUMBER·INSURANCE_EXEMPTION_WRONG·OUT_MISSING·KEY_MISSING·DUPLICATE_ROW·
+RESIGNED_STILL_PAID·CAP_EXCEEDED·NONTAX_OVER_LIMIT·HARDCODED_STALE·NEGATIVE_REMAIN)도 회사 양식에 맞게 다시 썼다. 회사별 사고 수: 거너 9, 더러 8, 머버 9, 서어 11, 저처 8, 퍼허 6.
+새 유형:
+
+| 유형 | 내용 | 회사·파일 | needs |
+|---|---|---|---|
+| CARRIED_FROM_SOURCE | 다른 파일·시트의 사고 값을 옮겨 적어 같이 틀림 (`source`에 원래 사고 id) | 거너 급여, 더러 신고, 서어 강사료 | CROSS_FILE_MATCH (+ NAME_MATCH 등) |
+| SHIFT_OVERLAP | N(~익일 07:30) 다음 날 D(07:00~) → 근무 시간이 겹침 | 거너 근무표 | SHIFT_CODE_TIME, CROSS_FIELD_RULE |
+| REST_INTERVAL_SHORT | E(~23:30) 다음 날 D → 휴식 7.5시간 (특례 사업장 11시간 휴식) | 거너 근무표 | SHIFT_CODE_TIME, LEGAL_RULE_COMPARE |
+| NO_WEEKLY_REST | 결원 대체로 OFF를 D로 바꿔 12일 연속, 월~일 한 주에 휴무 없음 — 병원 근무표 기준(7일마다 휴무 1일, 가정) 위반. 법(제55조 '1주 평균 1회 이상')으로는 확정 위반 아님 | 거너 근무표 | SHIFT_CODE_TIME, CROSS_FIELD_RULE |
+| NIGHT_PREMIUM_MISSING | 야간전담 간호사 야간가산 칸에 0 ('야간전담수당에 포함'이라는데 그런 항목 없음) | 거너 급여 | HARDCODED_IN_FORMULA_COLUMN, LEGAL_RULE_COMPARE |
+| ORDINARY_WAGE_ITEM_MISSING | 맨 아래 추가한 신규자 행의 통상시급 수식이 옛 양식이라 고정 면허·자격수당이 빠짐 | 거너 급여 | FORMULA_READ, RULE_EXTRACTION, LEGAL_RULE_COMPARE |
+| STALE_TAX_THRESHOLD | 한 현장 시트 일용 소득세 수식에 옛 근로소득공제 100000 숫자 | 더러 출역부 | FORMULA_READ, RATE_TABLE_BY_PERIOD, LEGAL_RULE_COMPARE |
+| SAME_DAY_TWO_SITES | 같은 일용근로자가 같은 날 두 현장 출역 (노무비 이중) | 더러 출역부 | MULTI_SHEET, DUPLICATE_DETECT, CROSS_FIELD_RULE |
+| GONGSU_OUT_OF_RANGE | 공수 1.0을 10으로 입력 | 더러 출역부 | RANGE_CHECK, RECOMPUTE_CHECK |
+| DAYS_MISMATCH_CROSS_FILE | 신고 근로일수 ≠ 출역부 출역일수 | 더러 신고 | CROSS_FILE_MATCH, NAME_MATCH |
+| REPORT_MISSING | 출역부에 있는 일용근로자가 신고 파일에 없음 (위치는 `crossFileLocation`) | 더러 신고 | CROSS_FILE_MATCH, NAME_MATCH |
+| DORM_DEDUCTION_OVER_LIMIT | 기숙사비 + 식비 공제 > 통상임금 월액 20% (회사 적용 상한, 가정 — 지침의 유형별 상한 8~20% 중 최고값이라 어느 유형이어도 초과) | 머버 급여 | LEGAL_RULE_COMPARE, CROSS_FIELD_RULE |
+| DORM_CHARGED_AFTER_MOVEOUT | 11/30 기숙사 퇴실(명부)인데 12월에도 공제 | 머버 급여 | CROSS_FILE_MATCH |
+| PROBATION_REDUCTION_ILLEGAL | 단순노무(물류) 신규자 기본급을 수습 90%로 | 머버 급여 | LEGAL_RULE_COMPARE, CROSS_FILE_MATCH |
+| VISA_EXPIRED_STILL_PAID | 명부 체류만료일 뒤 12월 급여 전액 (비고 '체류연장 신청 중') — 회사 점검 기준의 확인 대상. 만료 전 연장 신청 중이면 취업 가능해 확정 위반 아님 | 머버 급여 | CROSS_FILE_MATCH, CROSS_FIELD_RULE |
+| PROXY_PUNCH_SUSPECTED | 같은 기계에서 다른 사람 4초 뒤 비밀번호(PW)로 출근 | 머버 출퇴근 | CROSS_FIELD_RULE, DUPLICATE_DETECT |
+| WORK_AFTER_VISA_EXPIRY | 명부 체류만료일 이후 출퇴근 기록 (`rowCount`·`firstRow`·`lastRow`, 확인 대상 — 확정 위반 아님) | 머버 출퇴근 | CROSS_FILE_MATCH, CROSS_FIELD_RULE |
+| MISCLASSIFIED_CONTRACTOR | 위촉(3.3%)인데 시수·단가 없이 매달 고정액, '주5일·담임' | 서어 강사료 | CROSS_FIELD_RULE, LEGAL_RULE_COMPARE |
+| WITHHOLDING_COMBINED_RATE | 사업소득 3.3%를 소득세 칸에 한꺼번에, 지방소득세 0 | 서어 강사료 | LEGAL_RULE_COMPARE, RECOMPUTE_CHECK |
+| INSURANCE_ON_BUSINESS_INCOME | 소득구분 '사업'인데 건강·장기요양·고용보험 공제 | 서어 강사료 | CROSS_FIELD_RULE, LEGAL_RULE_COMPARE |
+| UNIT_PRICE_MISMATCH | 강의료가 시간당단가 열(11월과 같은 단가)이 아니라 5천 원 낮은 단가 × 시수 | 서어 강사료 | RECOMPUTE_CHECK |
+| NAME_KEY_COLLISION | 동명이인 강사를 이름 SUMIF로 합쳐 한 행, 한 사람은 집계에서 빠짐 | 서어 시수표 | NAME_MATCH, DUPLICATE_DETECT, CROSS_SHEET_LOOKUP |
+| LEGACY_ITEM_CODE | 한 팀 인센티브 줄이 개편 전 항목코드 `P31 인센티브(구)` | 저처 급여 | ENUM_CHECK, CROSS_FIELD_RULE |
+| AMOUNT_MISMATCH_CROSS_FILE | P21 인센티브 금액 ≠ 산정표 | 저처 급여 | CROSS_FILE_MATCH |
+| ITEM_ROW_MISSING | 세로 항목 형식에서 고용보험(D04) 줄만 없음 | 저처 급여 | ITEM_COMPLETENESS, RECOMPUTE_CHECK |
+| LOOKUP_RANGE_SHORT | 한 팀 시트 VLOOKUP 범위가 등급표 마지막 행(S) 빠짐 | 저처 인센티브 | FORMULA_READ, CROSS_SHEET_LOOKUP, RECOMPUTE_CHECK |
+| DIV_ZERO_ERROR | 근무일수 0 교육생 → `#DIV/0!`이 인센티브까지 전파 | 저처 인센티브 | ERROR_VALUE |
+| SUBTOTAL_RANGE_SHIFTED | 법인 블록 맨 위에 행을 끼운 뒤 소계 SUM 시작 행이 한 칸 밀림 → 소계·총계·법인별집계 | 퍼허 급여 | TOTAL_ROW_SKIP, RECOMPUTE_CHECK, FORMULA_READ |
+| TRANSFER_DOUBLE_PAY | 12/1 전적자가 두 법인 블록에 모두 (사번이 달라 성명·생년월일로만 찾음) | 퍼허 급여 | DUPLICATE_DETECT, CROSS_FILE_MATCH, NAME_MATCH |
+| SENIORITY_NOT_CARRIED | 전적자 행만 근속·연차 수식이 그룹입사일 대신 전적일 참조 | 퍼허 연차 | FORMULA_READ, CROSS_FIELD_RULE |
+
+새 needs:
+
+| needs | 뜻 |
+|---|---|
+| SHIFT_CODE_TIME | 근무 코드(D/E/N)를 코드표로 시각·시간으로 바꿔 검사 |
+| ITEM_COMPLETENESS | 세로 항목 형식에서 사원마다 있어야 할 항목 줄이 다 있는지 |
+
+법정 기준과 다른 회사 규칙(`legalDeviations`, 사고 아님): 더러 일용 소득세 월 합산(법은 일급 단위. 차이 방향은 행마다 다르고 소액부징수를 일 단위·지급 건 단위 중 어느 쪽으로 보느냐에 따라 달라져 `assumption: true`), 머버 12/25 휴일근로를 시작일 기준으로 봄·12/25 주간 근무의 8시간 초과분을 연장 1.5배로(법은 2배),
+퍼허 푸드 연차 25일 상한 없음·홀딩스 회계연도 기준, 서어 월 60시간 미만 시간강사 고용보험 0(3개월 이상 계속 근로한 행 목록 포함). 사고이면서 법정 기준 위반인 것도 1차처럼 함께 적었다.
+
+가정값·단순화 (실제 고시·지침 확인이 필요한 것):
+- 통상시급에서 식대(매달 같은 금액)를 빼는 회사가 많다(자차·저처·퍼허·거너·머버 등). 이것은 회사 규칙(단순화)이다: 정기·일률·고정 지급 식대는 판례(대법원 2024. 12. 19. 전원합의체 판결 등)상
+  통상임금에 들 가능성이 높아, 이 회사들의 연장·야간·휴일수당은 법정 기준보다 낮을 수 있다. 사고 기대값은 회사 규칙 기준이고, 이 차이는 사고로 세지 않는다
+- 거너요양병원은 보건업 근로시간 특례(제59조) 서면합의가 있다고 가정 → 근무 사이 연속 11시간 휴식. 근무표 '7일마다 휴무 1일 이상'은 병원 내부 기준으로 가정
+- 건설 일용직 국민연금·건강보험 가입 기준을 **월 8일 이상 출역**으로 단순화. 일용 근로소득공제 15만원(2019년부터)·옛 공제 10만원, 세율 6% × (1 − 세액공제 55%) = 2.7%, 소액부징수 1,000원.
+  더러 회사 방식(월 노무비 합산 후 소액부징수 판단)과 법정 일급 단위 계산의 차이는 방향을 확정하지 않은 가정이다: 반공수 날이 있으면 회사가 적게 떼고, 소액부징수를 일 단위로 보면 일당이 낮은 행은 회사가 더 뗀다
+- 더러 출역부 사고의 `expected`는 그 사고만 고친 값이다. 같은 행에 다른 사고가 겹치면(`'반'` 입력 행의 소득세, 이중 출역 행) `overlaps`에 둘 다 고친 값(`trueValue`)을 적었다.
+  근로내용확인신고는 실제 출역 기준이라 출역부 사고 행은 두 파일 값이 다르다 — 그 신고 행·셀은 출역부 사고의 `crossFileAffected`에 있다 (신고 값이 맞음)
+- 저처 인센티브산정 사고(VLOOKUP 범위·상한 초과)로 틀린 금액은 급여지급내역에 그대로 지급돼 인센티브 줄과 그 금액으로 계산된 4대보험·세금 줄이 같이 틀리다 (`crossFileAffected`). P31 줄 금액이 틀린 3명은 `JEOC-PAY-01`과 겹친다 (`overlaps`)
+- 외국인 근로자 숙식비 공제 상한 통상임금 월액 20%는 머버의 회사 적용값(가정): 고용노동부 지침은 제공 숙식·숙소 유형별로 8~20%라, 숙식 모두 제공·주택형 숙소로 보고 최고값을 썼다. 외국인도 4대보험·간이세액을 내국인과 같게 (국민연금 상호주의·고용보험 적용 범위는 반영 안 함)
+- 수습 감액: 1년 이상 계약 + 3개월 이내만 가능, 단순노무업무는 감액 불가 (최저임금법 제5조·시행령)
+- 학원 시간강사 4대보험 기준 '월 강의시수 60시간'은 회사 규칙(강의시간 = 근로시간으로 단순화). 국민연금·건강보험의 60시간 미만 제외는 단순화한 가정이고,
+  고용보험은 3개월 이상 계속 근로하면 월 60시간 미만도 적용(고용보험법 시행령 제3조)이라 회사 규칙과 다른 행을 `legalDeviations`(`shortHoursEmploymentInsurance`)에 적었다.
+  사고 기대값은 회사 규칙 기준이다 (동명이인 합산 사고 행은 실제 시수로 60시간 미만이 되어 4대보험 0이 기대값). 원장은 법인에 고용된 원장(근로자)으로 가정해 4대보험을 공제한다
+- 서어 강사료 사고는 시수·단가를 고치면 같이 바뀌는 지급총액·4대보험·세금·공제합계·실지급액 칸을 `cascade`·`values`에 적었다. 시수표 사고가 강사료로 번진 행은 시수표 사고의 `crossFileAffected`에 있다
+- 퍼허그룹 '계열사 전적 시 근속 승계'는 그룹 규정으로 가정 (법적으로 전적은 원칙상 새 근로관계)
+- 퍼허 급여 사고 4건은 소계·총계·법인별집계로 번진 칸을 `cascade`, 칸별 실제·이 사고만 고친 값을 `cascadeValues`에 적었다. 네 사고가 총계 행 등 같은 칸을 바꾸므로
+  `overlaps`에 상대 사고와 겹친 칸, 그 칸의 사고를 모두 고친 값(`trueValue`)을 적었다 (예: 푸드 소계는 SUBTOTAL_RANGE_SHIFTED만 고치면 이중 지급 행이 남는다)
+- 명부 DATE_ORDER(퇴사일 < 입사일)는 서어·퍼허 모두 실제 퇴사자 행에 넣었다 (재직구분 '퇴사'는 맞는 값, 급여·시수 파일에 없음)
+- 거너 휴일근로(12/25)는 근무표 날짜 칸 기준 8시간, 머버는 근무 시작일 기준 (회사 단순화)
+
+수식 검산(seed 42, `check_formulas.py`): 거너 급여 2,082셀·근무표 775셀, 머버 급여 1,535셀, 서어 시수표 196셀(SUMIF), 저처 인센티브 623셀, 퍼허 연차 477셀 불일치 0.
+더러 출역부 1,252셀 중 21셀, 퍼허 급여 1,828셀 중 14셀이 다르다: 모두 `ROUNDDOWN(금액 × 요율, −1)`의 곱이 정확히 10원 경계인데 이진 부동소수로는
+`24569.999999999996`처럼 아래로 떨어지는 셀(더러 4·퍼허 2)과 그 셀을 더한 공제계·실지급·소계·총계다. 생성기(`hrfiles/xl.py`)는 1차와 같이 엑셀처럼 15자리 기준으로
+24,570을, `formulas`는 24,560을 낸다 (일당·급여가 만원 단위라 이 두 회사에서만 생김). 검산 도구에 따라 10원이 다를 수 있는 셀을 시트의 `floatBoundaryCells`에 적었다.
+저처 인센티브 종합점수 `ROUND(…, 1)`는 정확히 x.x5가 되는 입력을 피해 만들었다 (같은 이유). CSV 파일(강사료·급여지급내역·신고·출퇴근)은 수식이 없다.
+
+알려진 한계:
+- 평가 스크립트는 사번만으로 행을 맞추므로 퍼허그룹처럼 법인마다 사번이 겹치는 회사는 사번 기준 대조가 법인을 구분하지 못한다 (정답지 사고에는 `corp`를 함께 적음)
+- 사번 열이 없는 파일의 사고는 평가 스크립트의 사번 기준 검출 경로로는 잡히지 않는다 (행 번호 기준만)
+- 엑셀·LibreOffice로 직접 열어 본 확인은 아니다 (openpyxl로 모든 xlsx 열기, `formulas` 재계산만)
 
 ## 평가에서 드러난 이관 서비스 약점과 보완 상태
 
