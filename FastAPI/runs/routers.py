@@ -1,9 +1,10 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
 from sqlalchemy.orm import Session
 
-from core.auth import get_user_id
+from core.auth import AuthUser, get_current_user, get_user_id
 from core.database import get_db
 from core.response import ApiResult, ok
+from core.exceptions import BusinessException, ErrorCode
 from engine.runner import execute_run, resume_run
 from runs import service
 from runs.schemas import (
@@ -25,10 +26,10 @@ def create_run(
     req: RunCreateRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user_id: str | None = Depends(get_user_id),
+    user: AuthUser = Depends(get_current_user),
 ):
-    run = service.create_run(db, workflow_id, req, user_id)
-    background_tasks.add_task(execute_run, run.id)
+    run = service.create_run(db, workflow_id, req, str(user.employee_id))
+    background_tasks.add_task(execute_run, run.id, user.token)
     return ok({"run_id": run.id, "status": run.status})
 
 
@@ -38,10 +39,10 @@ def create_test_run(
     req: RunCreateRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user_id: str | None = Depends(get_user_id),
+    user: AuthUser = Depends(get_current_user),
 ):
-    run = service.create_test_run(db, workflow_id, req, user_id)
-    background_tasks.add_task(execute_run, run.id)
+    run = service.create_test_run(db, workflow_id, req, str(user.employee_id))
+    background_tasks.add_task(execute_run, run.id, user.token)
     return ok({"run_id": run.id, "status": run.status})
 
 
@@ -110,7 +111,11 @@ def resume(
     req: ResumeRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    user: AuthUser = Depends(get_current_user),
 ):
     run = service.get_waiting_run(db, run_id)
-    background_tasks.add_task(resume_run, run.id, req.model_dump())
+    # 남의 실행을 대신 확인·재개하지 못하게 (관리자는 예외)
+    if run.requested_by != str(user.employee_id) and not user.is_admin:
+        raise BusinessException(ErrorCode.RUN_FORBIDDEN)
+    background_tasks.add_task(resume_run, run.id, req.model_dump(), user.token)
     return ok({"run_id": run.id, "status": run.status})

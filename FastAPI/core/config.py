@@ -34,6 +34,17 @@ class Settings(BaseSettings):
     upload_dir: str = "uploads"
     max_upload_mb: int = 20
 
+    # JWT 인증 (user-service가 발급한 access 토큰을 공개키로 검증, 팀원 서비스와 같은 환경변수 이름)
+    jwt_jwks_uri: str = "http://localhost:8081/.well-known/jwks.json"
+    auth_dev_employee_id: int | None = None   # 로컬 개발용: 토큰 없으면 이 사원으로 간주 (운영에선 비워둠)
+
+    # 팀원 서비스 주소 (compose 안에선 http://user-service:8081 처럼 서비스 이름으로)
+    user_service_url: str = "http://localhost:8081"
+    approval_service_url: str = "http://localhost:8083"
+    service_timeout: float = 10.0
+    # 결재 문서 출처: 결재 서비스에 AUTOMATION이 추가되기 전까진 DIRECT
+    approval_source_type: str = "DIRECT"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

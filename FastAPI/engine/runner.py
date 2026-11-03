@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from core.database import SessionLocal
 from engine.builder import StepRecorder, build_graph
 from engine.checkpointer import get_checkpointer
+from engine.tokens import clear_token, set_token
 from runs.models import Run, RunStatus, RunStep
 
 
@@ -72,7 +73,7 @@ class DbRecorder(StepRecorder):
             db.commit()
 
 
-def execute_run(run_id: int) -> None:
+def execute_run(run_id: int, token: str | None = None) -> None:
     with SessionLocal() as db:
         run = db.get(Run, run_id)
         if run is None or run.status != RunStatus.QUEUED:
@@ -84,11 +85,12 @@ def execute_run(run_id: int) -> None:
         run.started_at = func.now()
         db.commit()
 
+    set_token(run_id, token)   # 이 실행 구간 동안 노드가 팀원 API 호출에 사용
     first_state = {"run_id": run_id, "inputs": inputs, "outputs": {}, "branches": {}}
     _run_graph(run_id, graph_json, thread_id, first_state)
 
 
-def resume_run(run_id: int, decision: dict) -> None:
+def resume_run(run_id: int, decision: dict, token: str | None = None) -> None:
     with SessionLocal() as db:
         run = db.get(Run, run_id)
         if run is None or run.status != RunStatus.WAITING:
@@ -98,6 +100,7 @@ def resume_run(run_id: int, decision: dict) -> None:
         run.status = RunStatus.RUNNING
         db.commit()
 
+    set_token(run_id, token)   # 처음 토큰은 만료됐을 수 있으니 재개 요청의 토큰으로 교체
     _run_graph(run_id, graph_json, thread_id, Command(resume=decision))
 
 
@@ -112,6 +115,9 @@ def _run_graph(run_id: int, graph_json: dict, thread_id: str, graph_input) -> No
         log.exception("실행 실패 run_id=%s", run_id)
         _finish(run_id, RunStatus.FAILED, error=str(e))
         return
+    finally:
+        # 멈추든(WAITING) 끝나든 이 구간이 끝나면 토큰은 바로 지움 (몇 시간씩 들고 있지 않음)
+        clear_token(run_id)
 
     if "__interrupt__" in result:
         # interrupt()에 넘긴 값 = 사람이 확인해야 할 내용

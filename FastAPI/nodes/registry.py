@@ -6,6 +6,8 @@ from nodes.impl.llm_verify import LlmVerifyNode
 from nodes.impl.ocr_extract import OcrExtractNode
 from nodes.impl.rag_search import RagSearchNode
 from nodes.impl.structured_extract import StructuredExtractNode
+from nodes.impl.approval_draft import ApprovalDraftNode
+from nodes.impl.employee_lookup import EmployeeLookupNode
 
 
 CATEGORIES = [
@@ -20,12 +22,14 @@ CATEGORIES = [
 # 노드 목록 (팔레트에 이 순서로 보임)
 _NODE_CLASSES: list[type[BaseNode]] = [
     FileUploadNode,
+    EmployeeLookupNode,      # 사원 조회 (user-service)
     OcrExtractNode,          # OCR 글자 인식
     StructuredExtractNode,   # 항목 추출 (DSPy)
     LlmVerifyNode,           # AI 교차 검증 (GMS)
     RagSearchNode,
     HumanConfirmNode,        # 사람 확인 (interrupt)
     ApprovalNode,
+    ApprovalDraftNode,       # 결재 상신 (approval-service)
 ]
 
 
