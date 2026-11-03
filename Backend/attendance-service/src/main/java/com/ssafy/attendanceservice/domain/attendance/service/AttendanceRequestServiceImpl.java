@@ -330,7 +330,8 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
                 clockOut,
                 workGroup.getDailyStdMinutes(),
                 workGroup.getBreakMinutes(),
-                isHoliday);
+                isHoliday,
+                processor.approvedOvertimes(empId, targetDate));
 
         // 6. 주간 총 근로시간 (그날은 수정 후 값으로 대체)
         int weeklyTotalMin = weeklyTotalMinExcept(empId, targetDate) + afterWorkTime.totalMin();

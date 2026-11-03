@@ -24,6 +24,10 @@ public interface AttendanceRequestRepository extends JpaRepository<AttendanceReq
     boolean existsByEmpIdAndReqTypeAndSubstDateAndStatusIn(
             Long empId, AttendanceRequestType reqType, LocalDate substDate, Collection<AttendanceRequestStatus> statuses);
 
+    // 대상일의 특정 종류·상태 신청 (재계산 시 승인된 초과근무 조회)
+    List<AttendanceRequest> findByEmpIdAndTargetDateAndReqTypeAndStatus(
+            Long empId, LocalDate targetDate, AttendanceRequestType reqType, AttendanceRequestStatus status);
+
     // 상신 일시 기간 내 내 신청 (최신순, 전체 유형)
     List<AttendanceRequest> findByEmpIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
             Long empId, OffsetDateTime from, OffsetDateTime to);

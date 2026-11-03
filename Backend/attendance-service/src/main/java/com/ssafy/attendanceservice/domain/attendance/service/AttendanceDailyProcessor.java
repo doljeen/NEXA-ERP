@@ -1,12 +1,16 @@
 package com.ssafy.attendanceservice.domain.attendance.service;
 
 import com.ssafy.attendanceservice.domain.attendance.calculator.AnomalyJudge;
+import com.ssafy.attendanceservice.domain.attendance.calculator.ApprovedOvertime;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkLogEntry;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeCalculator;
 import com.ssafy.attendanceservice.domain.attendance.calculator.WorkTimeResult;
 import com.ssafy.attendanceservice.domain.attendance.entity.*;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AnomalyType;
+import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequestStatus;
+import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequestType;
 import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceAnomalyRepository;
+import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceRequestRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.EmployeeWorkGroupRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.HolidayRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.WorkGroupRepository;
@@ -36,6 +40,7 @@ public class AttendanceDailyProcessor {
     private final EmployeeWorkGroupRepository employeeWorkGroupRepository;
     private final WorkGroupRepository workGroupRepository;
     private final HolidayRepository holidayRepository;
+    private final AttendanceRequestRepository attendanceRequestRepository;
 
     /** 해당 날짜에 배정된 근무그룹. 배정이 없으면 기본 그룹 */
     public WorkGroup resolveWorkGroup(Long empId, LocalDate date) {
@@ -65,6 +70,16 @@ public class AttendanceDailyProcessor {
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORK_STATUS_CODE_NOT_FOUND));
     }
 
+    /** 그 근무일에 승인된 초과근무 신청의 시간 구간 (재계산과 근무시간 수정 미리보기가 같이 쓴다) */
+    public List<ApprovedOvertime> approvedOvertimes(Long empId, LocalDate workDate) {
+        return attendanceRequestRepository.findByEmpIdAndTargetDateAndReqTypeAndStatus(
+                        empId, workDate, AttendanceRequestType.OVERTIME, AttendanceRequestStatus.APPROVED).stream()
+                .flatMap(request -> request.getItems().stream())
+                .filter(item -> item.getEndAt() != null)
+                .map(item -> new ApprovedOvertime(item.getStartAt(), item.getEndAt()))
+                .toList();
+    }
+
     /** 그 근무일의 로그로 근로시간을 다시 계산해서 반영 (퇴근 전이면 0) */
     public WorkTimeResult recalculate(AttendanceDaily daily) {
         List<WorkLogEntry> entries = workStatusLogRepository
@@ -79,7 +94,8 @@ public class AttendanceDailyProcessor {
                 daily.getClockOut(),
                 workGroup.getDailyStdMinutes(),
                 workGroup.getBreakMinutes(),
-                daily.getIsHoliday());
+                daily.getIsHoliday(),
+                approvedOvertimes(daily.getEmpId(), daily.getWorkDate()));
         daily.applyWorkTime(result);
         return result;
     }
