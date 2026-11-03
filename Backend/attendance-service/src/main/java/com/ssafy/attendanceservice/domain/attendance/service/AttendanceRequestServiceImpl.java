@@ -106,6 +106,27 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
 
     @Override
     @Transactional
+    public AttendanceRequestDetailResponse cancel(Long empId, Long requestId) {
+        // 1. 회수와 결재 결과가 동시에 와도 하나씩 처리. 다른 사람 신청서는 없는 것과 같은 404
+        AttendanceRequest request = attendanceRequestRepository.findByIdForUpdate(requestId)
+                .filter(r -> r.getEmpId().equals(empId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.ATTENDANCE_REQUEST_NOT_FOUND));
+
+        // 2. 결재 대기 중인 신청서만 (승인 후 취소는 근태를 되돌려야 해서 범위 밖)
+        if (!request.isPending()) {
+            throw new BusinessException(ErrorCode.REQUEST_NOT_PENDING);
+        }
+
+        // 3. 결재 문서 회수 (신청자 토큰). 결재가 진행됐으면 예외로 끝나고 신청서는 그대로
+        approvalClient.cancelDocument(request.getApprovalDocId());
+
+        // 4. 바로 회수 상태로. 뒤이어 오는 CANCEL 결과 이벤트는 이미 처리된 신청이라 무시된다
+        request.cancel(DateTimeUtils.now());
+        return AttendanceRequestDetailResponse.from(request);
+    }
+
+    @Override
+    @Transactional
     public AttendanceRequestDetailResponse submit(Long empId, AttendanceRequestSubmitRequest request) {
         AttendanceRequestType reqType = request.reqType();
 
