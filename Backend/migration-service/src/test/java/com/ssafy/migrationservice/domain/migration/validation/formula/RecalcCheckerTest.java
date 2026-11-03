@@ -148,6 +148,21 @@ class RecalcCheckerTest {
     }
 
     @Test
+    void 추정한_지급_항목이_모두_빈_행은_검산하지_않는다() {
+        List<ParsedTable.Row> rows = sheet(10, false);
+        for (int i = 0; i < 4; i++) {      // 강사: 추정에 없는 강의료로만 받아 기본급·식대·수당 칸이 빈 행
+            ParsedTable.Row r = rows.get(i);
+            Map<String, String> v = new LinkedHashMap<>(r.values());
+            for (String h : List.of("기본급", "식대", "연장수당", "휴일수당")) {
+                v.put(h, null);
+            }
+            rows.set(i, new ParsedTable.Row(r.rowNo(), v, Map.of(), Map.of()));
+        }
+
+        assertThat(check(rows)).isEmpty();
+    }
+
+    @Test
     void 지급계가_수당계를_더하면_수당계가_더하는_열은_빠진_것으로_보지_않는다() {
         // A 기본급, B 연장수당, C 휴일수당, D 수당계, E 지급계
         List<String> headers = List.of("기본급", "연장수당", "휴일수당", "수당계", "지급계");

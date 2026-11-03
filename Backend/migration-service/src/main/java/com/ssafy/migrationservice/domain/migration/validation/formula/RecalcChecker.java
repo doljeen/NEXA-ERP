@@ -273,8 +273,11 @@ public final class RecalcChecker {
         String formula = terms.entrySet().stream()
                 .map(t -> (t.getValue() < 0 ? "-" : "+") + "{" + headers.get(t.getKey()) + "}")
                 .collect(Collectors.joining()).replaceFirst("^\\+", "=");
-        List<Mismatch> found = mismatches(headers, rows, target, terms);
-        long checked = rows.stream().filter(r -> number(r.values().get(column)).isPresent()).count();
+        // 추정한 항목이 모두 빈 행은 추정 밖의 항목(강의료 등)으로 받은 것이라 검산하지 않는다
+        List<ParsedTable.Row> covered = rows.stream().filter(r -> terms.keySet().stream()
+                .anyMatch(c -> number(r.values().get(headers.get(c))).map(v -> v.signum() != 0).orElse(false))).toList();
+        List<Mismatch> found = mismatches(headers, covered, target, terms);
+        long checked = covered.stream().filter(r -> number(r.values().get(column)).isPresent()).count();
         long explained = found.stream().filter(m -> m.explainedBy() != null).count();
         if (found.size() * 2 > checked && explained * 2 < found.size()) {
             issues.add(new ValidationIssue(fileId, null, null, column, Severity.WARN, IssueCode.RECALC_MISMATCH,

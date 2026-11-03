@@ -59,6 +59,7 @@ public class ValidationService {
         issues.addAll(formulaRuleService.inspect(file, rows).issues());
         issues.addAll(LegalStandardChecker.check(file.getFileId(), file.getSheetName(), file.getFileName(), List.of(file.getHeaders()), rows));
         issues.addAll(rosterReferenceChecker.check(file, rows));
+        issues.addAll(PayrollRowChecker.check(file, rows));
         issues.addAll(dependentsChecker.check(file, rows));
         issues.addAll(salaryHistoryChecker.check(file, rows));
         Optional<EntitySchema> schemaOpt = EntitySchemas.of(file.getEntity());

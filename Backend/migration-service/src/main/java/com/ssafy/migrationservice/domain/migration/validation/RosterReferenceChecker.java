@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -34,7 +35,8 @@ import java.util.regex.Pattern;
  * ⑤ 참조: 직원명부가 아닌 파일(급여·연차·근태 …)의 사번이 같은 작업의 직원명부에 있는지, 이름이 같은지.
  * 사번·이름 컬럼은 매핑이 있으면 매핑, 없으면(참고 자료) 직원명부 필드의 라벨·동의어로 찾는다.
  * 숫자 셀로 저장돼 앞자리 0이 빠진 사번은 직원명부 사번 자릿수에 맞춰 0을 채워 대조하고, 그렇게 했다고 알린다.
- * 날짜도 대조한다: 입사일 = 직원명부 입사일, 4대보험 취득일 = 입사일, 상실일 = 퇴사일 다음 날.
+ * 날짜도 대조한다: 입사일 = 직원명부 입사일, 4대보험 취득일 = 입사일, 상실일 = 퇴사일 다음 날,
+ * 급여가 지급된 달이 재직 기간(입사 달 ~ 퇴사 달) 안인지.
  * 직원명부에 사번이 두 번 이상 있으면 어느 날짜가 맞는지 몰라 날짜 대조를 하지 않는다.
  */
 @Component
@@ -105,6 +107,7 @@ public class RosterReferenceChecker {
             }
             if (rosterNames != null) {
                 dateIssues(file, row, key, roster, hireCol, acqCols, lossCol, issues);
+                paidOutsideEmployment(file, row, key, roster, issues);
             }
         }
         if (padded > 0) {
@@ -159,6 +162,27 @@ public class RosterReferenceChecker {
         if (message != null) {
             issues.add(new ValidationIssue(fileId, row.rowNo(), "resignDate", lossCol, Severity.WARN, IssueCode.INSURANCE_LOSS_DATE_MISMATCH,
                     message, loss.map(LocalDate::toString).orElse(null), resign == null ? null : resign.plusDays(1).toString()));
+        }
+    }
+
+    /** 급여 행의 귀속월이 직원명부 재직 기간 밖인데 금액이 있으면 (퇴사 처리 누락, 입사 전 지급) */
+    private static void paidOutsideEmployment(MigrationFile file, ParsedTable.Row row, String empNo, Roster roster,
+                                              List<ValidationIssue> issues) {
+        LocalDate hire = roster.hireDates().get(empNo);
+        LocalDate resign = roster.resignDates().get(empNo);
+        if (hire == null || (resign != null && resign.isBefore(hire))) {
+            return;     // 직원명부 날짜가 비었거나 틀림: 직원명부 쪽 오류로 따로 나온다
+        }
+        YearMonth month = PayrollRowChecker.payMonth(file, row);
+        if (month == null || PayrollRowChecker.paid(file, row).map(v -> v.signum() <= 0).orElse(true)) {
+            return;
+        }
+        String why = resign != null && resign.isBefore(month.atDay(1)) ? "퇴사일(" + resign + ") 이후"
+                : hire.isAfter(month.atEndOfMonth()) ? "입사일(" + hire + ") 이전" : null;
+        if (why != null) {
+            issues.add(new ValidationIssue(file.getFileId(), row.rowNo(), null, null, Severity.WARN, IssueCode.PAID_OUTSIDE_EMPLOYMENT,
+                    "사번 " + empNo + "에게 직원명부 " + why + "인 " + month + " 급여가 있습니다. 퇴사 처리가 빠졌거나 귀속월이 틀렸을 수 있습니다",
+                    month.toString(), null));
         }
     }
 
