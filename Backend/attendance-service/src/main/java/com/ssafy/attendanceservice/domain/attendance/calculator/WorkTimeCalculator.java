@@ -26,6 +26,7 @@ public final class WorkTimeCalculator {
     }
 
     /**
+     * 승인된 초과근무 없이 계산 (초과근로는 전부 미승인)
      * @param logs            그 근무일의 상태 로그 (출근 ~ 퇴근)
      * @param clockOut        퇴근 시각 (null이면 계산하지 않음)
      * @param dailyStdMinutes 일 소정근로시간(분)
@@ -34,6 +35,15 @@ public final class WorkTimeCalculator {
      */
     public static WorkTimeResult calculate(List<WorkLogEntry> logs, OffsetDateTime clockOut,
                                            int dailyStdMinutes, int breakMinutes, boolean isHoliday) {
+        return calculate(logs, clockOut, dailyStdMinutes, breakMinutes, isHoliday, List.of());
+    }
+
+    /**
+     * @param approvedOvertimes 그날 승인된 초과근무 구간. 이 안의 초과근로만 승인, 나머지는 미승인
+     */
+    public static WorkTimeResult calculate(List<WorkLogEntry> logs, OffsetDateTime clockOut,
+                                           int dailyStdMinutes, int breakMinutes, boolean isHoliday,
+                                           List<ApprovedOvertime> approvedOvertimes) {
         if (logs.isEmpty() || clockOut == null) {
             return WorkTimeResult.empty();
         }
@@ -68,32 +78,37 @@ public final class WorkTimeCalculator {
         List<OffsetDateTime> counted = removeBreak(workMinutes, breakMin);
         int totalMin = counted.size();
 
-        // 3. 소정/초과/야간/휴일 분류
-        int regularMin = 0, nightMin = 0, otExtendedMin = 0, otNightMin = 0, otHolidayMin = 0;
+        // 3. 소정/초과/야간/휴일 분류. 초과근로는 승인 구간 안이면 승인으로 센다
+        int regularMin = 0, nightMin = 0, otExtendedMin = 0, otNightMin = 0, otHolidayMin = 0, approvedOtMin = 0;
 
         if (isHoliday) {
             // 휴일: 전부 휴일근로
             otHolidayMin = totalMin;
-            otNightMin = (int) counted.stream().filter(WorkTimeCalculator::isNight).count();
+            for (OffsetDateTime t : counted) {
+                if (isNight(t)) otNightMin++;
+                if (isApproved(t, approvedOvertimes)) approvedOtMin++;
+            }
         } else {
             // 근무일: 시간 순서로 앞의 소정근로시간까지 소정, 나머지 연장
             for (int i = 0; i < counted.size(); i++) {
-                boolean night = isNight(counted.get(i));
+                OffsetDateTime t = counted.get(i);
+                boolean night = isNight(t);
                 if (i < dailyStdMinutes) {
                     regularMin++;
                     if (night) nightMin++;
                 } else {
                     otExtendedMin++;
                     if (night) otNightMin++;
+                    if (isApproved(t, approvedOvertimes)) approvedOtMin++;
                 }
             }
         }
 
-        // 4. 초과근로는 결재 기능 전까지 전부 미승인
-        int unapprovedOtMin = isHoliday ? otHolidayMin : otExtendedMin;
+        // 4. 초과근로 중 승인 구간 밖은 미승인
+        int unapprovedOtMin = (isHoliday ? otHolidayMin : otExtendedMin) - approvedOtMin;
 
         return new WorkTimeResult(totalMin, regularMin, breakMin, excludedMin,
-                nightMin, otExtendedMin, otNightMin, otHolidayMin, 0, unapprovedOtMin);
+                nightMin, otExtendedMin, otNightMin, otHolidayMin, approvedOtMin, unapprovedOtMin);
     }
 
     /** 근무 시간에 따라 필요한 휴게시간 (근로기준법: 4시간 30분, 8시간 1시간) */
@@ -122,6 +137,10 @@ public final class WorkTimeCalculator {
             result = new ArrayList<>(result.subList(Math.min(remaining, result.size()), result.size()));
         }
         return result;
+    }
+
+    private static boolean isApproved(OffsetDateTime minute, List<ApprovedOvertime> approvedOvertimes) {
+        return approvedOvertimes.stream().anyMatch(range -> range.contains(minute));
     }
 
     private static boolean isNight(OffsetDateTime t) {

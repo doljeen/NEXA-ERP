@@ -136,4 +136,42 @@ class WorkTimeCalculatorTest {
 
         assertEquals(WorkTimeResult.empty(), r);
     }
+
+    @Test
+    @DisplayName("근무일 09~21시, 18~20시 초과근무 승인: 연장 180분 중 승인 120분, 미승인 60분")
+    void approvedOvertimeOnWorkday() {
+        List<WorkLogEntry> logs = List.of(work(at(21, 9, 0)), off(at(21, 21, 0)));
+        List<ApprovedOvertime> approved = List.of(new ApprovedOvertime(at(21, 18, 0), at(21, 20, 0)));
+
+        WorkTimeResult r = WorkTimeCalculator.calculate(logs, at(21, 21, 0), DAILY_STD, BREAK, false, approved);
+
+        assertEquals(180, r.otExtendedMin());
+        assertEquals(120, r.approvedOtMin());
+        assertEquals(60, r.unapprovedOtMin());
+    }
+
+    @Test
+    @DisplayName("휴일 10~15시, 10~12시 승인: 휴게 30분 뺀 휴일근로 270분 중 승인 90분")
+    void approvedOvertimeOnHoliday() {
+        List<WorkLogEntry> logs = List.of(work(at(24, 10, 0)), off(at(24, 15, 0)));
+        List<ApprovedOvertime> approved = List.of(new ApprovedOvertime(at(24, 10, 0), at(24, 12, 0)));
+
+        WorkTimeResult r = WorkTimeCalculator.calculate(logs, at(24, 15, 0), DAILY_STD, BREAK, true, approved);
+
+        assertEquals(270, r.otHolidayMin());
+        assertEquals(90, r.approvedOtMin());         // 휴게로 빠진 10:00~10:30 제외
+        assertEquals(180, r.unapprovedOtMin());
+    }
+
+    @Test
+    @DisplayName("승인 구간이 소정 근로 시간대뿐이면 승인 초과근로 없음")
+    void approvedRangeInsideRegularHours() {
+        List<WorkLogEntry> logs = List.of(work(at(21, 9, 0)), off(at(21, 21, 0)));
+        List<ApprovedOvertime> approved = List.of(new ApprovedOvertime(at(21, 13, 0), at(21, 15, 0)));
+
+        WorkTimeResult r = WorkTimeCalculator.calculate(logs, at(21, 21, 0), DAILY_STD, BREAK, false, approved);
+
+        assertEquals(0, r.approvedOtMin());
+        assertEquals(180, r.unapprovedOtMin());
+    }
 }
