@@ -76,6 +76,19 @@ class ApprovalResultEventIntegrationTest extends AbstractIntegrationTest {
         return id.longValue();
     }
 
+    /** 업무 자동화 워크플로우가 상신한 일반 기안. 금액 50만 원 → 팀장(approver) 전결 */
+    private long createAutomationDocument(long drafter, long approver, long sourceId) throws Exception {
+        assignTeamHead(drafter, approver);
+        String body = mvc.perform(post(BASE).with(user(drafter)).contentType(MediaType.APPLICATION_JSON).content("""
+                        {"title":"구매 품의","formType":"GENERAL","sourceType":"AUTOMATION","sourceId":%d,
+                         "requestKey":"%s","attributes":{"amount":500000}}"""
+                        .formatted(sourceId, UUID.randomUUID())))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        Number id = JsonPath.read(body, "$.data.documentId");
+        return id.longValue();
+    }
+
     private List<OutboxEvent> outboxOf(long documentId) {
         return outboxEventRepository.findAll().stream()
                 .filter(e -> e.getMessageKey().equals(String.valueOf(documentId)))
@@ -189,5 +202,37 @@ class ApprovalResultEventIntegrationTest extends AbstractIntegrationTest {
         List<OutboxEvent> events = outboxOf(documentId);
         assertThat(events).hasSize(1);
         assertThat((String) JsonPath.read(events.getFirst().getPayload(), "$.status")).isEqualTo("REJECTED");
+    }
+
+    @Test
+    void 업무_자동화_문서도_최종_승인되면_결과_이벤트가_Kafka로_간다() throws Exception {
+        long documentId = createAutomationDocument(9416L, 9417L, 701L);
+
+        mvc.perform(post(path(documentId, "/approve")).with(user(9417L))).andExpect(status().isOk());
+        outboxPublisher.publishPending();
+
+        String payload = consumeOf(documentId).value();
+        assertThat((String) JsonPath.read(payload, "$.status")).isEqualTo("APPROVED");
+        assertThat((String) JsonPath.read(payload, "$.formType")).isEqualTo("GENERAL");
+        assertThat((String) JsonPath.read(payload, "$.sourceType")).isEqualTo("AUTOMATION");
+        assertThat(((Number) JsonPath.read(payload, "$.sourceId")).longValue()).isEqualTo(701L);
+    }
+
+    @Test
+    void 업무_자동화_문서는_반려가_최종이라_재기안할_수_없다() throws Exception {
+        long documentId = createAutomationDocument(9418L, 9419L, 702L);
+        mvc.perform(post(path(documentId, "/reject")).with(user(9419L))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"comment\":\"예산 초과\"}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(post(path(documentId, "/resubmit")).with(user(9418L))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"구매 품의 (재기안)\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("APPROVAL_023"));
+
+        List<OutboxEvent> events = outboxOf(documentId);
+        assertThat(events).hasSize(1);
+        assertThat((String) JsonPath.read(events.getFirst().getPayload(), "$.status")).isEqualTo("REJECTED");
+        assertThat((String) JsonPath.read(events.getFirst().getPayload(), "$.sourceType")).isEqualTo("AUTOMATION");
     }
 }

@@ -1,7 +1,7 @@
 # 결재 문서 생성 요청 가이드 (approval-service)
 
 결재 문서를 만들 때 어떤 데이터를 보내야 하는지 정리한 문서입니다.
-결재 화면(프런트엔드)과 결재가 필요한 서비스(leave-service, attendance-service)가 대상입니다.
+결재 화면(프런트엔드)과 결재가 필요한 서비스(leave-service, attendance-service, ai-service 업무 자동화)가 대상입니다.
 
 ## 요청
 
@@ -20,7 +20,7 @@ Content-Type: application/json
 |---|---|---|---|
 | `title` | string | O | 제목 (최대 255자) |
 | `formType` | string | O | 문서 양식. 아래 [양식별로 보내야 하는 값](#양식별로-보내야-하는-값) 참고 |
-| `sourceType` | string | 조건부 | 문서가 만들어진 곳: `DIRECT` \| `LEAVE` \| `ATTENDANCE`. 생략하면 `DIRECT` |
+| `sourceType` | string | 조건부 | 문서가 만들어진 곳: `DIRECT` \| `LEAVE` \| `ATTENDANCE` \| `AUTOMATION`. 생략하면 `DIRECT` |
 | `sourceId` | number | 조건부 | 원본 신청 ID. `DIRECT`가 아니면 필수, `DIRECT`면 보내지 않음 |
 | `requestKey` | string (UUID) | 조건부 | 생성 요청 키. **요청하는 쪽이 만들어서** 보냄. `DIRECT`가 아니면 필수, `DIRECT`면 선택. 아래 [requestKey 만드는 법](#requestkey-만드는-법) 참고 |
 | `attributes` | object | X | 전결 단계를 정하는 신청 값. 아래 [결재선 자동 결정](#결재선-자동-결정-위임전결-규정) 참고 |
@@ -55,6 +55,7 @@ approvalClient.create(new CreateDocument(..., leaveRequest.getApprovalRequestId(
 |---|---|
 | leave-service | 이미 신청마다 `approvalRequestId`(UUID)를 만들어 저장함. 그 값을 `requestKey`로 보내면 됨 |
 | attendance-service | 근태 신청에 UUID 컬럼을 추가해 신청 저장 시 만들고, 결재 요청에 담아 보냄 |
+| ai-service | 워크플로우 실행(결재 단계)마다 UUID를 만들어 저장하고 결재 요청에 담아 보냄 |
 | 프런트 (직접 작성) | 선택. 작성 화면을 열 때 하나 만들어 두면 상신 버튼을 두 번 눌러도 문서가 하나만 생김 |
 
 ### 재시도와 requestKey
@@ -97,7 +98,7 @@ approvalClient.create(new CreateDocument(..., leaveRequest.getApprovalRequestId(
 | `overtimeMinutes` | number | 이번 초과근무 신청 시간(분) | attendance-service |
 | `monthlyOvertimeMinutes` | number | **이번 신청을 포함한** 그 달 초과근무 누적(분) | attendance-service |
 | `overseas` | boolean | 해외 출장 여부 | 결재 화면 |
-| `amount` | number | 금액(원) | 결재 화면 |
+| `amount` | number | 금액(원) | 결재 화면, ai-service |
 
 모두 0 이상이어야 합니다. 음수면 `400 COMMON_001`.
 
@@ -245,7 +246,7 @@ POST /api/v1/documents/1013/resubmit
 |---|---|---|
 | 409 | `APPROVAL_024` | 규정상 결재자 제외, 규정상 결재자끼리 순서 변경 |
 | 409 | `APPROVAL_025` | 뒤에 규정상 결재자가 남았는데 전결 |
-| 409 | `APPROVAL_023` | 출처 문서(휴가·근태) 재기안 |
+| 409 | `APPROVAL_023` | 출처 문서(휴가·근태·업무 자동화) 재기안 |
 | 409 | `APPROVAL_014` | 반려되지 않은 문서 재기안 |
 | 409 | `APPROVAL_006` | 진행 중이 아닌 문서의 결재선 변경 |
 | 409 | `APPROVAL_008` | 이미 결재한 결재자 제외·순서 변경 |
@@ -388,6 +389,27 @@ restClient.post().uri("/api/v1/documents").body(body).retrieve()...   // 신청�
 }
 ```
 
+### ai-service (업무 자동화)
+
+워크플로우의 결재 단계가 일반 기안(`GENERAL`)을 상신하고, [결과 이벤트](approval-result-event.md)의 `sourceType: AUTOMATION`을 받아 다음 단계로 넘어갑니다.
+
+- **워크플로우를 실행한 사원의 access 토큰**으로 호출합니다. 서비스 계정 토큰으로 부르면 그 계정이 기안자가 되고 결재선도 그 계정 부서 기준으로 만들어집니다.
+- `sourceId`는 워크플로우 실행 ID(**숫자**), `requestKey`는 실행(결재 단계)마다 만들어 저장한 UUID입니다.
+- 금액이 있으면 `attributes.amount`(원)를 보냅니다. 100만 원 초과 본부장, 1,000만 원 초과 대표이사 전결. 빠지면 팀장 전결입니다.
+- 만들 수 있는 양식은 `GENERAL`뿐입니다. 다른 양식은 `400 APPROVAL_019`.
+- **반려·회수가 최종**입니다(재기안 `409 APPROVAL_023`). 다시 결재받으려면 새 `requestKey`로 새 문서를 상신합니다.
+
+```json
+{
+  "title": "서버 증설 구매 품의",
+  "formType": "GENERAL",
+  "sourceType": "AUTOMATION",
+  "sourceId": 501,
+  "requestKey": "6a1d3e5b-2f4c-4d8e-9b7a-0c3e5f7a9b21",
+  "attributes": { "amount": 5000000 }
+}
+```
+
 ### 결재 화면 (프런트, 일반 기안·출장)
 
 1. 작성 화면에서 양식과 판단 값(출장 `overseas`, 일반 기안 `amount`)이 바뀔 때마다 [미리보기](#기본-결재선-미리보기)를 호출해 결재선을 보여줍니다.
@@ -395,7 +417,7 @@ restClient.post().uri("/api/v1/documents").body(body).retrieve()...   // 신청�
    결재선 화면에서 `required: true`인 결재자는 삭제·순서 변경 버튼을 숨깁니다.
 3. `selfApproval: true`면 "결재 없이 바로 승인됩니다"로 안내합니다.
 4. 상신 버튼 중복 클릭 대비로 화면을 열 때 `requestKey`를 하나 만들어 두면 좋습니다 (선택).
-5. 문서 상세의 **재기안 버튼은 `status`가 `REJECTED`이고 `sourceType`이 `DIRECT`인 문서에만** 보여줍니다. 휴가·근태 문서는 각 신청 화면에서 새로 신청합니다.
+5. 문서 상세의 **재기안 버튼은 `status`가 `REJECTED`이고 `sourceType`이 `DIRECT`인 문서에만** 보여줍니다. 휴가·근태·업무 자동화 문서는 각 원본 서비스에서 새로 신청합니다.
 
 ```
 GET  /api/v1/documents/approval-line-preview?formType=BUSINESS_TRIP&overseas=true
@@ -411,6 +433,7 @@ POST /api/v1/documents
 |---|---|---|---|
 | 결재 화면 (직접 작성) | `GENERAL` 일반 기안 | `DIRECT` 또는 생략 | 보내지 않음 |
 | 결재 화면 (직접 작성) | `BUSINESS_TRIP` 출장 신청 | `DIRECT` 또는 생략 | 보내지 않음 |
+| ai-service (업무 자동화) | `GENERAL` 일반 기안 | `AUTOMATION` | 워크플로우 실행 ID |
 | leave-service | `LEAVE` 휴가 신청 | `LEAVE` | 휴가 신청 ID (`requestId`) |
 | attendance-service | `OVERTIME` 초과근무 신청 | `ATTENDANCE` | 근태 신청 ID |
 | attendance-service | `TIME_FIX` 근무시간 수정 신청 | `ATTENDANCE` | 근태 신청 ID |
@@ -432,7 +455,7 @@ attendance-service는 신청 종류(`AttendanceRequestType`)와 같은 이름을
 
 300만 원이라 본부장 전결 → 결재선은 [팀장, 본부장]. 참조자가 필요하면 상신 후 `POST /api/v1/documents/{documentId}/referrers`.
 
-leave-service, attendance-service 요청 예시는 [서비스별 호출 방법](#서비스별-호출-방법)에 있습니다.
+leave-service, attendance-service, ai-service 요청 예시는 [서비스별 호출 방법](#서비스별-호출-방법)에 있습니다.
 
 ## 응답
 

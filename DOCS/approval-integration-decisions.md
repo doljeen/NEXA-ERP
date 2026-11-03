@@ -53,7 +53,7 @@
 |---|---|---|
 | 토픽 구성 | 토픽 하나 `approval.document.result`, 파티션 3, 메시지 키 `documentId` | 추천 |
 | 보낼 상태 | 최종 결과만: `APPROVED` / `REJECTED` / `CANCEL` | 추천 |
-| 반려 후 재기안 | **출처가 있는 문서(휴가·근태)는 재기안 금지, 반려가 최종.** 다시 하려면 원본에서 새로 신청(새 `requestKey`). 직접 기안은 지금처럼 재기안 허용 | ✅ **확정·구현** (`409 APPROVAL_023`) |
+| 반려 후 재기안 | **출처가 있는 문서(휴가·근태·업무 자동화)는 재기안 금지, 반려가 최종.** 다시 하려면 원본에서 새로 신청(새 `requestKey`). 직접 기안은 지금처럼 재기안 허용 | ✅ **확정·구현** (`409 APPROVAL_023`) |
 | 수신 측 멱등 처리 | **상태 기반**: 신청이 결재 대기 상태일 때만 반영, 이미 반영됐으면 무시. 처리 이력이 필요할 때만 `eventId` 기록 | 추천, **leave·attendance가 결정** |
 | 이벤트 형식 공유 | 공통 라이브러리 없음. 서비스마다 DTO, 계약은 `DOCS` 문서로 관리, `eventVersion` 포함, 모르는 필드 무시 | 추천 |
 | 재시도·DLQ | 수신 측 `DefaultErrorHandler` 3회 재시도(1s→2s→4s) 후 `approval.document.result.DLT`. DLT는 로그로 남기고 D2 조회 API로 수동 복구 | 추천 |
@@ -136,7 +136,7 @@
 **구현한 계약** (approval-service, V6 마이그레이션)
 
 - 문서 생성 요청에 `requestKey`(UUID)를 받습니다. leave의 `approvalRequestId`를 그대로 넣으면 됩니다.
-  - 출처가 있는 문서(`LEAVE`/`ATTENDANCE`)는 **필수** → 없으면 400 `APPROVAL_020`
+  - 출처가 있는 문서(`LEAVE`/`ATTENDANCE`/`AUTOMATION`)는 **필수** → 없으면 400 `APPROVAL_020`
   - 직접 기안은 선택 (프런트 중복 클릭 방지용으로 써도 됨)
 - 같은 `requestKey`로 다시 요청하면:
   - 같은 신청(기안자·양식·출처·원본 ID가 같음)이면 **새로 만들지 않고 처음 문서를 `200`으로** 돌려줍니다. 최초 생성은 `201`
@@ -271,3 +271,4 @@ GET /api/v1/documents/by-request/{requestKey}
 | 2026-11-03 | D5 | 결재선은 approval 이 위임전결 규정과 user-service 조직도(부서 유형·부서장)로 만든다. 판단 값은 생성 요청 `attributes`로 받는다. 급여는 결재 대상 아님 | 조건부 전결까지 구현. `approvalLines`를 보내면 기존처럼 검증만 (하위 호환) |
 | 2026-11-03 | D5 | 결재선 지정 기능 제거: 생성·재기안 요청에서 `approvalLines` 삭제(보내면 무시). 규정상 결재자는 `required`로 표시하고 제외·순서 변경·전결 건너뛰기 금지 | `APPROVAL_024`, `APPROVAL_025`. 기존 문서는 `required=false`라 영향 없음 |
 | 2026-11-03 | D1 | 출처 문서(휴가·근태)는 재기안 금지, 반려가 최종. 재신청은 원본 서비스의 새 신청(새 `requestKey`). 직접 기안만 재기안 허용 | `409 APPROVAL_023`. 결과 이벤트는 모두 최종 상태 |
+| 2026-11-03 | D1 | 출처 `AUTOMATION`(ai-service 업무 자동화) 추가. `GENERAL` 양식만 `DIRECT`·`AUTOMATION` 둘 다 허용. 결과 이벤트 형식은 그대로(`sourceType` 값만 추가) | 기안자는 실행한 사원 토큰, `sourceId`는 숫자 실행 ID. 반려 최종 동일. V10은 컬럼 설명만 갱신 |

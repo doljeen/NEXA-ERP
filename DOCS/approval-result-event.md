@@ -13,7 +13,7 @@
 | DLT | `approval.document.result.DLT` (파티션 3, approval이 생성) |
 | 메시지 키 | `documentId` (문자열). 같은 문서의 이벤트는 순서가 보장됨 |
 | 메시지 값 | JSON 문자열 (아래 형식) |
-| 언제 보내나 | **출처가 있는 문서**(`sourceType`이 `LEAVE`/`ATTENDANCE`)가 최종 승인·전결·반려·회수됐을 때. 중간 결재, 직접 기안 문서는 보내지 않음 |
+| 언제 보내나 | **출처가 있는 문서**(`sourceType`이 `LEAVE`/`ATTENDANCE`/`AUTOMATION`)가 최종 승인·전결·반려·회수됐을 때. 중간 결재, 직접 기안 문서는 보내지 않음 |
 | 전달 보장 | **최소 한 번(at-least-once)**. 유실은 없지만 같은 이벤트가 두 번 올 수 있음 → 수신 측 멱등 처리 필수 |
 | 로컬 브로커 | approval-service `compose.yaml`의 `kafka`. 호스트에서 `localhost:19092` |
 
@@ -42,12 +42,12 @@
 | `eventType` | 현재 `DOCUMENT_COMPLETED` 하나 |
 | `occurredAt` | 결재가 끝난 시각 |
 | `documentId`, `docNo`, `formType` | 결재 문서 |
-| `sourceType` | `LEAVE` \| `ATTENDANCE`. **자기 서비스 것이 아니면 무시** |
+| `sourceType` | `LEAVE` \| `ATTENDANCE` \| `AUTOMATION`(ai-service 업무 자동화). **자기 서비스 것이 아니면 무시**. 값이 늘 수 있으니 enum 이 아니라 문자열로 받습니다 |
 | `sourceId` | 결재 문서를 만들 때 보낸 원본 신청 ID |
 | `requestKey` | 결재 문서를 만들 때 보낸 요청 키 (UUID) |
 | `status` | `APPROVED`(승인·전결) \| `REJECTED`(반려) \| `CANCEL`(기안자 회수) |
 
-> **`APPROVED`·`REJECTED`·`CANCEL` 모두 최종입니다** (결정 문서 D1). 출처 문서(휴가·근태)는 approval 에서 재기안할 수 없으므로(`409 APPROVAL_023`), `REJECTED`를 받은 뒤 같은 문서의 결과가 다시 오지 않습니다.
+> **`APPROVED`·`REJECTED`·`CANCEL` 모두 최종입니다** (결정 문서 D1). 출처 문서(휴가·근태·업무 자동화)는 approval 에서 재기안할 수 없으므로(`409 APPROVAL_023`), `REJECTED`를 받은 뒤 같은 문서의 결과가 다시 오지 않습니다.
 > 반려된 신청을 다시 하려면 원본 서비스에서 **새 신청**(새 원본 ID, 새 `requestKey`)으로 결재 문서를 새로 만듭니다.
 
 ## 수신 설정 (Spring Boot 4 / spring-kafka 4 기준 예시)
