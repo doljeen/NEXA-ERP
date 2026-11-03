@@ -13,6 +13,7 @@
 """
 import argparse
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -55,6 +56,10 @@ ACCIDENT_CODES = {
     "ALLOWANCE_RULE_CONFLICT": {"HARDCODED_VALUE"}, "INSURANCE_EXEMPTION_WRONG": {"HARDCODED_VALUE"},
     "MIDNIGHT_NOT_HANDLED": {"FORMULA_INCONSISTENT"},
     "RESIGNED_STILL_PAID": {"PAID_OUTSIDE_EMPLOYMENT"}, "NEGATIVE_NET_PAY": {"NEGATIVE_NET_PAY"}, "MONTH_ROW_MISSING": {"PAY_MONTH_GAP"},
+    # 2차 회사 사고 중 설명이 기존 코드와 같은 것 ('수식 대신 값 입력', '이 행만 수식이 다름', '시트 수식에 숫자', 수식 오류)
+    "DIV_ZERO_ERROR": {"FORMULA_ERROR"}, "CAP_EXCEEDED": {"HARDCODED_VALUE"}, "NIGHT_PREMIUM_MISSING": {"HARDCODED_VALUE"},
+    "ORDINARY_WAGE_ITEM_MISSING": {"FORMULA_INCONSISTENT"}, "NONTAX_OVER_LIMIT": {"FORMULA_INCONSISTENT"},
+    "SENIORITY_NOT_CARRIED": {"FORMULA_INCONSISTENT"}, "STALE_TAX_THRESHOLD": {"FORMULA_DIFFERS_ACROSS_SHEETS"},
 }
 # 정답지 legalDeviations 규칙 → 이 편차를 잡았다고 볼 서비스 이슈 코드 (시트 단위)
 LEGAL_CODES = {
@@ -143,7 +148,8 @@ def evaluate_company(base, cdir):
     result["orgIssues"] = len(found_by_entity["HR_ORG"])
     cross = {(code, _emp_key(a.get("empNo"))) for hk in key.get("hrFiles", {}).values() for a in hk["accidents"]
              for code in CROSS_EXPLAINS.get(a["type"], set())}
-    result["hrFiles"] = [evaluate_hr_file(base, mid, cdir, fname, hk, cross) for fname, hk in key.get("hrFiles", {}).items()]
+    side = {loc for fname, hk in key.get("hrFiles", {}).items() for a in hk["accidents"] for loc in _side_effects(fname, a)}
+    result["hrFiles"] = [evaluate_hr_file(base, mid, cdir, fname, hk, cross, side) for fname, hk in key.get("hrFiles", {}).items()]
     result["reference"] = reference_check(cdir, key, [i for f in result["hrFiles"] for i in f.pop("refIssues")])
     return result
 
@@ -190,7 +196,7 @@ def read_roster(cdir, key):
     return {i + 1: (r[ei].strip(), r[ni].strip()) for i, r in enumerate(rows) if i > h and len(r) > max(ei, ni) and r[ei]}
 
 
-def evaluate_hr_file(base, mid, cdir, fname, hk, cross=frozenset()):
+def evaluate_hr_file(base, mid, cdir, fname, hk, cross=frozenset(), side=frozenset()):
     """데이터 시트마다 올려 읽기 결과와 사고 검출을 본다. 업로드가 거절돼도 다른 평가는 계속"""
     entity = hk["closestEntity"] or "REFERENCE"
     res = {"file": fname, "entity": entity, "sheets": [], "accidents": [], "unexpected": Counter(),
@@ -223,7 +229,8 @@ def evaluate_hr_file(base, mid, cdir, fname, hk, cross=frozenset()):
         if codes:
             for sheet, row in _locations(a):
                 for i in issues_by_sheet.get(sheet, []):
-                    if i["code"] in codes and (row is None or i["rowNo"] == row):
+                    # 시트 단위 이슈(행 없음, 다른 시트와 수식이 다름 등)는 그 시트의 행 사고와도 맞는 것으로 본다
+                    if i["code"] in codes and (row is None or i["rowNo"] in (row, None)):
                         item["detected"] = True
                         explained.add((sheet, i["rowNo"], i["code"]))
         if codes and a.get("formula") and a.get("sheet") in issues_by_sheet:
@@ -255,6 +262,7 @@ def evaluate_hr_file(base, mid, cdir, fname, hk, cross=frozenset()):
     for sheet, issues in issues_by_sheet.items():
         for i in issues:
             if i["code"] in NEW_CODES and i.get("severity") != "FIX" and (sheet, i["rowNo"], i["code"]) not in explained \
+                    and (fname, sheet, i["rowNo"]) not in side \
                     and (i["code"], _emp_rows(cdir / fname, sheet, hk).get(i["rowNo"])) not in cross:
                 res["unexpected"][i["code"]] += 1
     res["unexpected"] = dict(res["unexpected"])
@@ -291,6 +299,26 @@ def _emp_rows(path, sheet, hk):
         _EMP_ROWS[(path, sheet)] = {} if col is None else {
             n + 1: _emp_key(r[col]) for n, r in enumerate(rows) if n > h and len(r) > col and r[col] is not None}
     return _EMP_ROWS[(path, sheet)]
+
+
+_CELL = re.compile(r"(?:(.+)!)?\$?[A-Z]{1,3}\$?(\d+)")
+
+
+def _side_effects(fname, a):
+    """사고 때문에 값이 같이 바뀐 (파일, 시트, 행): 같은 행의 연쇄 열, 소계·집계 칸, 겹친 사고, 다른 파일.
+    여기 나온 경고는 사고 검출로 치지 않지만 정답지 밖 경고에서도 뺀다"""
+    out = set()
+    if a.get("cascade"):
+        out |= {(fname, s, r) for s, r in _locations(a) if r is not None}
+    cells = [*a.get("cascadeCells", []), *a.get("cascadeValues", {}), *(c for o in a.get("overlaps", []) for c in o.get("cells", []))]
+    for c in cells:
+        m = _CELL.fullmatch(c)
+        if m:
+            out.add((fname, m.group(1) or a["sheet"], int(m.group(2))))
+    for x in [*a.get("crossFileAffected", []), *([a["crossFileLocation"]] if a.get("crossFileLocation") else [])]:
+        if x.get("rowNo"):
+            out.add((x["file"], x["sheet"], x["rowNo"]))
+    return out
 
 
 def _locations(a):
