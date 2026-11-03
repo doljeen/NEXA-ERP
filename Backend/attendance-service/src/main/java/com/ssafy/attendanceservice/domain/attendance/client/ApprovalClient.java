@@ -7,6 +7,7 @@ import com.ssafy.nexa.security.BearerTokenRelayInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
@@ -56,7 +57,8 @@ public class ApprovalClient {
                     });
         } catch (HttpClientErrorException.BadRequest e) {
             // 결재선 오류 등 요청 값 문제: 결재 서비스 메시지를 그대로 전달
-            throw new BusinessException(ErrorCode.APPROVAL_REQUEST_REJECTED, rejectMessage(e));
+            throw new BusinessException(ErrorCode.APPROVAL_REQUEST_REJECTED,
+                    errorMessage(e, ErrorCode.APPROVAL_REQUEST_REJECTED));
         } catch (RestClientException e) {
             throw new BusinessException(ErrorCode.APPROVAL_CALL_FAILED, "결재 서비스 호출 실패: " + e.getMessage());
         }
@@ -67,8 +69,30 @@ public class ApprovalClient {
         return res.data();
     }
 
-    /** 400 응답 본문의 error.message. 읽을 수 없으면 기본 메시지 */
-    private static String rejectMessage(HttpClientErrorException e) {
+    /**
+     * 결재 문서 회수. POST /api/v1/documents/{documentId}/cancel (기안자 토큰, 본문 없음)
+     * 결재 서비스는 진행 중이고 아무도 결재하지 않은 문서만 회수한다. 아니면 409
+     */
+    public void cancelDocument(Long documentId) {
+        try {
+            restClient.post()
+                    .uri("/api/v1/documents/{documentId}/cancel", documentId)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (HttpClientErrorException e) {
+            // 이미 결재가 진행됐거나 진행 중이 아닌 문서: 결재 서비스 메시지를 그대로 전달
+            if (e.getStatusCode().isSameCodeAs(HttpStatus.CONFLICT)) {
+                throw new BusinessException(ErrorCode.APPROVAL_CANCEL_REJECTED,
+                        errorMessage(e, ErrorCode.APPROVAL_CANCEL_REJECTED));
+            }
+            throw new BusinessException(ErrorCode.APPROVAL_CALL_FAILED, "결재 서비스 호출 실패: " + e.getMessage());
+        } catch (RestClientException e) {
+            throw new BusinessException(ErrorCode.APPROVAL_CALL_FAILED, "결재 서비스 호출 실패: " + e.getMessage());
+        }
+    }
+
+    /** 오류 응답 본문의 error.message. 읽을 수 없으면 기본 메시지 */
+    private static String errorMessage(HttpClientErrorException e, ErrorCode fallback) {
         try {
             InternalResult<?> body = e.getResponseBodyAs(InternalResult.class);
             if (body != null && body.error() != null && body.error().message() != null) {
@@ -77,7 +101,7 @@ public class ApprovalClient {
         } catch (RuntimeException ignored) {
             // 본문 형식이 다르면 기본 메시지
         }
-        return ErrorCode.APPROVAL_REQUEST_REJECTED.getMessage();
+        return fallback.getMessage();
     }
 
     // 팀 공통 응답 형식 ApiResult{success, error, data}
