@@ -12,14 +12,37 @@ from .xl import ROUND, ROUNDDOWN, ROUNDUP
 CUTOVER = dt.date(2027, 1, 1)
 TAX_YEAR = 2026  # 부양가족 기본공제 나이 기준 (귀속연도: 자녀 20세 이하, 직계존속 60세 이상)
 
-# 2026년 공휴일 (대체공휴일 포함, 6/3 지방선거). 생성기 내장값이므로 실제 달력과 다를 수 있다
+# 2026년 공휴일 (대체공휴일, 6/3 지방선거, 2026년부터 공휴일인 7/17 제헌절 포함). 생성기 내장값이다
+# 추석(9/24~26)은 토요일과 겹쳐도 대체공휴일이 없다 (설·추석 대체공휴일은 일요일과 겹칠 때만)
 HOLIDAYS_2026 = {dt.date(2026, m, d) for m, d in [
     (1, 1), (2, 16), (2, 17), (2, 18), (3, 1), (3, 2), (5, 1), (5, 5), (5, 24), (5, 25), (6, 3), (6, 6),
-    (8, 15), (8, 17), (9, 24), (9, 25), (9, 26), (9, 28), (10, 3), (10, 5), (10, 9), (12, 25)]}
+    (7, 17), (8, 15), (8, 17), (9, 24), (9, 25), (9, 26), (10, 3), (10, 5), (10, 9), (12, 25)]}
+# 생성기 첫 버전의 목록(7/17 없음, 9/28 있음). 휴가 사용일을 '뽑을' 때만 쓴다: 목록을 고쳐도 난수열과 다른 날짜가
+# 그대로 남게 하고, 뽑힌 날이 실제 공휴일(7/17)이면 shift_workday로 다음 근무일로 옮긴다
+_DRAW_HOLIDAYS = (HOLIDAYS_2026 - {dt.date(2026, 7, 17)}) | {dt.date(2026, 9, 28)}
 
 
 def is_holiday(d):
     return d.weekday() >= 5 or d in HOLIDAYS_2026
+
+
+def draw_days(days):
+    """휴가 사용일을 뽑을 후보 (첫 버전 달력의 근무일). 뽑은 뒤 shift_workday를 거친다"""
+    return [d for d in days if not (d.weekday() >= 5 or d in _DRAW_HOLIDAYS)]
+
+
+def shift_workday(d, taken, last=dt.date(2026, 12, 31)):
+    """d가 휴일이면 그 뒤 첫 근무일(taken에 없는 날)로 옮긴다. last를 넘으면 앞쪽에서 찾는다"""
+    if not is_holiday(d):
+        return d
+    x = d
+    while is_holiday(x) or x in taken:
+        x += dt.timedelta(days=1)
+    if x > last:
+        x = d
+        while is_holiday(x) or x in taken:
+            x -= dt.timedelta(days=1)
+    return x
 
 
 # 월 기본급 = 연봉 / 12 의 끝수 처리 (연봉이력 파일의 규칙과 같다)
@@ -99,7 +122,7 @@ def _leave_usage(e, rng):
         return []
     start = max(dt.date(2026, 1, 1), e["hireDate"] + dt.timedelta(days=31))
     days = [start + dt.timedelta(days=i) for i in range((LEDGER_DATE - start).days + 1)]
-    days = [d for d in days if not is_holiday(d)]
+    days = draw_days(days)
     target = rng.uniform(0.3, 0.95) * min(statutory_leave(e["hireDate"]), 15)
     out, total = [], 0.0
     for d in sorted(rng.sample(days, min(len(days), int(target) + 2))):
@@ -109,7 +132,12 @@ def _leave_usage(e, rng):
         n = 1.0 if kind == "연차" else 0.5
         out.append({"date": d, "kind": kind, "days": n, "reason": rng.choice(["개인사유", "가족행사", "병원", "여행", "휴식", "이사"])})
         total += n
-    return out
+    taken = {u["date"] for u in out}
+    for u in out:  # 7/17 제헌절에 뽑힌 사용일 → 다음 근무일
+        if is_holiday(u["date"]):
+            u["date"] = shift_workday(u["date"], taken, LEDGER_DATE)
+            taken.add(u["date"])
+    return sorted(out, key=lambda u: u["date"])
 
 
 def build_facts(company, employees, months, seed):

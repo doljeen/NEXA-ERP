@@ -297,7 +297,7 @@ def write_attendance(path, emps, plans, rng, acc_plan):
             sm.formula(col, r, f"=SUMIFS('{name}'!${src}$2:${src}${last},'{name}'!$C$2:$C${last},A{r})", tot[k])
         for col, src, k in (("H", "E", "ot"), ("I", "F", "night"), ("J", "G", "hol")):
             sm.formula(col, r, f"=ROUNDDOWN({src}{r}/30,0)/2", to_hours(tot[k]), "num")
-        month_vals[e["empNo"]] = {k: to_hours(tot[k]) for k in ("ot", "night", "hol")}
+        month_vals[e["empNo"]] = {**{k: to_hours(tot[k]) for k in ("ot", "night", "hol")}, "min": tot}
         month_row[e["empNo"]] = r
         r += 1
     meta["월집계"] = {"role": "monthlySummary", "headerRows": [1], "firstDataRow": 2, "lastDataRow": r - 1}
@@ -308,10 +308,12 @@ def write_attendance(path, emps, plans, rng, acc_plan):
         return row_no[id(x)]
 
     bad = [x for x in rows_by_sheet["B"] if x["date"] >= acc_plan["midnightFrom"] and x["kind"] == "야간"]
-    A.add("MIDNIGHT_NOT_HANDLED", "B조", "B조 시트 12/%d 이후 행의 근무(분) 수식이 MOD 없이 (퇴근-출근)×1440 — 주간 양식을 복사해 붙여 "
-          "자정을 넘는 야간 근무가 음수 (예: %d분)" % (acc_plan["midnightFrom"].day, bad[0]["_actual"]["work"]),
+    no_mod = sorted(loc(x)[1] for x in rows_by_sheet["B"] if x["date"] >= acc_plan["midnightFrom"])  # MOD 없는 수식을 넣은 행 전부
+    A.add("MIDNIGHT_NOT_HANDLED", "B조", "B조 시트 12/%d 이후 행(%d~%d행)의 근무(분) 수식이 MOD 없이 (퇴근-출근)×1440 — 주간 양식을 복사해 붙여 "
+          "자정을 넘는 야간 근무 %d행이 음수 (예: %d분). 같은 범위의 주간·특근·연차 행은 수식은 틀렸지만 값은 우연히 맞음"
+          % (acc_plan["midnightFrom"].day, no_mod[0], no_mod[-1], len(bad), bad[0]["_actual"]["work"]),
           ["FORMULA_READ", "RECOMPUTE_CHECK", "RULE_EXTRACTION"], rows=sorted(loc(x)[1] for x in bad),
-          cells=["J%d:J%d" % (min(loc(x)[1] for x in bad), max(loc(x)[1] for x in bad))],
+          cells=["J%d:J%d" % (no_mod[0], no_mod[-1])], formulaRows=[no_mod[0], no_mod[-1]],
           formula={"actual": '=IF(G{r}="",0,ROUND((H{r}-G{r})*1440,0)-I{r})',
                    "expected": '=IF(G{r}="",0,MOD(ROUND((H{r}-G{r})*1440,0),1440)-I{r})'})
     om = acc_plan["outMissing"]
@@ -322,13 +324,17 @@ def write_attendance(path, emps, plans, rng, acc_plan):
           values={"근무(분)": {"actual": om["_actual"]["work"]}, "연장(분)": {"actual": om["_actual"]["ot"], "expected": om["_otTrue"]}})
     sname, rn = loc(dup)
     orig = orig_dup
-    A.add("DUPLICATE_ROW", sname, "같은 사람·같은 날 출퇴근 두 번 (단말기 기록 중복 반영) → 월집계 연장·야간 이중 집계",
+    twice = ", ".join("%s %d분" % (lab, dup["_actual"][k]) for k, lab in (("ot", "연장"), ("night", "야간"), ("hol", "휴일")) if dup["_actual"][k])
+    A.add("DUPLICATE_ROW", sname, "같은 사람·같은 날 출퇴근 두 번 (단말기 기록 중복 반영) → 월집계에 %s이 한 번 더 더해짐" % (twice or "0분"),
           ["DUPLICATE_DETECT"], empNo=dup["emp"]["empNo"], rows=sorted([loc(orig)[1], rn]), rowNo=rn)
     hx = acc_plan["holidayAsWeekday"]
     sname, rn = loc(hx)
+    prev = [x for x in plans[hx["emp"]["empNo"]] if x["date"] == hx["date"] - dt.timedelta(days=1) and x["kind"] == "야간" and x["out"] is not None]
+    hx_note = ("전날 야간 근무(%s 퇴근) 뒤 같은 날 %s 출근이라 근무 간 휴식 %d분 — 이 사고 행이 만든 값 (12/25 특근 행 자체가 사고)"
+               % (_t(prev[0]["out"] % 1440).strftime("%H:%M"), _t(hx["in"]).strftime("%H:%M"), hx["in"] - prev[0]["out"] % 1440)) if prev else None
     A.add("HOLIDAY_WORK_AS_WEEKDAY", sname, "12/25(성탄절) 특근을 근무구분 '주간'으로 기록 → 휴일(분) 0, 정시 이후만 연장으로 잡힘",
           ["HOLIDAY_CALENDAR", "CROSS_FIELD_RULE"], empNo=hx["emp"]["empNo"], rowNo=rn, cells=["F%d" % rn],
-          values={"근무구분": {"actual": "주간", "expected": "특근"}})
+          values={"근무구분": {"actual": "주간", "expected": "특근"}}, **({"note": hx_note} if hx_note else {}))
     for e in acc_plan["force52"]:
         rows = [x for x in plans[e["empNo"]] if WEEK[x["date"]] == 3]
         wk = sum(x["_actual"]["work"] for x in rows)
@@ -346,6 +352,14 @@ def write_attendance(path, emps, plans, rng, acc_plan):
                 A.add("WEEKLY_52H_EXCEEDED", sheets[e["shift"]], "%d주차 주 %.1f시간 (다른 사고의 결과)" % (w, wk / 60),
                       ["LEGAL_RULE_COMPARE", "RECOMPUTE_CHECK"], legal=True, empNo=e["empNo"],
                       rows=sorted(loc(x)[1] for x in rows), intended=False)
+    # 사고 겹침: 12/25 '주간' 행이 MOD 없는 수식 범위 안
+    a_mid, a_hx = A.items[0], next(a for a in A.items if a["type"] == "HOLIDAY_WORK_AS_WEEKDAY")
+    if a_hx["sheet"] == "B조" and no_mod[0] <= a_hx["rowNo"] <= no_mod[-1]:
+        cell = "J%d" % a_hx["rowNo"]
+        a_mid["overlaps"] = [{"with": a_hx["id"], "cells": [cell], "trueValue": hx["_actual"]["work"],
+                              "note": "12/25 특근을 '주간'으로 기록한 행도 MOD 없는 수식 범위 안. 낮 근무라 근무(분) 값은 맞음"}]
+        a_hx["overlaps"] = [{"with": a_mid["id"], "cells": [cell], "trueValue": hx["_actual"]["work"],
+                             "note": "이 행의 근무(분) 수식은 MOD가 없지만(%s) 낮 근무라 값은 맞음" % a_mid["id"]}]
     return meta, A.items, month_vals, month_row
 
 
@@ -560,29 +574,46 @@ def write_payroll(path, emps, hours, acc_plan):
         v = values[t][emp]
         return [hdr[k] for k, _ in PAY_COLS if k not in ("empNo", "name", "shift", "hire") and v["actual"].get(k) != v["ideal"].get(k)]
 
+    def spread(t, rows):
+        """값이 바뀐 행 → 그 행이 들어가는 조 소계·부서 합계·총괄 부서 행·총괄 총계(SUM 범위 안일 때)까지"""
+        m = sheet_meta[t]
+        subs = sorted({next(s for s in m["subtotalRows"] if s > r) for r in rows}) if m["subtotalRows"] else []
+        out = [{"sheet": t, "rowNo": s} for s in subs] + [{"sheet": t, "rowNo": m["totalRow"]}, {"sheet": "총괄", "rowNo": sum_row[t]}]
+        return out + ([{"sheet": "총괄", "rowNo": sum_total_row}] if sum_row[t] <= last_inc else [])
+
+    def row_vals(t, emp, keys):
+        v = values[t][emp]
+        return {hdr[k]: {"actual": v["actual"][k], "expected": v["ideal"][k]} for k in keys if v["actual"][k] != v["ideal"][k]}
+
     t = acc_plan["divisorTeam"]
     m = sheet_meta[t]
     A.add("DIVISOR_INCONSISTENT", t, "%s 시트만 통상시급 수식이 '/209' 숫자 (다른 부서 시트는 설정!243 참조) — 단협 개정 전 양식을 복사해 "
-          "연장·야간·휴일수당이 다른 부서와 다른 기준으로 계산됨" % t, ["FORMULA_READ", "RULE_EXTRACTION", "MULTI_SHEET"],
+          "연장·야간·휴일수당이 다른 부서와 다른 기준으로 계산됨 → 지급계·공제·합계, 총괄까지 달라짐" % t, ["FORMULA_READ", "RULE_EXTRACTION", "MULTI_SHEET"],
           cells=["%s%d:%s%d" % (L["hourly"], m["firstDataRow"], L["hourly"], m["lastDataRow"])],
           formula={"actual": "=ROUND(M7/209,0)", "expected": "=ROUND(M7/%s,0)" % S("hours")},
           rowsWithDifferentValue=sorted(m["rowOf"][x] for x in values[t] if values[t][x]["actual"]["otPay"] != values[t][x]["ideal"]["otPay"]
-                                        or values[t][x]["actual"]["nightPay"] != values[t][x]["ideal"]["nightPay"]))
+                                        or values[t][x]["actual"]["nightPay"] != values[t][x]["ideal"]["nightPay"]),
+          affected=[{"sheet": t, "rowNo": None}] + [x for x in spread(t, []) if x["sheet"] == "총괄"])  # 시트 전체(행 None) + 총괄
     t = acc_plan["doubleCountTeam"]
     m = sheet_meta[t]
     A.add("SUBTOTAL_DOUBLE_COUNT", t, "%s 합계 행이 SUM(7행:마지막 행)으로 A조·B조 소계 행까지 더해 모든 금액이 2배 → 총괄 시트로 전파" % t,
           ["TOTAL_ROW_SKIP", "RECOMPUTE_CHECK"], rowNo=m["totalRow"],
-          cells=["%s%d:%s%d" % (L["basePay"], m["totalRow"], L["net"], m["totalRow"])],
+          cells=["%s%d:%s%d" % (L["basePay"], m["totalRow"], L["net"], m["totalRow"]),
+                 "총괄!C%d:E%d" % (sum_row[t], sum_row[t]), "총괄!C%d:E%d" % (sum_total_row, sum_total_row)],
           values={"지급계": {"actual": totals[t]["values"]["gross"], "expected": totals[t]["values"]["gross"] // 2}},
           affected=[{"sheet": t, "rowNo": m["totalRow"]}, {"sheet": "총괄", "rowNo": sum_row[t]}, {"sheet": "총괄", "rowNo": sum_total_row}])
+    a_double = A.items[-1]
     t = acc_plan["wrongYearTeam"]
     m = sheet_meta[t]
-    old = [x for x in values[t] if values[t][x]["actual"]["basePay"] != values[t][x]["ideal"]["basePay"]]
+    old = [x for x in values[t] if any(values[t][x]["actual"][k] != values[t][x]["ideal"][k] for k in MONEY)]
     A.add("WRONG_YEAR_SHEET", t, "작년(2025년 12월) 시트를 복사해 사람만 바꿈: 제목 '2025년 12월'·지급일 2026-01-09, 2026년 이전 입사자의 기본급이 "
-          "2025년 금액, 근속수당 기준일 DATE(2025,12,31)", ["PERIOD_LABEL_CHECK", "CROSS_FILE_MATCH", "FORMULA_READ"],
-          cells=["A1", "A2", "%s7:%s%d" % (L["basePay"], L["basePay"], m["lastDataRow"])],
+          "2025년 금액, 근속수당 기준일 DATE(2025,12,31) (행별 기대값은 affected의 values)", ["PERIOD_LABEL_CHECK", "CROSS_FILE_MATCH", "FORMULA_READ"],
+          cells=["A1", "A2", "%s7:%s%d" % (L["basePay"], L["basePay"], m["lastDataRow"]),
+                 "%s7:%s%d" % (L["tenureAlw"], L["tenureAlw"], m["lastDataRow"])],
           rows=sorted(m["rowOf"][x] for x in old),
-          values={"제목": {"actual": "2025년 12월 급여대장", "expected": "2026년 12월 급여대장"}})
+          values={"제목": {"actual": "2025년 12월 급여대장", "expected": "2026년 12월 급여대장"}},
+          affected=[{"sheet": t, "rowNo": m["rowOf"][x], "empNo": x, "values": row_vals(t, x, ["basePay", "tenureAlw", "gross", "ded", "net"])}
+                    for x in sorted(old, key=lambda x: m["rowOf"][x])] + spread(t, [m["rowOf"][x] for x in old]))
     for emp, val in acc_plan["hiddenStale"].items():
         t = next(e["dept"] for e in emps if e["empNo"] == emp)
         rn = sheet_meta[t]["rowOf"][emp]
@@ -592,28 +623,61 @@ def write_payroll(path, emps, hours, acc_plan):
               cells=["%s%d" % (L["ordinary"], rn)], hiddenColumn=True,
               values={"통상임금": {"actual": val, "expected": v["ideal"]["ordinary"]},
                       "통상시급": {"actual": v["actual"]["hourly"], "expected": v["ideal"]["hourly"]}},
-              cascade=diff_cols(t, emp))
-    aff = [{"sheet": t, "rowNo": sheet_meta[t]["rowOf"][x], "empNo": x} for t in teams for x in values[t]
-           if values[t][x]["actual"]["np"] != values[t][x]["ideal"]["np"] and values[t][x]["ideal"]["npBase"] > B.NP_CAP_OLD]
-    A.add("STALE_CAP", "설정", "국민연금 기준소득월액 상한이 작년 값 %s원 (2026년 %s원) → 기준소득월액이 상한 사이인 %d명 국민연금 과소 공제"
-          % (format(B.NP_CAP_OLD, ","), format(B.NP_CAP, ","), len(aff)), ["RATE_TABLE_BY_PERIOD", "LEGAL_RULE_COMPARE"], legal=True,
-          rowNo=SET_ROW["npCap"], cells=["C%d" % SET_ROW["npCap"]],
-          values={"국민연금 상한": {"actual": B.NP_CAP_OLD, "expected": B.NP_CAP}}, affected=aff)
+              cascade=diff_cols(t, emp), affected=[{"sheet": t, "rowNo": rn}] + spread(t, [rn]))
+    cap_rows = [(t, x) for t in teams for x in values[t]
+                if values[t][x]["actual"]["np"] != values[t][x]["ideal"]["np"] and values[t][x]["ideal"]["npBase"] > B.NP_CAP_OLD]
+    aff = [{"sheet": t, "rowNo": sheet_meta[t]["rowOf"][x], "empNo": x, "values": row_vals(t, x, ["np", "ded", "net"])} for t, x in cap_rows]
+    aff_tot = []
+    for t in dict.fromkeys(t for t, _ in cap_rows):
+        aff_tot += [x for x in spread(t, [sheet_meta[t]["rowOf"][e] for tt, e in cap_rows if tt == t]) if x not in aff_tot]
+    A.add("STALE_CAP", "설정", "국민연금 기준소득월액 상한이 2024-07~2025-06 고시값 %s원으로 남아 있음 (2026-12 귀속은 2026-07~ 상한 %s원·하한 %s원) "
+          "→ 기준소득월액이 두 상한 사이인 %d명 국민연금 과소 공제 (공제계·실지급액, 부서 합계·총괄도 달라짐)"
+          % (format(B.NP_CAP_OLD, ","), format(B.NP_CAP, ","), format(B.NP_FLOOR, ","), len(aff)), ["RATE_TABLE_BY_PERIOD", "LEGAL_RULE_COMPARE"], legal=True,
+          rowNo=SET_ROW["npCap"], cells=["C%d" % SET_ROW["npCap"]] + ["%s!%s%d" % (x["sheet"], L[k], x["rowNo"]) for x in aff for k in ("np", "ded", "net")],
+          values={"국민연금 상한": {"actual": B.NP_CAP_OLD, "expected": B.NP_CAP}},
+          affected=[{"sheet": "설정", "rowNo": SET_ROW["npCap"]}] + aff + aff_tot)
     A.add("SUM_RANGE_MISSING", "총괄", "총괄 총계 SUM 범위가 마지막 부서(%s) 행을 빠뜨림" % teams[-1],
           ["FORMULA_READ", "RECOMPUTE_CHECK", "TOTAL_ROW_SKIP"], rowNo=sum_total_row,
           cells=["B%d:E%d" % (sum_total_row, sum_total_row)],
           formula={"actual": "=SUM(C4:C%d)" % last_inc, "expected": "=SUM(C4:C%d)" % (sum_total_row - 1)})
+    a_short = A.items[-1]
     ht = acc_plan["hoursTypo"]
     t = next(e["dept"] for e in emps if e["empNo"] == ht["empNo"])
     rn = sheet_meta[t]["rowOf"][ht["empNo"]]
     A.add("HOURS_MISMATCH_CROSS_FILE", t, "연장시간을 근태 월집계에서 옮겨 적다 숫자 순서가 바뀜 (%s → %s)" % (ht["true"], ht["typed"]),
           ["CROSS_FILE_MATCH"], empNo=ht["empNo"], rowNo=rn, cells=["%s%d" % (L["otH"], rn)],
-          values={"연장(h)": {"actual": ht["typed"], "expected": ht["true"]}}, cascade=diff_cols(t, ht["empNo"]))
-
+          values={"연장(h)": {"actual": ht["typed"], "expected": ht["true"]}}, cascade=diff_cols(t, ht["empNo"]),
+          affected=[{"sheet": t, "rowNo": rn}] + spread(t, [rn]))
+    # 사고 겹침: 총괄 총계 행은 프레스팀 2배(합계 행 사고)와 마지막 부서 누락(SUM 범위 사고)이 함께 틀리게 한다
+    true_tot = {c: sum(sum(v["actual"][k] for v in values[t].values()) for t in teams) for c, k in zip("CDE", ("gross", "ded", "net"))}
+    true_tot["B"] = sum(totals[t]["count"] for t in teams)
+    cells17 = ["B%d" % sum_total_row] + ["%s%d" % (c, sum_total_row) for c in "CDE"]
+    note = "둘 다 고친 값(다른 사고로 틀린 부서 금액은 그대로)"
+    a_double["overlaps"] = [{"with": a_short["id"], "cells": cells17[1:], "note": note,
+                             "trueValue": {"%s%d" % (c, sum_total_row): true_tot[c] for c in "CDE"}}]
+    a_short["overlaps"] = [{"with": a_double["id"], "cells": cells17, "note": note,
+                            "trueValue": {"%s%d" % (c, sum_total_row): true_tot[c] for c in "BCDE"}}]
+    # 휴일근로 8시간 초과분: 회사 수식은 휴일(h) 전체 × 1.5 (법정은 8시간 초과분 2배)
+    hol8 = []
+    for t in teams:
+        for x, v in values[t].items():
+            over = acc_plan["holidayOver8"].get(x, 0)
+            if over:
+                h_act, h_ok, hh = v["actual"]["hourly"], v["ideal"]["hourly"], v["ideal"]["holH"]
+                prem = lambda hr: ROUND(hr * (hh - over) * 1.5 + hr * over * 2, 0)  # noqa: E731
+                hol8.append({"sheet": t, "rowNo": sheet_meta[t]["rowOf"][x], "empNo": x, "cells": ["%s%d" % (L["holPay"], sheet_meta[t]["rowOf"][x])],
+                             "values": {"휴일수당": {"actual": v["actual"]["holPay"], "statutory": prem(h_act),
+                                                 "statutoryWithCorrectHourly": prem(h_ok)}},
+                             "note": "휴일 %s시간 중 하루 8시간 초과분 %s시간. statutory는 이 행의 통상시급 %s원 그대로 8시간 초과분만 2배로 고친 값, "
+                                     "statutoryWithCorrectHourly는 통상시급도 설정 243 기준(%s원)으로 고친 값%s"
+                                     % (hh, over, format(h_act, ","), format(h_ok, ","),
+                                        " (이 시트는 /209 사고 JACH-PAY-01과 겹침)" if t == acc_plan["divisorTeam"] else "")})
     accidents_rows = {(a["sheet"], x) for a in A.items for x in ([a.get("rowNo")] + a.get("rows", [])) if x} | \
                      {(x["sheet"], x["rowNo"]) for a in A.items for x in a.get("affected", [])}
+    # 근태 사고(퇴근 빈 칸·중복 행·12/25 '주간')로 월집계와 급여대장이 달라지는 사람이 있는 부서도 깨끗한 비교군에서 뺀다
+    att_teams = {e["dept"] for e in emps if e["empNo"] in acc_plan["attEmps"]}
     clean_sheets = [t for t in teams if not any(s == t for s, _ in accidents_rows) and t not in
-                    (acc_plan["divisorTeam"], acc_plan["wrongYearTeam"])]
+                    (acc_plan["divisorTeam"], acc_plan["wrongYearTeam"]) and t not in att_teams and not any(h["sheet"] == t for h in hol8)]
     key = {
         "file": path.name, "kind": "PAYROLL", "closestEntity": "PAY_RESULT_HISTORY", "supported": False,
         "sheetOrder": ["총괄"] + teams + ["설정", "간이세액표"],
@@ -627,20 +691,24 @@ def write_payroll(path, emps, hours, acc_plan):
                             "payrollSummary": {"부서": "dept", "인원": "headcount", "지급계": "gross", "공제계": "ded", "실지급액": "net"}},
         "rules": {
             "ordinaryWage": {"expr": "basePay+positionAllowance+tenureAllowance+shiftAllowance", "hiddenColumn": L["ordinary"],
-                             "note": "가족수당·식대는 통상임금에서 뺌"},
+                             "note": "가족수당·식대는 통상임금에서 뺌 (회사 규칙. 고정 식대는 판례상 통상임금일 수 있음 — README 가정값)"},
             "ordinaryHourlyWage": {"expr": "round(ordinaryWage/243)", "divisor": 243, "divisorFrom": S("hours"), "rounding": "round1",
                                    "note": "단체협약상 토요일 8시간 유급 → 월 243시간"},
             "tenureAllowance": {"expr": "min(DATEDIF(입사일, 2026-12-31, Y), 20) × 10,000"},
             "shiftAllowance": {"expr": "조가 '상주'가 아니면 150,000"},
-            "overtimePremium": {"rate": 1.5}, "nightPremium": {"rate": 0.5}, "holidayPremium": {"rate": 1.5, "over8h": None},
+            "overtimePremium": {"rate": 1.5}, "nightPremium": {"rate": 0.5},
+            "holidayPremium": {"rate": 1.5, "over8h": None, "note": "회사 수식은 휴일(h) 전체 × 1.5. 8시간 초과분 2배(근로기준법 제56조 제2항)를 따로 계산하지 않음 → 하루 8시간을 넘긴 특근이 있는 행은 legalDeviations"},
             "mealInInsuranceBase": False, "insuranceRounding": "floor10",
             "nationalPension": {"base": "기준소득월액(신고값, 열 '%s')" % hdr["npBase"], "floor": B.NP_FLOOR, "cap": B.NP_CAP,
-                                "note": "건강·고용보험은 그달 과세대상 기준"},
+                                "note": "상·하한은 2026-07~2027-06 고시값 (귀속월 2026-12). 건강·고용보험은 그달 과세대상 기준"},
             "incomeTax": "간이세액표 VLOOKUP(과세대상, 가족 수 최대 5)",
             "hoursSource": "교대근무기록 월집계(30분 미만 버림)를 값으로 옮겨 적음",
         },
-        "legalDeviations": [{"rule": "nationalPensionCap", "company": "상한 %s원 (설정!C%d)" % (format(B.NP_CAP_OLD, ","), SET_ROW["npCap"]),
-                             "statutory": "%s원" % format(B.NP_CAP, ","), "rows": len(aff)}],
+        "legalDeviations": [{"rule": "nationalPensionCap", "company": "상한 %s원 (설정!C%d, 2024-07~2025-06 고시값)" % (format(B.NP_CAP_OLD, ","), SET_ROW["npCap"]),
+                             "statutory": "%s원 (2026-07~ 귀속)" % format(B.NP_CAP, ","), "rows": len(aff)}]
+                           + [{"rule": "holidayPremium", "sheet": h["sheet"], "rows": [h["rowNo"]], "empNo": h["empNo"], "cells": h["cells"],
+                               "company": "휴일근로 전 시간 1.5배", "statutory": "8시간 이내 1.5배, 8시간 초과분 2배 (근로기준법 제56조 제2항)",
+                               "values": h["values"], "note": h["note"]} for h in hol8],
         "accidents": A.items,
         "cleanSheets": clean_sheets,
         "valueNoise": [
@@ -652,9 +720,32 @@ def write_payroll(path, emps, hours, acc_plan):
         ],
         "crossFile": {"attendance": {"file": ATT_FILE, "sheet": "월집계",
                                      "detail": "연장(h)·야간(h)·휴일(h) = 월집계 값. 다른 곳은 근태 쪽 사고(OUT_MISSING·DUPLICATE_ROW·"
-                                               "HOLIDAY_WORK_AS_WEEKDAY)나 급여 쪽 HOURS_MISMATCH_CROSS_FILE로 설명됨"}},
+                                               "HOLIDAY_WORK_AS_WEEKDAY — 급여대장 값이 맞고 월집계가 틀림, 근태 정답지 crossFileAffected)나 "
+                                               "급여 쪽 HOURS_MISMATCH_CROSS_FILE로 설명됨"}},
     }
     return key, values
+
+
+def _att_spread(att_acc, att_emps, month_vals, month_row, true_min, pay_key, by_no):
+    """근태 사고(퇴근 빈 칸·중복 행·12/25 '주간')가 바꾼 월집계 행과, 그 때문에 어긋나는 급여대장 행(값은 급여대장이 맞음)을 정답지에 남긴다"""
+    owner = {a["empNo"]: a for a in att_acc if a["type"] in ("OUT_MISSING", "DUPLICATE_ROW", "HOLIDAY_WORK_AS_WEEKDAY")}
+    lab = {"ot": "연장", "night": "야간", "hol": "휴일"}
+    min_col, h_col, pay_col = {"ot": "E", "night": "F", "hol": "G"}, {"ot": "H", "night": "I", "hol": "J"}, {"ot": "otH", "night": "nightH", "hol": "holH"}
+    for x, diff in att_emps.items():
+        a = owner[x]  # 사고 없는 사람의 월집계는 급여대장과 같아야 한다
+        mr = month_row[x]
+        rows = a.get("rows") or [a["rowNo"]]
+        a["affected"] = [{"sheet": a["sheet"], "rowNo": r} for r in rows] + [{"sheet": "월집계", "rowNo": mr}]
+        ks = [k for k in ("ot", "night", "hol") if month_vals[x]["min"][k] != true_min[x][k] or k in diff]
+        a["cells"] = a.get("cells", []) + ["월집계!%s%d" % (min_col[k], mr) for k in ks] + ["월집계!%s%d" % (h_col[k], mr) for k in diff]
+        a.setdefault("values", {}).update({"월집계!%s(분)" % lab[k]: {"actual": month_vals[x]["min"][k], "expected": true_min[x][k]} for k in ks})
+        a["values"].update({"월집계!%s(h)" % lab[k]: {"actual": m, "expected": p} for k, (m, p) in diff.items()})
+        t = by_no[x]["dept"]
+        pr = pay_key["sheets"][t]["rowOf"][x]
+        L2 = {k: xl_col_to_name([c for c, _ in PAY_COLS].index(pay_col[k])) for k in diff}
+        a["crossFileAffected"] = [{"file": PAY_FILE, "sheet": t, "rowNo": pr, "empNo": x, "cells": ["%s%d" % (L2[k], pr) for k in diff],
+                                   "values": {"%s(h)" % lab[k]: {"payroll": p, "attendanceSummary": m} for k, (m, p) in diff.items()},
+                                   "note": "급여대장은 사고 없는 근태 시간이라 값이 맞고, 월집계가 이 사고로 틀림 → 두 파일 대조 시 불일치"}]
 
 
 # ================================================================ 회사 전체
@@ -670,7 +761,7 @@ def build(df, used, out_dir, seed):
         e["basePay2025"] = ROUNDDOWN(e["basePay"] / (1 + e["raise"]), -4)
         fixed = e["basePay"] + POS_ALW.get(e["duty"], 0) + e["familyAlw"] + (150_000 if e["work"] == "2교대" else 0)
         e["npBase"] = ROUNDDOWN(fixed + (rng.randint(30, 70) * 10_000 if e["family"] == "생산직" else 0), -3)
-    # 상한 사고가 드러나도록: 기준소득월액이 작년 상한~올해 상한 사이·이상인 사람을 최소 3명
+    # 상한 사고가 드러나도록: 기준소득월액이 옛 상한(617만)~2026-07 상한(659만) 사이인 사람을 최소 3명
     tops = sorted([e for e in emps if e["status"] == "재직" and e["family"] == "사무직"], key=lambda e: -e["npBase"])[:3]
     for n, e in enumerate(tops):
         e["npBase"] = max(e["npBase"], [6_220_000, 6_300_000, 6_480_000][n])
@@ -700,13 +791,20 @@ def build(df, used, out_dir, seed):
     acc_att = {"midnightFrom": dt.date(2026, 12, 21), "outMissing": om, "dupRow": dup, "holidayAsWeekday": hx, "force52": force52}
 
     # 급여용 시간 = 근태 단말기 기준 '사고 없는' 값 (월집계가 아닌 원천)
-    hours = {}
+    hours, true_min, hol_over8 = {}, {}, {}
     for e in active:
         rs = plans[e["empNo"]]
         ot = sum(om["_otTrue"] if r is om else ot_min(r) for r in rs)
+        true_min[e["empNo"]] = {"ot": ot, "night": sum(night_min(r) for r in rs), "hol": sum(work_min(r) for r in rs if r["kind"] == "특근")}
+        over = to_hours(sum(max(0, work_min(r) - 480) for r in rs if r["kind"] == "특근"))
+        if over:
+            hol_over8[e["empNo"]] = over
         hours[e["empNo"]] = {"ot": to_hours(ot), "night": to_hours(sum(night_min(r) for r in rs)),
                              "hol": to_hours(sum(work_min(r) for r in rs if r["kind"] == "특근"))}
     att_meta, att_acc, month_vals, month_row = write_attendance(cdir / ATT_FILE, active, plans, arng, acc_att)
+    # 근태 사고가 월집계로 번진 사람 (급여대장은 사고 없는 시간을 쓰므로 두 파일이 달라진다)
+    att_emps = {x: {k: (month_vals[x][k], hours[x][k]) for k in ("ot", "night", "hol") if month_vals[x][k] != hours[x][k]}
+                for x in hours if any(month_vals[x][k] != hours[x][k] for k in ("ot", "night", "hol"))}
 
     # 급여 사고 계획
     prng = B.rng_for(CID, "payroll", seed)
@@ -722,8 +820,10 @@ def build(df, used, out_dir, seed):
     s = str(int(true_h))
     typed = float(s[::-1]) + (true_h - int(true_h))
     acc_pay = {"divisorTeam": "도장팀", "doubleCountTeam": "프레스팀", "wrongYearTeam": "물류팀", "hiddenStale": stale,
-               "summaryShort": True, "hoursTypo": {"empNo": te["empNo"], "true": true_h, "typed": typed}}
+               "summaryShort": True, "hoursTypo": {"empNo": te["empNo"], "true": true_h, "typed": typed},
+               "attEmps": set(att_emps), "holidayOver8": hol_over8}
     pay_key, _ = write_payroll(cdir / PAY_FILE, active, hours, acc_pay)
+    _att_spread(att_acc, att_emps, month_vals, month_row, true_min, pay_key, {e["empNo"]: e for e in active})
 
     att_key = {
         "file": ATT_FILE, "kind": "ATTENDANCE", "closestEntity": None, "supported": False, "period": "2026-12",

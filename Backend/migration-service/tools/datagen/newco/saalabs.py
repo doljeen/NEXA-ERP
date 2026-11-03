@@ -80,9 +80,10 @@ def prorate(x, days, month_days):
     return ROUNDDOWN(x * days / month_days, -1)
 
 
-def deductions(e, gross, taxable, np_cap=True, other=0):
+def deductions(e, gross, taxable, ym, np_cap=True, other=0):
     np_base = ROUNDDOWN(taxable, -3)
-    npv = ROUNDDOWN((min(max(np_base, B.NP_FLOOR), B.NP_CAP) if np_cap else np_base) * B.RATES_2026["np"], -1)
+    floor, cap = B.np_limits(ym)
+    npv = ROUNDDOWN((min(max(np_base, floor), cap) if np_cap else np_base) * B.RATES_2026["np"], -1)
     hi = ROUNDDOWN(taxable * B.RATES_2026["hi"], -1)
     ltc = ROUNDDOWN(hi * B.RATES_2026["ltc"], -1)
     ei = 0 if e["grade"] == "대표" else ROUNDDOWN(taxable * B.RATES_2026["ei"], -1)
@@ -112,12 +113,12 @@ def pay_row(e, ym, opts=None):
     taxable = gross - nontax
     if o.get("leaveUnpaid"):  # 무급휴직: 보험료는 휴직 전 보수월액 기준으로 계속 공제 (납부예외 신청 안 함)
         before = pay_row(e, "2026-11")
-        d = deductions(e, 0, before["_taxable"], other=o.get("other", 0))
+        d = deductions(e, 0, before["_taxable"], ym, other=o.get("other", 0))
         d.update(tax=0, ltax=0)
         d["ded"] = sum(d[k] for k in ("np", "hi", "ltc", "ei", "tax", "ltax", "other"))
         d["net"] = 0 - d["ded"]
     else:
-        d = deductions(e, gross, taxable, np_cap=not o.get("noNpCap"), other=o.get("other", 0))
+        d = deductions(e, gross, taxable, ym, np_cap=not o.get("noNpCap"), other=o.get("other", 0))
     return {"ym": ym, "empNo": e["empNo"], "name": e["name"], **p, "gross": gross, **d, "_taxable": taxable, "memo": o.get("memo")}
 
 
@@ -175,10 +176,11 @@ def write_payroll(cdir, emps, seed):
                 for k in AMOUNTS:
                     actual[k] += nov[k]
                 actual["memo"], tag = "11월분 소급 포함", "MISSING"
-            if e is raised and ym == "2026-10":  # 기본급만 인상분 반영, 합계·실지급은 9월 값 그대로
+            if e is raised and ym == "2026-10":  # 기본급 칸에만 일회성 소급 15만원을 더하고 합계·공제·실지급은 그대로
                 actual["basePay"] += 150_000
                 ideal = dict(actual)
                 ideal["gross"] = actual["gross"] + 150_000
+                ideal.update({k: v for k, v in deductions(e, ideal["gross"], actual["_taxable"] + 150_000, ym).items()})
                 tag = "TOTAL"
             plans.append((ym, e, actual, ideal, tag))
     # 정렬: 귀속월, 사번
@@ -207,6 +209,9 @@ def write_payroll(cdir, emps, seed):
     def vals(a, i, keys):
         return {dict(PAY_COLS)[k]: {"actual": a[k], "expected": i[k]} for k in keys}
 
+    def diff(a, i):
+        return [k for k in AMOUNTS if a[k] != i[k]]
+
     for ym, e, a, i, tag in plans:
         r = row_no[(ym, e["empNo"])]
         if tag == "RESIGNED":
@@ -214,39 +219,48 @@ def write_payroll(cdir, emps, seed):
                   ["CROSS_FILE_MATCH"], empNo=e["empNo"], rowNo=r, cells=cells(r, ["gross", "net"]),
                   values={"실지급액": {"actual": a["net"], "expected": 0}})
         elif tag == "MISSING":
-            A.add("MONTH_ROW_MISSING", sheet, "2026-11 행이 없고 12월 행에 11월분을 더해 지급 (비고 '11월분 소급 포함') → 월별 이력·4대보험 귀속월이 틀어짐",
+            A.add("MONTH_ROW_MISSING", sheet, "2026-11 행이 없고 12월 행에 11월분을 더해 지급 (비고 '11월분 소급 포함') → 월별 이력·4대보험 귀속월이 틀어짐. "
+                  "금액·공제 칸이 모두 두 달 치라 식대 %s원도 두 달 치(달마다 20만 한도 안)로 비과세 한도 초과가 아님" % format(a["meal"], ","),
                   ["PERIOD_CONTINUITY", "CROSS_FILE_MATCH"], empNo=e["empNo"], rowNo=r, missingMonth="2026-11",
-                  cells=cells(r, ["basePay", "gross", "net"]), values=vals(a, i, ["basePay", "gross"]))
+                  cells=cells(r, diff(a, i)), values=vals(a, i, diff(a, i)),
+                  note="expected는 12월 단월 값. 11월분은 따로 2026-11 행이어야 함 (금액은 12월 단월과 같음)")
         elif tag == "TOTAL" and ym == "2026-10":
-            A.add("TOTAL_MISMATCH", sheet, "10월 기본급에 9월분 인상 소급 15만원을 더했는데 지급합계·공제·실지급액은 고치지 않음 → 지급합계 ≠ 항목 합",
-                  ["RECOMPUTE_CHECK"], empNo=e["empNo"], rowNo=r, cells=cells(r, ["basePay", "gross"]),
-                  values=vals(a, i, ["gross"]))
+            A.add("TOTAL_MISMATCH", sheet, "10월 기본급 칸에만 일회성 소급분 15만원을 더해 입력하고 지급합계·공제·실지급액은 고치지 않음 → 지급합계 ≠ 항목 합 "
+                  "(연봉은 그대로라 11·12월 기본급은 원래 금액)",
+                  ["RECOMPUTE_CHECK"], empNo=e["empNo"], rowNo=r, cells=cells(r, ["basePay"] + diff(a, i)),
+                  values=vals(a, i, diff(a, i)),
+                  note="expected는 기본급 칸의 15만원이 맞다고 보고 합계·공제·실지급을 다시 계산한 값")
         elif tag == "NEG":
             A.add("NEGATIVE_NET_PAY", sheet, "12월 무급 육아휴직인데 4대보험(납부예외 미신청)·사내대출 상환을 공제해 실지급액 %s원" % format(a["net"], ","),
-                  ["RANGE_CHECK", "RECOMPUTE_CHECK"], empNo=e["empNo"], rowNo=r, cells=cells(r, ["gross", "ded", "net"]),
+                  ["RANGE_CHECK", "RECOMPUTE_CHECK"], empNo=e["empNo"], rowNo=r, cells=cells(r, ["gross", "np", "hi", "ltc", "ei", "other", "ded", "net"]),
                   values={"실지급액": {"actual": a["net"]}})
         elif tag == "PRORATE":
-            A.add("PRORATION_MISSING", sheet, "11/17 입사자에게 11월 급여 전액 지급 (회사 규칙: 달력일 기준 일할 14/30)",
-                  ["CROSS_FILE_MATCH", "RECOMPUTE_CHECK"], empNo=e["empNo"], rowNo=r, cells=cells(r, ["basePay", "fixedOt", "gross"]),
-                  values=vals(a, i, ["basePay", "gross", "net"]))
+            A.add("PRORATION_MISSING", sheet, "11/17 입사자에게 11월 급여 전액 지급 (회사 규칙: 달력일 기준 일할 14/30, 식대·육아수당 포함 모든 항목) "
+                  "→ 공제·실지급도 전액 기준",
+                  ["CROSS_FILE_MATCH", "RECOMPUTE_CHECK"], empNo=e["empNo"], rowNo=r, cells=cells(r, diff(a, i)),
+                  values=vals(a, i, diff(a, i)))
     ceo_rows = sorted(r for (ym, no), r in row_no.items() if no == ceo["empNo"])
     sample = next(p for p in plans if p[1] is ceo)
-    A.add("NP_CAP_NOT_APPLIED", sheet, "대표 국민연금을 기준소득월액 상한(%s원) 없이 과세 급여 전액 × 4.75%%로 계산 (매달 %s원 → %s원이어야 함)"
-          % (format(B.NP_CAP, ","), format(sample[2]["np"], ","), format(sample[3]["np"], ",")), ["LEGAL_RULE_COMPARE", "RECOMPUTE_CHECK"],
-          legal=True, empNo=ceo["empNo"], rows=ceo_rows, cells=["%s%d" % (COL["np"], r) for r in ceo_rows],
-          values={"국민연금": {"actual": sample[2]["np"], "expected": sample[3]["np"]}})
+    assert all(p[0] >= "2026-07" for p in plans) and all(p[2]["np"] == sample[2]["np"] and p[2]["net"] == sample[2]["net"] for p in plans if p[1] is ceo)
+    A.add("NP_CAP_NOT_APPLIED", sheet, "대표 국민연금을 기준소득월액 상한(2026-07~ 귀속 %s원) 없이 과세 급여 전액 × 4.75%%로 계산 "
+          "(매달 %s원 → %s원이어야 함, 공제합계·실지급액도 같이 틀림)"
+          % (format(B.np_limits("2026-07")[1], ","), format(sample[2]["np"], ","), format(sample[3]["np"], ",")), ["LEGAL_RULE_COMPARE", "RECOMPUTE_CHECK"],
+          legal=True, empNo=ceo["empNo"], rows=ceo_rows, cells=["%s%d" % (COL[k], r) for r in ceo_rows for k in ("np", "ded", "net")],
+          values=vals(sample[2], sample[3], diff(sample[2], sample[3])), note="values는 6개월 모두 같음")
     car_rows = sorted(r for (ym, no), r in row_no.items() if no == car_over["empNo"])
     sample = next(p for p in plans if p[1] is car_over)
-    A.add("NONTAX_OVER_LIMIT", sheet, "자가운전보조금 월 30만원을 전액 비과세로 처리 (한도 20만원) → 10만원이 과세·보험료 기준에서 빠짐",
+    assert all(diff(p[2], p[3]) == diff(sample[2], sample[3]) and p[2]["net"] == sample[2]["net"] for p in plans if p[1] is car_over)
+    A.add("NONTAX_OVER_LIMIT", sheet, "자가운전보조금 월 30만원을 전액 비과세로 처리 (한도 20만원) → 10만원이 과세·보험료 기준에서 빠져 "
+          "4대보험·소득세·공제합계·실지급액이 틀림 (자가운전보조금 30만원 지급 자체는 맞음)",
           ["LEGAL_RULE_COMPARE", "RECOMPUTE_CHECK"], legal=True, empNo=car_over["empNo"], rows=car_rows,
-          cells=["%s%d" % (COL["car"], r) for r in car_rows],
-          values={"건강보험": {"actual": sample[2]["hi"], "expected": sample[3]["hi"]},
-                  "소득세": {"actual": sample[2]["tax"], "expected": sample[3]["tax"]}})
+          cells=["%s%d" % (COL[k], r) for r in car_rows for k in diff(sample[2], sample[3])],
+          values=vals(sample[2], sample[3], diff(sample[2], sample[3])), note="values는 6개월 모두 같음")
     low_rows = sorted(r for (ym, no), r in row_no.items() if no == low["empNo"])
     p = split_pay(low)
-    hourly = (p["basePay"] + p["meal"]) / 209
-    A.add("MIN_WAGE_VIOLATION", sheet, "포괄임금 연봉 2,600만원: (기본급 %s + 식대 20만)/209 = 시간당 %s원 < 2026 최저임금 %s원 "
-          "(고정연장수당은 최저임금 산입 안 됨)" % (format(p["basePay"], ","), format(int(hourly), ","), format(B.MIN_WAGE[2026], ",")),
+    hourly = (p["basePay"] + p["meal"] + p["child"]) / 209
+    A.add("MIN_WAGE_VIOLATION", sheet, "포괄임금 연봉 2,600만원: (기본급 %s + 식대 20만 + 육아수당 %s)/209 = 시간당 %s원 < 2026 최저임금 %s원 "
+          "(고정연장수당은 최저임금 산입 안 됨, 자가운전보조금은 실비변상이라 제외)"
+          % (format(p["basePay"], ","), format(p["child"], ","), format(int(hourly), ","), format(B.MIN_WAGE[2026], ",")),
           ["LEGAL_RULE_COMPARE", "RULE_EXTRACTION"], legal=True, empNo=low["empNo"], rows=low_rows,
           cells=["%s%d" % (COL["basePay"], r) for r in low_rows])
     key = {
@@ -260,12 +274,15 @@ def write_payroll(cdir, emps, seed):
             "payModel": "포괄임금제: 연봉/12(10원 미만 버림) − 식대 − 자가운전 − 육아 = 기본급 + 고정연장수당, 기본급 = 나머지 × 209/(209+20×1.5)",
             "proration": "입사·퇴사 월은 항목마다 × 재직일수/달력일수, 10원 미만 버림",
             "nonTaxable": "식대·자가운전보조금·육아수당 각각 월 20만원 한도",
-            "nationalPension": {"base": "그달 과세 급여(천원 미만 버림)", "floor": B.NP_FLOOR, "cap": B.NP_CAP},
+            "nationalPension": {"base": "그달 과세 급여(천원 미만 버림)", "floor": B.np_limits("2026-07")[0], "cap": B.np_limits("2026-07")[1],
+                                "note": "귀속월 기준 고시값. 이 파일은 2026-07~12라 모두 2026-07~2027-06 값"},
             "employmentInsurance": "대표이사는 고용보험 제외 (0원은 정상)",
             "insuranceRounding": "floor10", "incomeTax": "간이세액표(단순화), 가족 수 = 본인+배우자+자녀",
-            "minimumWageBasis": "(기본급 + 식대) / 209 ≥ 최저임금 (2024년부터 복리후생비 전액 산입)",
+            "minimumWageBasis": "(기본급 + 식대 + 육아수당) / 209 ≥ 최저임금 (매월 현금으로 주는 복리후생비는 2024년부터 전액 산입, "
+                                "고정연장수당·자가운전보조금(실비변상)은 제외)",
         },
-        "legalDeviations": [{"rule": "nationalPensionCap", "company": "대표 행 상한 미적용", "statutory": "기준소득월액 상한 %s원" % format(B.NP_CAP, ",")},
+        "legalDeviations": [{"rule": "nationalPensionCap", "company": "대표 행 상한 미적용",
+                             "statutory": "기준소득월액 상한 %s원 (2026-07~ 귀속)" % format(B.np_limits("2026-07")[1], ",")},
                             {"rule": "nonTaxableLimit", "company": "자가운전보조금 30만원 전액 비과세", "statutory": "월 20만원"},
                             {"rule": "minimumWage", "company": "포괄임금 환산 시급 %d원" % int(hourly), "statutory": "%d원" % B.MIN_WAGE[2026]}],
         "accidents": A.items,

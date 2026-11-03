@@ -90,6 +90,10 @@ def people(df, used, seed):
         seq[e["corp"]] = seq.get(e["corp"], 0) + 1
         e["empNo"] = "%04d" % seq[e["corp"]]
         e["email"] = "%s.%s@peoheo.co.kr" % (e["corp"].lower(), e["empNo"])
+    # 2025-12-31 퇴사자 1명: 명부에만 남은 퇴사 이력 (2026 급여·연차에는 없음). 명부 DATE_ORDER 오류는 이 사람 퇴사일에 넣는다
+    cand = sorted([e for e in emps if e["corp"] == "PF" and e["status"] == "재직" and "transfer" not in e and not e.get("transferTo")
+                   and e["position"] != "대표이사" and e["duty"] is None and e["hireDate"] < dt.date(2024, 1, 1)], key=lambda e: e["empNo"])
+    rng.choice(cand).update(status="퇴사", resignDate=dt.date(2025, 12, 31))
     return emps
 
 
@@ -152,6 +156,7 @@ def write_payroll(path, emps, acc):
         sh.put(L[k], 4, h, "head")
     r = 5
     sub_rows, block, vals, row_of, sub_of, first_of, fb = [], {}, {}, {}, {}, {}, []
+    cell_val = {}  # 소계·총계·법인별집계 칸 → 저장한 값 (사고가 번진 칸의 실제값)
     for corp, cname, _d, _s in CORPS:
         sh.put("A", r, "■ %s (%s)" % (cname, corp), "totalLabel")
         sub_rows.append(r)
@@ -196,6 +201,7 @@ def write_payroll(path, emps, acc):
         for k in SUMMED:
             tot = sum(vals[(corp, e["empNo"])][0][k] for e in members if row_of[(corp, e["empNo"])] >= start)
             sh.formula(L[k], r, "=SUM(%s%d:%s%d)" % (L[k], start, L[k], r - 1), tot, "total" if k != "otH" else "num")
+            cell_val["%s%d" % (L[k], r)] = tot
         sub_rows.append(r)
         sub_of[corp] = r
         block[corp] = members
@@ -206,6 +212,7 @@ def write_payroll(path, emps, acc):
     for k in SUMMED:
         tot = sum(vals[(c, e["empNo"])][0][k] for c in block for e in block[c] if row_of[(c, e["empNo"])] >= (first_of[c] + (1 if c == acc["shiftCorp"] else 0)))
         sh.formula(L[k], total, "=" + "+".join("%s%d" % (L[k], sub_of[c]) for c in sub_of), tot, "total" if k != "otH" else "num")
+        cell_val["%s%d" % (L[k], total)] = tot
     sh.ws.freeze_panes(4, 3)
     sh.widths({"A": 9, "C": 8})
     # 법인별집계
@@ -217,10 +224,12 @@ def write_payroll(path, emps, acc):
         sm.put("A", rr, corp)
         sm.put("B", rr, cname)
         sm.put("C", rr, len(block[corp]))
+        cell_val["법인별집계!C%d" % rr] = len(block[corp])
         start = first_of[corp] + (1 if corp == acc["shiftCorp"] else 0)
         for c, k in zip("DEF", ("gross", "ded", "net")):
-            sm.formula(c, rr, "=급여대장!%s%d" % (L[k], sub_of[corp]),
-                       sum(vals[(corp, e["empNo"])][0][k] for e in block[corp] if row_of[(corp, e["empNo"])] >= start), "won")
+            v = sum(vals[(corp, e["empNo"])][0][k] for e in block[corp] if row_of[(corp, e["empNo"])] >= start)
+            sm.formula(c, rr, "=급여대장!%s%d" % (L[k], sub_of[corp]), v, "won")
+            cell_val["법인별집계!%s%d" % (c, rr)] = v
     book.close()
 
     meta = {"급여대장": {"role": "groupPayrollBlocks", "payMonth": "2026-12", "headerRows": [4], "firstDataRow": 5, "lastDataRow": last,
@@ -230,38 +239,115 @@ def write_payroll(path, emps, acc):
             "법인별집계": {"role": "corpSummary", "headerRows": [3], "firstDataRow": 4, "lastDataRow": 3 + len(CORPS), "titleRows": [1]},
             "요율": st.meta(), "세액표": tax_meta}
     pfc = acc["shiftCorp"]
+    hdr = dict(COLS)
+    corp_row = {c: 4 + n for n, (c, *_x) in enumerate(CORPS)}
+    summary_col = {"gross": "D", "ded": "E", "net": "F"}
+
+    def in_sub(c, r):
+        return r >= first_of[c] + (1 if c == pfc else 0)
+
+    def spread(c, delta, head=0):
+        """한 법인 블록의 소계에 더해지는 차이(delta: 키 → 실제−기대)가 번지는 소계·총계·법인별집계 칸 → {칸: 차이}"""
+        out = {}
+        for k, d in delta.items():
+            if d and k in SUMMED:
+                out["%s%d" % (L[k], sub_of[c])] = d
+                out["%s%d" % (L[k], total)] = d
+                if k in summary_col:
+                    out["법인별집계!%s%d" % (summary_col[k], corp_row[c])] = d
+        if head:
+            out["법인별집계!C%d" % corp_row[c]] = head
+        return out
+
+    def header_of(cell):
+        sheet, ref = cell.split("!") if "!" in cell else ("급여대장", cell)
+        col = ref.rstrip("0123456789")
+        if sheet == "법인별집계":
+            return {"C": "인원", "D": "지급계", "E": "공제계", "F": "실지급액"}[col]
+        return next(h for k, h in COLS if L[k] == col)
+
+    def rows_of_cells(cells):
+        out = []
+        for cell in cells:
+            sheet, ref = cell.split("!") if "!" in cell else ("급여대장", cell)
+            x = {"sheet": sheet, "rowNo": int(ref.lstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))}
+            if x not in out:
+                out.append(x)
+        return out
+
+    effects = {}  # 사고 순번 → {칸: 실제−기대}
+    row_delta = lambda a, i: {k: a[k] - i[k] for k in SUMMED if a[k] != i[k]}  # noqa: E731
+    # 1) 소계 범위 밀림: 블록 첫 행이 소계에서 빠짐
     miss = next(e for e in block[pfc] if row_of[(pfc, e["empNo"])] == first_of[pfc])
     ma = vals[(pfc, miss["empNo"])][0]
-    A.add("SUBTOTAL_RANGE_SHIFTED", "급여대장", "%s 소계 SUM이 블록 둘째 행부터 (=SUM(%s%d:…)) — 첫 행 %s(%s) 지급계 %s원이 소계·총계·법인별집계에서 빠짐 (블록 맨 위에 행을 끼운 뒤 범위 미수정)"
+    eff1 = spread(pfc, {k: -ma[k] for k in SUMMED})
+    effects[1] = eff1
+    A.add("SUBTOTAL_RANGE_SHIFTED", "급여대장", "%s 소계 SUM이 블록 둘째 행부터 (=SUM(%s%d:…)) — 첫 행 %s(%s) 지급계 %s원이 소계·총계·법인별집계에서 빠짐 (블록 맨 위에 행을 끼운 뒤 범위 미수정). "
+          "소계 행의 다른 합계 열도 같은 범위라 함께 빠짐 (cascade)"
           % (CORP_NAME[pfc], L["gross"], first_of[pfc] + 1, miss["name"], miss["empNo"], format(ma["gross"], ",")),
           ["TOTAL_ROW_SKIP", "RECOMPUTE_CHECK", "FORMULA_READ"], corp=pfc, empNo=miss["empNo"],
-          affected=[{"sheet": "급여대장", "rowNo": first_of[pfc]}, {"sheet": "급여대장", "rowNo": sub_of[pfc]}, {"sheet": "급여대장", "rowNo": total},
-                    {"sheet": "법인별집계", "rowNo": 4 + [c for c, *_x in CORPS].index(pfc)}],
+          cells=["%s%d" % (L["gross"], sub_of[pfc])], cascade=[c for c in eff1 if c != "%s%d" % (L["gross"], sub_of[pfc])],
+          affected=[{"sheet": "급여대장", "rowNo": first_of[pfc]}] + rows_of_cells(eff1),
           formula={"actual": "=SUM(%s%d:%s%d)" % (L["gross"], first_of[pfc] + 1, L["gross"], sub_of[pfc] - 1),
                    "expected": "=SUM(%s%d:%s%d)" % (L["gross"], first_of[pfc], L["gross"], sub_of[pfc] - 1)},
-          values={"지급계 소계": {"actual": sum(vals[(pfc, e["empNo"])][0]["gross"] for e in block[pfc]) - ma["gross"],
-                               "expected": sum(vals[(pfc, e["empNo"])][0]["gross"] for e in block[pfc])}})
+          values={"지급계": {"actual": cell_val["%s%d" % (L["gross"], sub_of[pfc])], "expected": cell_val["%s%d" % (L["gross"], sub_of[pfc])] + ma["gross"]}},
+          cascadeValues={c: {"header": header_of(c), "actual": cell_val[c], "expected": cell_val[c] - d} for c, d in eff1.items()})
+    # 2) 전적자 이중 지급: 푸드 블록의 예전 행 전체가 없어야 함
     t = acc["transfer"]
     old = t["prevCorp"]
     r_old, r_new = row_of[("PF", old["empNo"])], row_of[("PT", t["empNo"])]
-    A.add("TRANSFER_DOUBLE_PAY", "급여대장", "12/1 퍼허푸드 → 퍼허테크 전적자가 두 법인 블록에 모두 있어 12월 급여 이중 (푸드 사번 %s, 테크 사번 %s — 사번이 달라 키로는 안 보임, 성명·생년월일로 찾아야 함)"
+    oa = vals[("PF", old["empNo"])][0]
+    eff2 = spread("PF", {k: oa[k] for k in SUMMED} if in_sub("PF", r_old) else {}, head=1)
+    effects[2] = {**{"%s%d" % (L[k], r_old): oa[k] for k in SUMMED if oa[k]}, **eff2}
+    A.add("TRANSFER_DOUBLE_PAY", "급여대장", "12/1 퍼허푸드 → 퍼허테크 전적자가 두 법인 블록에 모두 있어 12월 급여 이중 (푸드 사번 %s, 테크 사번 %s — 사번이 달라 키로는 안 보임, 성명·생년월일로 찾아야 함). "
+          "푸드 소계·총계·법인별집계(인원·지급계·공제계·실지급액)에도 이 행이 더해짐 (cascade)"
           % (old["empNo"], t["empNo"]), ["DUPLICATE_DETECT", "CROSS_FILE_MATCH", "NAME_MATCH"], corp="PF", empNo=old["empNo"], rowNo=r_old,
-          affected=[{"sheet": "급여대장", "rowNo": r_old}, {"sheet": "급여대장", "rowNo": r_new}],
-          values={"지급계": {"actual": vals[("PF", old["empNo"])][0]["gross"], "expected": 0}})
+          cells=["%s%d" % (L["gross"], r_old)], cascade=list(eff2), affected=[{"sheet": "급여대장", "rowNo": r_old}, {"sheet": "급여대장", "rowNo": r_new}] + rows_of_cells(eff2),
+          values={"지급계": {"actual": oa["gross"], "expected": 0}},
+          cascadeValues={c: {"header": header_of(c), "actual": cell_val[c], "expected": cell_val[c] - d} for c, d in eff2.items()})
+    # 3) 식대 전액 비과세: 그 행 보험료·세금 + 테크 소계·총계·집계(공제계·실지급액)
     e = acc["nontax"]
-    a, i = vals[(e["corp"], e["empNo"])]
+    a = vals[(e["corp"], e["empNo"])][0]
+    i = calc({**{k: a[k] for k in a}}, S)
     rr = row_of[(e["corp"], e["empNo"])]
-    A.add("NONTAX_OVER_LIMIT", "급여대장", "식대 30만원을 전액 비과세로 (이 행만 과세 기준 수식이 지급계−식대−자가운전) — 한도 20만 초과분 10만원이 보험료·소득세 기준에서 빠짐",
+    d3 = row_delta(a, i)
+    eff3 = spread(e["corp"], d3)
+    effects[3] = {**{"%s%d" % (L[k], rr): d for k, d in d3.items()}, **eff3}
+    A.add("NONTAX_OVER_LIMIT", "급여대장", "식대 30만원을 전액 비과세로 (이 행만 과세 기준 수식이 지급계−식대−자가운전) — 한도 20만 초과분 10만원이 보험료·소득세 기준에서 빠짐. "
+          "공제계·실지급액이 틀려 %s 소계·총계·법인별집계에도 번짐 (cascade)" % CORP_NAME[e["corp"]],
           ["LEGAL_RULE_COMPARE", "FORMULA_READ", "RECOMPUTE_CHECK"], legal=True, corp=e["corp"], empNo=e["empNo"], rowNo=rr,
-          cells=["%s%d" % (L[k], rr) for k in ("meal", "hi", "tax")],
-          values={"건강보험": {"actual": a["hi"], "expected": calc({**{k: a[k] for k in a}}, S)["hi"]}})
+          cells=["%s%d" % (L["meal"], rr)] + ["%s%d" % (L[k], rr) for k in d3], cascade=list(eff3),
+          affected=[{"sheet": "급여대장", "rowNo": rr}] + rows_of_cells(eff3),
+          values={hdr[k]: {"actual": a[k], "expected": i[k]} for k in d3},
+          cascadeValues={c: {"header": header_of(c), "actual": cell_val[c], "expected": cell_val[c] - d} for c, d in eff3.items()})
+    # 4) 지급계 숫자 고정 (11월 금액): 그 행 보험료·세금·실지급 + 테크 소계·총계·집계
     e = acc["stale"]
     a, i = vals[(e["corp"], e["empNo"])]
     rr = row_of[(e["corp"], e["empNo"])]
-    A.add("HARDCODED_STALE", "급여대장", "지급계 칸이 수식 대신 숫자 (11월 연장 %s시간 기준 금액 그대로) — 12월 연장수당 %s원과 안 맞음" % (acc["staleOtH"], format(a["otPay"], ",")),
-          ["HARDCODED_IN_FORMULA_COLUMN", "RECOMPUTE_CHECK"], corp=e["corp"], empNo=e["empNo"], rowNo=rr, cells=["%s%d" % (L["gross"], rr)],
-          values={"지급계": {"actual": a["gross"], "expected": i["gross"]}})
-    clean_blocks = [c for c, *_x in CORPS if c not in (pfc, "PF", acc["nontax"]["corp"], acc["stale"]["corp"], t["corp"])]
+    d4 = row_delta(a, i)
+    eff4 = spread(e["corp"], d4)
+    effects[4] = {**{"%s%d" % (L[k], rr): d for k, d in d4.items()}, **eff4}
+    A.add("HARDCODED_STALE", "급여대장", "지급계 칸이 수식 대신 숫자 (11월 연장 %s시간 기준 금액 그대로) — 12월 연장수당 %s원과 안 맞음. "
+          "지급계를 기준으로 계산하는 보험료·소득세·공제계·실지급액과 %s 소계·총계·법인별집계도 함께 틀림 (cascade)"
+          % (acc["staleOtH"], format(a["otPay"], ","), CORP_NAME[e["corp"]]),
+          ["HARDCODED_IN_FORMULA_COLUMN", "RECOMPUTE_CHECK"], corp=e["corp"], empNo=e["empNo"], rowNo=rr,
+          cells=["%s%d" % (L[k], rr) for k in d4], cascade=list(eff4),
+          affected=[{"sheet": "급여대장", "rowNo": rr}] + rows_of_cells(eff4),
+          values={hdr[k]: {"actual": a[k], "expected": i[k]} for k in d4},
+          cascadeValues={c: {"header": header_of(c), "actual": cell_val[c], "expected": cell_val[c] - d} for c, d in eff4.items()})
+    # 같은 칸을 바꾸는 사고끼리: 한 사고의 기대값은 그 사고만 고친 값. trueValue = 그 칸의 사고를 모두 고친 값
+    for n, x in enumerate(A.items, 1):
+        ov = []
+        for m, y in enumerate(A.items, 1):
+            shared = sorted(set(effects[n]) & set(effects[m])) if m != n else []
+            if shared:
+                ov.append({"with": y["id"], "cells": shared,
+                           "note": "두 사고가 같은 칸을 바꿈. values·cascadeValues의 expected는 이 사고만 고친 값이라 다른 사고 몫이 남아 있음",
+                           "trueValue": {c: cell_val[c] - sum(effects[k].get(c, 0) for k in effects) for c in shared if c in cell_val}})
+        if ov:
+            x["overlaps"] = ov
+    t_corp = t["corp"]
+    clean_blocks = [c for c, *_x in CORPS if c not in (pfc, "PF", acc["nontax"]["corp"], acc["stale"]["corp"], t_corp)]
     return {"file": path.name, "kind": "PAYROLL", "closestEntity": "PAY_RESULT_HISTORY", "supported": False,
             "sheetOrder": ["급여대장", "법인별집계", "요율", "세액표"], "sheets": meta,
             "expectedMapping": {"groupPayrollBlocks": {h: k for k, h in COLS},
@@ -397,9 +483,12 @@ def write_roster(cdir, emps, acc, seed):
     for i in take(1, lambda r: r["empType"] == "계약직"):
         rows[i]["empType"] = "파견"
         errs.add(i, "empType", "INVALID_ENUM", "고용형태 '파견' (그룹 코드표: 정규직·계약직, 파견은 사용사업주 명부 대상 아님)")
-    for i in take(1, lambda r: r["status"] == "재직" and r["hireDate"]):
-        rows[i]["status"], rows[i]["resignDate"] = "퇴사", rows[i]["hireDate"] - dt.timedelta(days=rng.randint(30, 300))
-        errs.add(i, "resignDate", "DATE_ORDER", "퇴사일 < 입사일")
+    # 퇴사일 < 입사일: 실제 퇴사자(2025-12-31 퇴사, 재직구분 '퇴사'는 맞음)의 퇴사일만 잘못 적음 — 급여·연차 파일과는 어긋나지 않는다
+    i = next(n for n, r in enumerate(rows) if r["status"] == "퇴사" and not r["_e"].get("transferTo"))
+    idx.remove(i)
+    true_resign = rows[i]["resignDate"]
+    rows[i]["resignDate"] = rows[i]["hireDate"] - dt.timedelta(days=rng.randint(30, 300))
+    errs.add(i, "resignDate", "DATE_ORDER", "퇴사일 < 입사일 (실제 퇴사일 %s)" % true_resign.isoformat())
     for i in take(1, lambda r: r["status"] == "재직" and r["hireDate"] and r["_groupHire"] == r["hireDate"]):
         rows[i]["_groupHire"] = rows[i]["hireDate"] + dt.timedelta(days=rng.randint(200, 900))
         errs.add(i, "그룹입사일", "GROUP_HIRE_AFTER_CORP_HIRE", "그룹입사일이 법인 입사일보다 늦음 (그룹입사일 ≤ 입사일이어야 함)", detectable=False)
@@ -459,7 +548,8 @@ def build(df, used, out_dir, seed):
     pay_key = write_payroll(cdir / PAY_FILE, emps, acc_p)
     acc_l = {"seniority": sen, "overUse": (over, granted(over, "PH") + 3)}
     leave_key = write_leave(cdir / LEAVE_FILE, emps, acc_l, B.rng_for(CID, "leave", seed))
-    roster = write_roster(cdir, emps, {"seniority": sen, "reserved": [tr12, tr12["prevCorp"], sen, sen["prevCorp"], nontax, stale, over]}, seed)
+    retired = [e for e in emps if e["status"] == "퇴사"]
+    roster = write_roster(cdir, emps, {"seniority": sen, "reserved": [tr12, tr12["prevCorp"], sen, sen["prevCorp"], nontax, stale, over, *retired]}, seed)
     org, org_cols = write_org(cdir)
     return B.answer_key(company, "직원명부.xlsx", "조직.csv", roster["mapping"], org_cols, roster["errors"],
                         {"employees": sum(1 for e in emps if not e.get("transferTo")), "rosterRows": roster["rows"], "orgs": len(org),

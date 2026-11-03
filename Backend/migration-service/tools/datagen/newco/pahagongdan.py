@@ -12,7 +12,7 @@ import datetime as dt
 from xlsxwriter.utility import xl_col_to_name
 
 from hrfiles.common import Accidents
-from hrfiles.facts import _dependents, is_holiday, statutory_leave
+from hrfiles.facts import _dependents, draw_days, is_holiday, shift_workday, statutory_leave
 from hrfiles.payroll import TAX_ROWS
 from hrfiles.xl import NA, ROUNDDOWN, Book, XlErr, datedif_y, vlookup_approx
 
@@ -150,6 +150,15 @@ def calc(v, year=2026):
     v["ltax"] = ROUNDDOWN(v["tax"] * 0.1, -1)
     v["ded"] = v["np"] + v["hi"] + v["ltc"] + v["ei"] + v["tax"] + v["ltax"]
     v["net"] = v["gross"] - v["ded"]
+    # TRUNC(금액×요율,-1)이 정확히 10원 경계라 이진 부동소수 검산에서 10원 낮게 나올 수 있는 칸
+    ot_unit = v["pay"] * SETS["otBase"] / 209 * 1.5
+    v["_fb"] = [k for k, x, dg in (("mgmtAlw", v["pay"] * SETS["mgmtRate"] if v["mgmtAlw"] else 0, -1),
+                                   ("otPay", ot_unit if v["otH"] and not v["mgmtAlw"] else 0, 0),
+                                   ("otPay", ROUNDDOWN(ot_unit, 0) * v["otH"] if not v["mgmtAlw"] else 0, -1),
+                                   ("np", min(max(v["taxable"], SETS["npFloor"]), SETS["npCap"]) * SETS["np"], -1),
+                                   ("hi", v["taxable"] * SETS["hi"], -1), ("ltc", v["hi"] * SETS["ltc"], -1),
+                                   ("ei", v["taxable"] * SETS["ei"], -1), ("ltax", v["tax"] * 0.1, -1))
+                if B.float_boundary(x, dg)]
     return v
 
 
@@ -221,7 +230,7 @@ def write_payroll(path, emps, acc):
         members = [e for e in emps if e["hireDate"] <= dt.date(y, m, 1) and (e["resignDate"] is None or e["resignDate"] >= dt.date(y, m, 1))]
         members.sort(key=lambda e: (GRADES.index(e["grade"]), e["empNo"]))
         r = 2
-        row_of, vals = {}, {}
+        row_of, vals, fb = {}, {}, []
         for e in members:
             step_true = step_at(e, ym)
             inp = {"empNo": e["empNo"], "name": e["name"], "dept": e["dept"], "grade": e["grade"], "step": step_true,
@@ -240,6 +249,7 @@ def write_payroll(path, emps, acc):
                     sh.put(L[k], r, x, "text" if k == "empNo" else ("won" if isinstance(x, int) and x >= 1000 else None))
             row_of[e["empNo"]] = r
             vals[e["empNo"]] = {"actual": actual, "ideal": ideal}
+            fb += ["%s%d" % (L[k], r) for k in dict.fromkeys(actual.get("_fb", [])) if k not in over.get("hard", ())]
             r += 1
         total = r
         sh.put(L["name"], r, "합계", "totalLabel")
@@ -250,7 +260,7 @@ def write_payroll(path, emps, acc):
         sh.widths({L["name"]: 9, L["dept"]: 11})
         meta[ym] = {"role": "monthlyPayroll", "payMonth": ym.replace(".", "-"), "headerRows": [1], "firstDataRow": 2,
                     "lastDataRow": total - 1, "totalRow": total, "rowOf": row_of,
-                    "formulas": {k: f for k, f in formulas(2, year).items()}}
+                    "formulas": {k: f for k, f in formulas(2, year).items()}, "floatBoundaryCells": fb}
         values[ym] = vals
     book.close()
 
@@ -262,25 +272,58 @@ def write_payroll(path, emps, acc):
           cells=["%s%d:%s%d" % (L["pay"], m["firstDataRow"], L["pay"], m["lastDataRow"])],
           formula={"actual": m["formulas"]["pay"], "expected": formulas(2, 2026)["pay"]},
           rowsWithDifferentValue=sorted(m["rowOf"][x] for x, v in values[ym].items() if v["actual"]["pay"] != v["ideal"]["pay"]))
+    def diff_keys(v, skip=()):
+        return [k for k, _ in COLS if k not in skip and v["actual"][k] != v["ideal"][k]]
+
+    def cascade_values(v, keys):
+        return {hdr[k]: {"actual": v["actual"][k], "expected": v["ideal"][k]} for k in keys}
+
+    row_acc = {}  # (시트, 사번) → 사고 id (합계 행 겹침 표시용)
     for (ym, emp), over in sorted(acc["rows"].items()):
         r = meta[ym]["rowOf"][emp]
         v = values[ym][emp]
+        tot = {"sheet": ym, "rowNo": meta[ym]["totalRow"]}
         if over["type"] == "STEP_NOT_ADVANCED":
+            casc = diff_keys(v, ("step",))
             A.add("STEP_NOT_ADVANCED", ym, "11월 임용일이 돌아와 정기승급(%d→%d호봉) 대상인데 호봉을 고치지 않음 (직원명부는 %d호봉)"
                   % (v["actual"]["step"], v["ideal"]["step"], v["ideal"]["step"]), ["CROSS_FILE_MATCH", "PERIODIC_STEP_RULE"],
-                  empNo=emp, rowNo=r, cells=["%s%d" % (L["step"], r)],
-                  values={"호봉": {"actual": v["actual"]["step"], "expected": v["ideal"]["step"]},
-                          "봉급": {"actual": v["actual"]["pay"], "expected": v["ideal"]["pay"]}})
+                  empNo=emp, rowNo=r, cells=["%s%d" % (L[k], r) for k in ["step"] + casc],
+                  values={"호봉": {"actual": v["actual"]["step"], "expected": v["ideal"]["step"]}, **cascade_values(v, casc)},
+                  cascade=[hdr[k] for k in casc], affected=[{"sheet": ym, "rowNo": r}, tot])
         elif over["type"] == "ALLOWANCE_RULE_CONFLICT":
-            A.add("ALLOWANCE_RULE_CONFLICT", ym, "관리업무수당을 받는 %s인데 시간외수당 %s원을 수식 대신 값으로 입력 (규정: 4급 이상 시간외 미지급)"
-                  % (v["actual"]["grade"], format(v["actual"]["otPay"], ",")), ["CROSS_FIELD_RULE", "HARDCODED_IN_FORMULA_COLUMN", "RULE_EXTRACTION"],
-                  empNo=emp, rowNo=r, cells=["%s%d" % (L["otPay"], r)],
-                  values={"시간외수당": {"actual": v["actual"]["otPay"], "expected": 0}})
+            casc = diff_keys(v, ("otH", "otPay"))
+            A.add("ALLOWANCE_RULE_CONFLICT", ym, "관리업무수당을 받는 %s인데 시간외 %d시간을 적고 시간외수당 %s원을 수식 대신 값으로 입력 "
+                  "(규정: 4급 이상 시간외 미지급, 같은 사람 10·12월 시간외 0시간)"
+                  % (v["actual"]["grade"], v["actual"]["otH"], format(v["actual"]["otPay"], ",")),
+                  ["CROSS_FIELD_RULE", "HARDCODED_IN_FORMULA_COLUMN", "RULE_EXTRACTION"],
+                  empNo=emp, rowNo=r, cells=["%s%d" % (L[k], r) for k in ["otH", "otPay"] + casc],
+                  values={"시간외(h)": {"actual": v["actual"]["otH"], "expected": v["ideal"]["otH"]},
+                          "시간외수당": {"actual": v["actual"]["otPay"], "expected": 0}, **cascade_values(v, casc)},
+                  cascade=[hdr[k] for k in casc], affected=[{"sheet": ym, "rowNo": r}, tot])
         elif over["type"] == "LOOKUP_NA":
-            A.add("LOOKUP_NA", ym, "직급을 '%s'(공백 포함)로 입력 → MATCH·VLOOKUP 실패로 #N/A, 합계 행까지 전파" % v["actual"]["grade"],
+            casc = diff_keys(v, ("grade",))
+            na_cols = [L[k] for k in casc]
+            A.add("LOOKUP_NA", ym, "직급을 '%s'(공백 포함)로 입력 → MATCH·VLOOKUP 실패로 #N/A, 이 행의 %d개 열과 합계 행까지 전파"
+                  % (v["actual"]["grade"], len(casc)),
                   ["ERROR_VALUE", "VALUE_NORMALIZE"], empNo=emp, rowNo=r, cells=["%s%d" % (L["grade"], r)],
-                  affected=[{"sheet": ym, "rowNo": r}, {"sheet": ym, "rowNo": meta[ym]["totalRow"]}],
-                  cascade=[hdr[k] for k in ("pay", "gradeAlw", "otPay", "gross", "net")])
+                  values={"직급": {"actual": v["actual"]["grade"], "expected": v["ideal"]["grade"]}},
+                  affected=[{"sheet": ym, "rowNo": r}, tot],
+                  cascade=[hdr[k] for k in casc],
+                  cascadeCells=["%s%d" % (c, x) for x in (r, meta[ym]["totalRow"]) for c in na_cols])
+        row_acc[(ym, emp)] = A.items[-1]
+    # 겹침: #N/A 합계 행이 같은 시트의 다른 사고(합계 행 값 차이)를 가린다
+    na_acc = [a for a in row_acc.values() if a["type"] == "LOOKUP_NA"]
+    for na in na_acc:
+        ym = na["sheet"]
+        tr = meta[ym]["totalRow"]
+        true_tot = {hdr[k]: sum(x["ideal"][k] for x in values[ym].values()) for k in ("gross", "net")}
+        others = [a for (s, _e), a in sorted(row_acc.items()) if s == ym and a is not na]
+        for o in others:
+            note = "합계 행 %d이 #N/A라 %s의 합계 차이가 드러나지 않음" % (tr, o["id"])
+            na.setdefault("overlaps", []).append({"with": o["id"], "cells": ["%s%d" % (L[k], tr) for k in ("gross", "net")],
+                                                  "note": note, "trueValue": true_tot})
+            o.setdefault("overlaps", []).append({"with": na["id"], "cells": ["%s%d" % (L[k], tr) for k in ("gross", "net")],
+                                                 "note": note, "trueValue": true_tot})
     ot_rows = sum(1 for ym in MONTHS for v in values[ym].values() if isinstance(v["ideal"]["otPay"], int) and v["ideal"]["otPay"] > 0)
     clean = [ym for ym in MONTHS if ym != acc["staleTable"] and not any(k[0] == ym for k in acc["rows"])]
     return {
@@ -328,12 +371,19 @@ def write_leave(path, emps, rng):
     for e in members:
         start = max(dt.date(2026, 1, 1), e["hireDate"] + dt.timedelta(days=30))
         days = [start + dt.timedelta(days=i) for i in range((B.BASE_DATE - start).days + 1)]
-        days = [d for d in days if not is_holiday(d)]
+        days = draw_days(days)  # 첫 버전 달력으로 뽑고 7/17(제헌절)에 뽑힌 날만 다음 근무일로 (다른 날짜·난수열 유지)
         target = int(granted[e["empNo"]] * rng.uniform(0.3, 0.9))
+        taken = set()
         for d in sorted(rng.sample(days, min(len(days), target))):
+            d = shift_workday(d, taken, B.BASE_DATE)
+            taken.add(d)
             uses.append({"emp": e, "start": d, "end": d, "days": 1, "kind": "연가"})
         if rng.random() < 0.15:
             d = rng.choice(days)
+            while is_holiday(d) or d in taken:  # 같은 날 연가와 겹치거나 공휴일이면 다음 근무일 (난수는 더 쓰지 않음)
+                d += dt.timedelta(days=1)
+                if d > B.BASE_DATE:
+                    d = start
             uses.append({"emp": e, "start": d, "end": d, "days": 1, "kind": rng.choice(["병가", "공가", "특별휴가"])})
     # 사고: 병가 5일을 '연가'로 기록 → 연가 초과 사용
     over_e = max([e for e in members if granted[e["empNo"]] <= 14], key=lambda e: (sum(u["days"] for u in uses if u["emp"] is e), e["empNo"]))
@@ -399,11 +449,27 @@ def write_leave(path, emps, rng):
           affected=[{"sheet": "사용내역", "rowNo": sick["row"]}, {"sheet": "연가현황", "rowNo": r}])
     A.add("USED_ON_HOLIDAY", "사용내역", "연가 사용일이 공휴일(10/9 한글날)", ["HOLIDAY_CALENDAR"], empNo=hol_u["emp"]["empNo"],
           rowNo=hol_u["row"], cells=["C%d" % hol_u["row"], "D%d" % hol_u["row"]],
-          values={"시작일": {"actual": "2026-10-09", "originalWorkday": hol_u["orig"].isoformat()}})
+          values={"시작일": {"actual": "2026-10-09", "expected": hol_u["orig"].isoformat(), "originalWorkday": hol_u["orig"].isoformat()},
+                  "종료일": {"actual": "2026-10-09", "expected": hol_u["orig"].isoformat()}})
     A.add("DATE_ORDER", "사용내역", "종료일 < 시작일 (2일 연가의 시작·종료를 바꿔 입력)", ["CROSS_FIELD_RULE"], empNo=rev_u["emp"]["empNo"],
           rowNo=rev_u["row"], cells=["C%d" % rev_u["row"], "D%d" % rev_u["row"]])
     less = sorted(row_of[x] for x, t in truth.items() if t["granted"] < t["statutory"])
     more = sorted(row_of[x] for x, t in truth.items() if t["granted"] > t["statutory"])
+    # 재직 년수별 공무원 표 vs 근로기준법 제60조 (1년 이상만; 1년 미만은 입사 월에 따라 다름)
+    cmp_by_year = {}
+    for n in range(1, 41):
+        g = next(d for yrs, d in reversed(LEAVE_TABLE) if n >= yrs)
+        st = min(15 + (n - 1) // 2, 25)
+        cmp_by_year.setdefault((g > st) - (g < st), []).append(n)
+
+    def spans(ns):
+        out, a = [], ns[0]
+        for p, q in zip(ns, ns[1:] + [None]):
+            if q != p + 1:
+                out.append("%d년" % a if a == p else ("%d~%d년" % (a, p) if p < 40 else "%d년 이상" % a))
+                a = q
+        return "·".join(out)
+    leave_note = "재직 %s은 법보다 적고, %s은 많고, %s은 같음. 1년 미만은 공무원 표 11일 vs 법 월 1일(입사 월에 따라 많음). "                  "근로기준법 적용 기관이면 적은 쪽은 위반" % (spans(cmp_by_year[-1]), spans(cmp_by_year[1]), spans(cmp_by_year[0]))
     return {
         "file": path.name, "kind": "LEAVE", "closestEntity": "LEAVE_BALANCE", "supported": False,
         "sheetOrder": ["연가현황", "사용내역", "기준"],
@@ -417,7 +483,7 @@ def write_leave(path, emps, rng):
                   "baseDate": "DATE(2026,12,31) (회계연도 기준)"},
         "legalDeviations": [{"rule": "annualLeaveDays", "company": "공무원 연가일수표", "statutory": "근로기준법 제60조",
                              "rowsLessThanStatutory": less, "rowsMoreThanStatutory": more,
-                             "note": "1~4년차는 법보다 적고(12~15 < 15) 5년 이상은 많음. 근로기준법 적용 기관이면 적은 쪽은 위반"}],
+                             "note": leave_note}],
         "employees": truth, "accidents": A.items,
         "valueNoise": [{"type": "EMPNO_TEXT_LEADING_ZERO", "detail": "직원번호 문자 '050012'"}],
     }

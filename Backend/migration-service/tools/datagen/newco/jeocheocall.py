@@ -7,6 +7,8 @@
      급여지급내역_2026-12.csv(CP949, 한 줄 = 사원 × 급여 항목 (세로로 긴 항목코드 형식), 금액 앞 공백 채움, 0원 항목은 줄 없음),
      인센티브산정_2026-12.xlsx(팀마다 시트: 콜수·근무일수·품질·출근율 → 종합점수 → VLOOKUP 등급·인센티브, 등급표 시트).
 급여 규칙: 통상시급 = (기본급+직책수당)/209 원 미만 버림, 연장 1.5, 식대 20만 비과세, 인센티브 = 산정표 금액(지급일 재직자만), 4대보험 10원 미만 버림.
+          달 중간 입사자는 기본급·직책수당·식대를 재직 달력일/그달 일수로 일할(10원 미만 버림), 입사 월 국민연금·건강보험(장기요양)은 없음
+          (1일 입사가 아니면 다음 달부터), 고용보험은 그달 보수로 공제.
 """
 import datetime as dt
 
@@ -59,6 +61,8 @@ def people(df, used, seed):
                  resignDate=None, empType="정규직" if e["grade"] not in ("110",) or rng.random() < 0.6 else "계약직",
                  family=rng.choice([1, 1, 1, 2, 3]))
         e["basePay"], e["dutyAlw"] = PAYS[e["grade"]]
+        if e["duty"] == "02" and e["grade"] == "330":  # 지원부서 팀장(과장)도 직책수당
+            e["dutyAlw"] = 200_000
         if e["grade"] in ("110", "120", "310", "320"):
             e["basePay"] += rng.randint(0, 5) * 10_000 if e["grade"] != "110" else 0
     # 콜센터는 이직이 많다: 올해 퇴직 14명 (11/30 퇴직 3명 포함)
@@ -157,7 +161,8 @@ def write_incentive(path, emps, acc, rng):
             if memo:
                 sh.put("K", r, memo)
             row_of[e["empNo"]] = r
-            result[e["empNo"]] = {"actual": amt, "ideal": ideal_amt, "score": score, "team": team}
+            ideal_grade = None if isinstance(score, XlErr) else vlookup_approx(score, [(lo, g) for lo, g, _a in GRADE_TABLE], 2)
+            result[e["empNo"]] = {"actual": amt, "ideal": ideal_amt, "grade": grade, "idealGrade": ideal_grade, "score": score, "team": team}
             r += 1
         sh.ws.freeze_panes(3, 2)
         sh.widths({"B": 8, "K": 18})
@@ -167,12 +172,17 @@ def write_incentive(path, emps, acc, rng):
     hit = sorted((no for no, v in result.items() if v["team"] == t and v["actual"] != v["ideal"]), key=lambda x: meta[t]["rowOf"][x])
     A.add("LOOKUP_RANGE_SHORT", t, "%s 시트 등급·인센티브 VLOOKUP 범위가 등급표!$A$3:$C$6 — S등급(90점 이상) 행이 빠져 %d명이 A등급 30만원으로 계산"
           % (t, len(hit)), ["FORMULA_READ", "CROSS_SHEET_LOOKUP", "RECOMPUTE_CHECK"], empNos=hit, rows=[meta[t]["rowOf"][x] for x in hit],
-          cells=["I4:J%d" % meta[t]["lastDataRow"]], formula={"actual": "=VLOOKUP(H4,등급표!$A$3:$C$6,3,TRUE)", "expected": "=VLOOKUP(H4,등급표!$A$3:$C$7,3,TRUE)"},
-          values={x: {"인센티브": {"actual": result[x]["actual"], "expected": result[x]["ideal"]}} for x in hit})
+          cells=[c % meta[t]["rowOf"][x] for x in hit for c in ("I%d", "J%d")], formulaCells=["I4:J%d" % meta[t]["lastDataRow"]],
+          formula={"actual": "=VLOOKUP(H4,등급표!$A$3:$C$6,3,TRUE)", "expected": "=VLOOKUP(H4,등급표!$A$3:$C$7,3,TRUE)"},
+          values={x: {"등급": {"actual": result[x]["grade"], "expected": result[x]["idealGrade"]},
+                      "인센티브": {"actual": result[x]["actual"], "expected": result[x]["ideal"]}} for x in hit})
     nb = acc["newbie"]
     tn = result[nb]["team"]
-    A.add("DIV_ZERO_ERROR", tn, "12/28 입사 교육생 근무일수 0 → 콜/일 =C/D가 #DIV/0!, 종합점수·등급·인센티브까지 #DIV/0! (IFERROR 없음)",
-          ["ERROR_VALUE"], empNo=nb, rowNo=meta[tn]["rowOf"][nb], cells=["E%d" % meta[tn]["rowOf"][nb], "J%d" % meta[tn]["rowOf"][nb]])
+    rn = meta[tn]["rowOf"][nb]
+    A.add("DIV_ZERO_ERROR", tn, "12/28 입사 교육생 근무일수 0 → 콜/일 =C/D가 #DIV/0!, 종합점수·등급·인센티브까지 #DIV/0! (IFERROR 없음). "
+          "규정상 산정 대상이 아니므로 0 또는 빈 칸이어야 함",
+          ["ERROR_VALUE"], empNo=nb, rowNo=rn, cells=["%s%d" % (c, rn) for c in "EHIJ"],
+          values={h: {"actual": "#DIV/0!", "expected": None} for h in ("콜/일", "종합점수", "등급", "인센티브")})
     cp = acc["cap"]
     tc = result[cp]["team"]
     A.add("CAP_EXCEEDED", tc, "인센티브 칸에 수식 대신 650,000 입력 (비고 '팀장 재량 +15만') — 등급표 상한 50만원 초과",
@@ -194,21 +204,32 @@ def write_incentive(path, emps, acc, rng):
 
 # ================================================================ 급여지급내역 (세로 항목 형식)
 
-def pay_calc(e, ot_h, incentive):
+MONTH_DAYS = 31
+
+
+def hire_ratio(e):
+    """12월 중간 입사자의 (재직 달력일, 그달 일수). 1일 이전 입사면 None (일할 없음)"""
+    h = e["hireDate"]
+    return (MONTH_DAYS - h.day + 1, MONTH_DAYS) if h.year == 2026 and h.month == 12 and h.day > 1 else None
+
+
+def pay_calc(e, ot_h, incentive, ratio=None):
     v = {"basePay": e["basePay"], "dutyAlw": e["dutyAlw"], "meal": 200_000}
+    if ratio:  # 입사 월 일할 (10원 미만 버림)
+        v = {k: ROUNDDOWN(x * ratio[0] / ratio[1], -1) for k, x in v.items()}
     hourly = ROUNDDOWN((e["basePay"] + e["dutyAlw"]) / 209, 0)
     v["otPay"] = ROUND(hourly * ot_h * 1.5, 0)
     v["incentive"] = incentive or 0
     gross = sum(v.values())
-    taxable = gross - 200_000
+    taxable = gross - v["meal"]
     R = B.RATES_2026
-    v["np"] = ROUNDDOWN(min(max(ROUNDDOWN(taxable, -3), B.NP_FLOOR), B.NP_CAP) * R["np"], -1)
-    v["hi"] = ROUNDDOWN(taxable * R["hi"], -1)
+    v["np"] = 0 if ratio else ROUNDDOWN(min(max(ROUNDDOWN(taxable, -3), B.NP_FLOOR), B.NP_CAP) * R["np"], -1)
+    v["hi"] = 0 if ratio else ROUNDDOWN(taxable * R["hi"], -1)
     v["ltc"] = ROUNDDOWN(v["hi"] * R["ltc"], -1)
     v["ei"] = ROUNDDOWN(taxable * R["ei"], -1)
     v["tax"] = B.tax_of(taxable, e["family"])
     v["ltax"] = ROUNDDOWN(v["tax"] * 0.1, -1)
-    v["_gross"], v["_hourly"] = gross, hourly
+    v["_gross"], v["_hourly"], v["_taxable"] = gross, hourly, taxable
     return v
 
 
@@ -218,6 +239,7 @@ PAY_HEAD = ["귀속연월", "지급연월일", "사원코드", "사원명", "부
 def write_pay(path, emps, inc, acc, rng):
     A = Accidents("JEOC-PAY", path.name)
     lines, tags = [], []
+    line_of, calc_of = {}, {}  # (사번, 항목) → 줄 위치 / 사번 → (사원, 연장시간, 일할, 계산값)
     active = [e for e in emps if not e["resignDate"] and e["hireDate"] <= dt.date(2026, 12, 31)]
     for e in active + [x for x in emps if x["empNo"] == acc["resigned"]]:
         resigned = e["empNo"] == acc["resigned"]
@@ -226,13 +248,17 @@ def write_pay(path, emps, inc, acc, rng):
             items = [x for x in ITEMS if x[3] == "incentive"]
         else:
             ot_h = rng.choice([0, 0, 0, 2, 4, 6, 8, 10]) if e["dept"] in CALL_TEAMS else rng.choice([0, 0, 4])
+            ratio = hire_ratio(e)
+            if ratio:
+                ot_h = 0  # 12/28 입사 교육생: 연장 없음 (난수는 그대로 소비)
             i = inc.get(e["empNo"])
             amt = i["actual"] if i else 0
             if isinstance(amt, XlErr):
                 amt = 0
             if e["empNo"] == acc["amountTypo"][0]:
                 amt = acc["amountTypo"][1]
-            v = pay_calc(e, ot_h, amt)
+            v = pay_calc(e, ot_h, amt, ratio)
+            calc_of[e["empNo"]] = (e, ot_h, ratio, v)
             items = ITEMS
         for kind, code, name, k in items:
             amount = v[k]
@@ -249,31 +275,57 @@ def write_pay(path, emps, inc, acc, rng):
             if k == "incentive" and e["empNo"] == acc["amountTypo"][0]:
                 tag = "AMOUNT"
             lines.append(["202612", "20270110", e["empNo"], e["name"].ljust(10), DEPT_CODE[e["dept"]], kind, code, name, "%12d" % amount])
+            line_of.setdefault((e["empNo"], k), len(lines) - 1)
             tags.append((tag, e, len(lines) - 1, v))
             if k == "incentive" and e["empNo"] == acc["dup"]:
                 lines.append(list(lines[-1]))
                 tags.append(("DUP", e, len(lines) - 1, v))
     first = B.write_csv(path, PAY_HEAD, lines, "cp949")
     sheet = path.stem
+
+    def diff_lines(no, incentive):
+        """사원 no의 인센티브가 incentive였다면 금액이 달라지는 줄 (인센티브 줄 + 4대보험·세금 줄). 금액 열 = I"""
+        e, ot_h, ratio, v = calc_of[no]
+        w = pay_calc(e, ot_h, incentive, ratio)
+        out = []
+        for _kd, _code, _nm, k in ITEMS:
+            if v[k] == w[k]:
+                continue
+            n = line_of.get((no, k))
+            assert n is not None, "금액이 바뀌는 항목의 줄이 없음"
+            out.append({"sheet": sheet, "rowNo": first + n, "cells": ["I%d" % (first + n)],
+                        "values": {"금액": {"actual": v[k], "expected": w[k], "항목코드": lines[n][6]}}})
+        return out
+
     legacy = [(e, first + n) for t, e, n, _v in tags if t == "LEGACY"]
     A.add("LEGACY_ITEM_CODE", sheet, "%s 인센티브 %d줄이 항목코드 개편 전 코드 'P31 인센티브(구)' (코드표는 P21) — 팀 담당자가 옛 업로드 양식 사용"
           % (acc["legacyTeam"], len(legacy)), ["ENUM_CHECK", "CROSS_FIELD_RULE"], empNos=[e["empNo"] for e, _r in legacy], rows=[r for _e, r in legacy],
-          values={"항목코드": {"actual": "P31", "expected": "P21"}})
+          cells=["G%d" % r for _e, r in legacy], values={"항목코드": {"actual": "P31", "expected": "P21"}})
     for t, e, n, v in tags:
         if t == "DUP":
-            A.add("DUPLICATE_ROW", sheet, "같은 사원·같은 항목(P21 인센티브) 줄이 두 번 → 인센티브 이중 지급", ["DUPLICATE_DETECT"], empNo=e["empNo"],
+            A.add("DUPLICATE_ROW", sheet, "같은 사원·같은 항목(P21 인센티브) 줄이 두 번 → 인센티브 이중 지급 (공제 줄은 인센티브 한 번 기준이라 그대로)",
+                  ["DUPLICATE_DETECT"], empNo=e["empNo"],
                   rowNo=first + n, affected=[{"sheet": sheet, "rowNo": first + n - 1}, {"sheet": sheet, "rowNo": first + n}])
         elif t == "AMOUNT":
-            A.add("AMOUNT_MISMATCH_CROSS_FILE", sheet, "P21 인센티브 %s원 — 인센티브산정 시트는 %s원" % (format(acc["amountTypo"][1], ","), format(inc[e["empNo"]]["actual"], ",")),
-                  ["CROSS_FILE_MATCH"], empNo=e["empNo"], rowNo=first + n, values={"인센티브": {"actual": acc["amountTypo"][1], "expected": inc[e["empNo"]]["actual"]}})
+            cas = diff_lines(e["empNo"], inc[e["empNo"]]["actual"])
+            A.add("AMOUNT_MISMATCH_CROSS_FILE", sheet, "P21 인센티브 %s원 — 인센티브산정 시트는 %s원. 공제(국민연금·건강·장기요양·고용·소득세·지방세) 줄도 %s원 기준으로 계산돼 %d줄이 같이 틀림"
+                  % (format(acc["amountTypo"][1], ","), format(inc[e["empNo"]]["actual"], ","), format(acc["amountTypo"][1], ","), len(cas) - 1),
+                  ["CROSS_FILE_MATCH"], empNo=e["empNo"], rowNo=first + n, cells=["I%d" % (first + n)],
+                  values={"금액": {"actual": acc["amountTypo"][1], "expected": inc[e["empNo"]]["actual"], "항목코드": "P21"}},
+                  affected=cas)
         elif t == "RESIGNED":
             A.add("RESIGNED_STILL_PAID", sheet, "11/30 퇴직자(직원명부 재직구분 1)에게 12월 귀속 인센티브 30만원 — 회사 규정은 지급일 재직자만",
-                  ["CROSS_FILE_MATCH"], empNo=e["empNo"], rowNo=first + n)
+                  ["CROSS_FILE_MATCH"], empNo=e["empNo"], rowNo=first + n, cells=["I%d" % (first + n)],
+                  values={"금액": {"actual": 300_000, "expected": 0, "항목코드": "P21"}})
         elif t == "EIMISS":
             near = [first + m for tt, ee, m, _v in tags if ee is e and m is not None]
             A.add("ITEM_ROW_MISSING", sheet, "고용보험(D04) 줄이 없음 — 과세 급여 %s원이면 %s원 공제돼야 함 (다른 공제 줄은 있음)"
-                  % (format(v["_gross"] - 200_000, ","), format(v["ei"], ",")), ["ITEM_COMPLETENESS", "RECOMPUTE_CHECK"], empNo=e["empNo"],
-                  rows=near, values={"고용보험": {"actual": None, "expected": v["ei"]}})
+                  % (format(v["_taxable"], ","), format(v["ei"], ",")), ["ITEM_COMPLETENESS", "RECOMPUTE_CHECK"], empNo=e["empNo"],
+                  rows=near, values={"고용보험": {"actual": None, "expected": v["ei"], "항목코드": "D04"}})
+    # 인센티브산정 파일 사고(산정 금액 자체가 틀림)가 이 파일 줄로 옮겨진 것: 산정표 값 그대로 지급·공제됐고 참값은 등급표 기준
+    cross = {no: [{"file": path.name, **x} for x in diff_lines(no, r["ideal"])]
+             for no, r in inc.items() if no in calc_of and r["ideal"] is not None and r["actual"] != r["ideal"]}
+    newbie = next((e for e, _o, ratio, _v in calc_of.values() if ratio), None)
     return {"file": path.name, "kind": "PAYROLL", "closestEntity": "PAY_RESULT_HISTORY", "supported": False, "format": "csv", "encoding": "cp949",
             "sheetOrder": [sheet],
             "sheets": {sheet: {"role": "payItemLong", "headerRows": [1], "firstDataRow": first, "lastDataRow": first + len(lines) - 1,
@@ -283,12 +335,16 @@ def write_pay(path, emps, inc, acc, rng):
             "codeTable": {code: {"kind": "지급" if kd == "1" else "공제", "name": nm, "field": k} for kd, code, nm, k in ITEMS},
             "rules": {"layout": "세로 항목 형식 (사원마다 항목 수만큼 줄), 0원 항목은 줄을 만들지 않음",
                       "ordinaryHourlyWage": {"expr": "floor((basePay+dutyAllowance)/209)"}, "overtime": "ROUND(통상시급 × 연장 × 1.5)",
-                      "incentive": "인센티브산정 파일 금액, 지급일(2027-01-10) 재직자만", "insuranceRounding": "floor10", "mealInInsuranceBase": False},
+                      "incentive": "인센티브산정 파일 금액, 지급일(2027-01-10) 재직자만", "insuranceRounding": "floor10", "mealInInsuranceBase": False,
+                      "hireMonthProration": "달 중간 입사: 기본급·직책수당·식대 × 재직 달력일 / 그달 일수, 10원 미만 버림",
+                      "hireMonthInsurance": "1일 입사가 아니면 입사 월 국민연금·건강보험(장기요양) 없음 (다음 달부터), 고용보험은 그달 보수 × 0.9%"},
             "accidents": A.items,
-            "legitUnusual": ["연장수당·직책수당이 0인 사원은 그 항목 줄이 없음 (정상)", "교육생(12/28 입사)은 인센티브 줄 없음 (산정표가 #DIV/0!)"],
+            "legitUnusual": ["연장수당·직책수당이 0인 사원은 그 항목 줄이 없음 (정상)", "교육생(12/28 입사)은 인센티브 줄 없음 (산정표가 #DIV/0!)",
+                             "%s(12/28 입사): 기본급·식대 4/31 일할, 국민연금·건강보험·장기요양 줄 없음, 소득세 0이라 소득세·지방세 줄 없음 (회사 규칙대로)"
+                             % (newbie["empNo"] if newbie else "-")],
             "valueNoise": [{"type": "FIXED_WIDTH_PADDING", "detail": "사원명 뒤 공백 채움 10자, 금액 앞 공백 채움 12자 ('     2156880')"},
                            {"type": "CODE_DATES", "detail": "귀속연월 '202612', 지급연월일 '20270110' (구분자 없는 숫자 문자)"}],
-            "crossFile": {"incentive": {"file": INC_FILE, "detail": "P21 = 인센티브 열"}, "roster": {"file": "직원명부.csv", "detail": "재직구분·퇴사일자"}}}
+            "crossFile": {"incentive": {"file": INC_FILE, "detail": "P21 = 인센티브 열"}, "roster": {"file": "직원명부.csv", "detail": "재직구분·퇴사일자"}}}, cross
 
 
 # ================================================================ 직원명부·조직 (프로그램 내보내기)
@@ -389,7 +445,23 @@ def build(df, used, out_dir, seed):
     resigned = sorted(e["empNo"] for e in emps if e["resignDate"] == dt.date(2026, 11, 30))[0]
     acc_p = {"legacyTeam": "인바운드2팀", "dup": dup_e["empNo"], "amountTypo": (typo_e["empNo"], inc[typo_e["empNo"]]["actual"] * 2),
              "resigned": resigned, "eiMissing": ei_e["empNo"]}
-    pay_key = write_pay(cdir / PAY_FILE, emps, inc, acc_p, B.rng_for(CID, "pay", seed))
+    pay_key, cross = write_pay(cdir / PAY_FILE, emps, inc, acc_p, B.rng_for(CID, "pay", seed))
+    # 산정표 사고가 급여지급내역으로 옮겨진 줄 (인센티브 줄 + 그 금액으로 계산된 공제 줄)
+    for a in inc_key["accidents"]:
+        nos = a.get("empNos") or [a.get("empNo")]
+        cf = [x for no in nos for x in cross.get(no, [])]
+        if cf:
+            a["crossFileAffected"] = cf
+    inc01 = next(a for a in inc_key["accidents"] if a["type"] == "LOOKUP_RANGE_SHORT")
+    pay01 = next(a for a in pay_key["accidents"] if a["type"] == "LEGACY_ITEM_CODE")
+    both = [x for x in inc01["crossFileAffected"] if x["values"]["금액"]["항목코드"] == "P31"]
+    sheet = PAY_FILE.rsplit(".", 1)[0]
+    inc01["overlaps"] = [{"with": pay01["id"], "cells": ["%s!I%d" % (sheet, x["rowNo"]) for x in both],
+                          "note": "%s(VLOOKUP 범위) 대상 %d명의 급여 인센티브 줄은 항목코드 P31(%s)이기도 함" % (inc01["id"], len(both), pay01["id"]),
+                          "trueValue": {"항목코드": "P21", "금액": both[0]["values"]["금액"]["expected"]}}]
+    pay01["overlaps"] = [{"with": inc01["id"], "cells": ["%s!G%d" % (sheet, x["rowNo"]) for x in both] + ["%s!I%d" % (sheet, x["rowNo"]) for x in both],
+                          "note": "P31 줄 중 %d줄은 인센티브산정 %s 대상이라 금액도 30만원 → 50만원이어야 함 (공제 줄도 같이 바뀜)" % (len(both), inc01["id"]),
+                          "trueValue": {"항목코드": "P21", "금액": both[0]["values"]["금액"]["expected"]}}]
     reserved = {newbie["empNo"], cap_e["empNo"], typo_e["empNo"], dup_e["empNo"], ei_e["empNo"], resigned}
     roster = write_roster(cdir, emps, reserved, seed)
     org, org_cols = write_org(cdir)

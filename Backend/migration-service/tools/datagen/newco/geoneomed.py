@@ -1,11 +1,11 @@
 """
 거너요양병원 — 160명 요양병원. 병동 간호사·간호조무사는 3교대(D/E/N), 야간전담 간호사, 의사·원무 당직.
 
-파일: 직원명부.xlsx(제목 2행 + 빈 행 + 헤더 4행, 직종·면허번호 열, 날짜 셀 사이 문자 날짜),
+파일: 직원명부.xlsx(제목 2행 + 빈 행 + 헤더 4행, 직종·면허·자격번호 열, 날짜 셀 사이 문자 날짜),
      조직.csv(UTF-8 BOM, 간호부 아래 병동 3단계),
      근무표_2026-12.xlsx(병동마다 시트, 날짜가 열인 가로 배치, 칸에는 시간이 아니라 근무 코드 D/E/N/상/O/연, 오른쪽 COUNTIF 집계),
      급여대장_2026-12.xlsx(간호부·진료지원 두 시트가 열 구성이 다름, 간호부는 2줄 병합 헤더, 기준·세액표 시트).
-급여 규칙: 통상시급 = ROUNDDOWN((기본급+직책수당+면허수당)/209), 나이트수당 = N 횟수 × 4만, 야간가산 = 통상시급 × 야간시간 × 0.5
+급여 규칙: 통상시급 = ROUNDDOWN((기본급+직책수당+면허·자격수당)/209), 나이트수당 = N 횟수 × 4만, 야간가산 = 통상시급 × 야간시간 × 0.5
          (야간시간 = E×1.5 + N×6.5, 22~06시), 휴일(12/25) 근무 8시간 × 1.5, 당직 1회 10만, 4대보험·지방소득세 10원 미만 버림.
 """
 import datetime as dt
@@ -281,12 +281,19 @@ def write_duty(path, emps, duty, acc):
     no, k = acc["typo"]
     w = by_no[no]["dept"]
     r = meta[w]["rowOf"][no]
-    true_n = counts(duty[no])["N"]
-    A.add("KIND_TYPO", w, "12/%d 근무 코드가 'N '(뒤에 공백, 다른 표에서 복사) → COUNTIF(\"N\")가 세지 않아 N %d회 → %d회, 야간시간 6.5시간 누락. "
-          "급여대장 나이트횟수·야간시간이 이 집계를 옮겨 적어 같이 틀림" % (DAYS[k].day, true_n, true_n - 1),
-          ["VALUE_NORMALIZE", "RECOMPUTE_CHECK"], empNo=no, rowNo=r, cells=["%s%d" % (day_col[k], r), "%s%d" % (cnt_col["N"], r)],
-          values={"N": {"actual": true_n - 1, "expected": true_n}},
-          cascade={"file": PAY_FILE, "sheet": "간호부", "fields": ["나이트횟수", "야간시간", "나이트수당", "야간가산"]})
+    tc = counts(duty[no])
+    n_row = meta[w]["summaryRows"][2]  # 아래 'N 인원' 행
+    n_day = sum(1 for x in duty if by_no[x]["dept"] == w and duty[x][k] == "N")
+    A.add("KIND_TYPO", w, "12/%d 근무 코드가 'N '(뒤에 공백, 다른 표에서 복사) → COUNTIF(\"N\")가 세지 않아 N %d회 → %d회, 근무일수 %d → %d, "
+          "야간시간 %s → %s, 아래 12/%d N 인원 %d → %d. 급여대장 나이트횟수·야간시간이 이 집계를 옮겨 적어 같이 틀림 (GNMD-PAY-03)"
+          % (DAYS[k].day, tc["N"], tc["N"] - 1, tc["work"], tc["work"] - 1, tc["night"], tc["night"] - 6.5, DAYS[k].day, n_day, n_day - 1),
+          ["VALUE_NORMALIZE", "RECOMPUTE_CHECK"], empNo=no, rowNo=r,
+          cells=["%s%d" % (day_col[k], r), "%s%d" % (cnt_col["N"], r), "%s%d" % (work_c, r), "%s%d" % (night_c, r), "%s%d" % (day_col[k], n_row)],
+          code={"cell": "%s%d" % (day_col[k], r), "actual": "N ", "expected": "N"},
+          values={"N": {"actual": tc["N"] - 1, "expected": tc["N"]}, "근무일수": {"actual": tc["work"] - 1, "expected": tc["work"]},
+                  "야간시간": {"actual": tc["night"] - 6.5, "expected": tc["night"]},
+                  "N 인원": {"cell": "%s%d" % (day_col[k], n_row), "actual": n_day - 1, "expected": n_day}},
+          affected=[{"sheet": w, "rowNo": r}, {"sheet": w, "rowNo": n_row}])
     no, k = acc["overlap"]
     w = by_no[no]["dept"]
     r = meta[w]["rowOf"][no]
@@ -302,9 +309,11 @@ def write_duty(path, emps, duty, acc):
     no, ks = acc["norest"]
     w = by_no[no]["dept"]
     r = meta[w]["rowOf"][no]
-    A.add("NO_WEEKLY_REST", w, "결원 대체로 12/%d·%d OFF를 D로 바꿔 %d일 연속 근무 — 월~일 한 주에 휴일이 하루도 없음 (주휴일 미부여, 제55조)"
-          % (DAYS[ks[0]].day, DAYS[ks[1]].day, _consecutive(duty[no])), ["SHIFT_CODE_TIME", "LEGAL_RULE_COMPARE"], legal=True,
-          empNo=no, rowNo=r, cells=["%s%d" % (day_col[x], r) for x in ks])
+    A.add("NO_WEEKLY_REST", w, "결원 대체로 12/%d·%d OFF를 D로 바꿔 %d일 연속 근무 — 월~일 한 주에 휴무(O)가 하루도 없음. 병원 근무표 작성 기준"
+          "(7일마다 휴무 1일 이상, rules.weeklyRest)에 어긋남. 근로기준법 제55조는 '1주 평균 1회 이상' 유급휴일이라 교대제에서 법 위반인지는 "
+          "기간 평균과 다른 주 휴무로 따로 판단해야 함 (확정 위반 아님)"
+          % (DAYS[ks[0]].day, DAYS[ks[1]].day, _consecutive(duty[no])), ["SHIFT_CODE_TIME", "CROSS_FIELD_RULE"],
+          empNo=no, rowNo=r, cells=["%s%d" % (day_col[x], r) for x in ks], basis="회사 근무표 기준 (가정)")
     key = {"file": path.name, "kind": "ATTENDANCE", "closestEntity": None, "supported": False, "period": "2026-12",
            "sheetOrder": WARDS, "sheets": meta,
            "expectedMapping": {"dutyRosterWide": {"사번": "empNo", "성명": "name", "직종": "jobKind", "D": "dayShifts", "E": "eveningShifts",
@@ -313,7 +322,8 @@ def write_duty(path, emps, duty, acc):
            "rules": {"codes": {c: "%s~%s" % SHIFT[c][:2] for c in SHIFT} | {"O": "휴무", "연": "연차"},
                      "nightHours": "야간(22~06시) = E 1.5시간 + N 6.5시간 (N 휴게 30분은 야간 중)",
                      "rotation": "21일 순환 (D5·O2·E5·O2·N4·O3), 야간전담은 N3·O2, 수간호사는 평일 '상'",
-                     "restInterval": "근로시간 특례(보건업) 서면합의 병원 — 근무 사이 연속 11시간 휴식 (가정: 이 병원은 특례 합의가 있음)"},
+                     "restInterval": "근로시간 특례(보건업) 서면합의 병원 — 근무 사이 연속 11시간 휴식 (가정: 이 병원은 특례 합의가 있음)",
+                     "weeklyRest": "근무표 작성 기준: 월~일 7일마다 휴무(O) 1일 이상 (병원 내부 기준, 가정. 근로기준법 제55조는 '1주 평균 1회 이상')"},
            "accidents": A.items, "cleanSheets": ["5병동"],
            "valueNoise": [{"type": "SHIFT_CODES", "detail": "칸 값이 시간이 아니라 근무 코드. 시간·야간시간은 코드표(2행 안내문)로 바꿔야 함"},
                           {"type": "DAY_HEADER_TEXT", "detail": "날짜 열 머리글이 '1(화)' 같은 문자 (연·월은 제목에만)"},
@@ -331,7 +341,7 @@ SETS = [("np", "국민연금", B.RATES_2026["np"], "pct"), ("hi", "건강보험"
         ("dutyAlw", "당직 1회 수당", 100_000, "won")]
 
 NURSE_COLS = [("empNo", "사번"), ("name", "성명"), ("dept", "병동"), ("kind", "직종"), ("shift", "근무형태"), ("family", "공제가족"),
-              ("basePay", "기본급"), ("dutyAlw", "직책수당"), ("licAlw", "면허수당"), ("hourly", "통상시급"), ("nights", "나이트횟수"),
+              ("basePay", "기본급"), ("dutyAlw", "직책수당"), ("licAlw", "면허·자격수당"), ("hourly", "통상시급"), ("nights", "나이트횟수"),
               ("nightH", "야간시간"), ("holH", "휴일시간"), ("otH", "연장시간"), ("nightPay", "나이트수당"), ("nightPrem", "야간가산"),
               ("holPay", "휴일수당"), ("otPay", "연장수당"), ("meal", "식대"), ("gross", "지급계"), ("np", "국민연금"), ("hi", "건강보험"),
               ("ltc", "장기요양"), ("ei", "고용보험"), ("tax", "소득세"), ("ltax", "지방소득세"), ("ded", "공제계"), ("net", "실지급액"),
@@ -340,7 +350,7 @@ NURSE_GROUPS = [("empNo", "family", "인적사항"), ("basePay", "licAlw", "고�
                 ("nights", "otH", "근무실적(근무표)"), ("nightPay", "otPay", "변동수당"), ("meal", "meal", "비과세"),
                 ("gross", "gross", "지급"), ("np", "ded", "공제"), ("net", "net", "차인"), ("memo", "memo", "")]
 SUP_COLS = [("empNo", "사번"), ("name", "성명"), ("dept", "소속"), ("kind", "직종"), ("family", "공제가족"), ("basePay", "기본급"),
-            ("dutyAlw", "직책수당"), ("licAlw", "면허수당"), ("hourly", "통상시급"), ("duties", "당직횟수"), ("otH", "연장시간"),
+            ("dutyAlw", "직책수당"), ("licAlw", "면허·자격수당"), ("hourly", "통상시급"), ("duties", "당직횟수"), ("otH", "연장시간"),
             ("dutyPay", "당직수당"), ("otPay", "연장수당"), ("meal", "식대"), ("gross", "지급계"), ("np", "국민연금"), ("hi", "건강보험"),
             ("ltc", "장기요양"), ("ei", "고용보험"), ("tax", "소득세"), ("ltax", "지방소득세"), ("ded", "공제계"), ("net", "실지급액")]
 INPUTS = ("empNo", "name", "dept", "kind", "shift", "family", "basePay", "dutyAlw", "licAlw", "nights", "nightH", "holH", "otH", "duties",
@@ -509,60 +519,78 @@ def write_payroll(path, emps, duty, duty_counts, acc, rng):
     def cell(k, no):
         return "%s%d" % (L[k], row_of[no])
 
+    H = dict(NURSE_COLS)
+
+    def changed(no):
+        """사고로 값이 달라진 열 (입력 칸 + 수식으로 번진 칸)"""
+        a, i = vals[no]
+        return [k for k, _ in NURSE_COLS if k not in ("memo",) and a.get(k) != i.get(k)]
+
+    def diff_vals(no):
+        a, i = vals[no]
+        return {H[k]: {"actual": a[k], "expected": i[k]} for k in changed(no)}
+
+    def where(*nos):
+        """값이 달라진 행 + 합계 행 (합계는 SUM이라 같이 달라진다)"""
+        return [{"sheet": "간호부", "rowNo": row_of[x]} for x in nos] + [{"sheet": "간호부", "rowNo": total}]
+
     no = acc["stale"]
     a, i = vals[no]
     A.add("MIN_WAGE_STALE", "간호부", "요양보호사 기본급 2,096,270원 = 2025 최저시급 10,030원 × 209 그대로 (2026은 10,320원 × 209 = 2,156,880원)",
-          ["LEGAL_RULE_COMPARE", "RATE_TABLE_BY_PERIOD"], legal=True, empNo=no, rowNo=row_of[no], cells=[cell("basePay", no)],
-          values={"기본급": {"actual": a["basePay"], "expected": i["basePay"]}, "실지급액": {"actual": a["net"], "expected": i["net"]}})
+          ["LEGAL_RULE_COMPARE", "RATE_TABLE_BY_PERIOD"], legal=True, empNo=no, rowNo=row_of[no], cells=[cell(k, no) for k in changed(no)],
+          values=diff_vals(no), cascade=[H[k] for k in changed(no) if k != "basePay"], affected=where(no))
     no, typed = acc["hoursTypo"]
     a, i = vals[no]
     A.add("HOURS_MISMATCH_CROSS_FILE", "간호부", "근무표 N %d회를 나이트횟수 %d로 옮겨 적음 (야간시간은 맞음) → 나이트수당 %s원 과다"
           % (i["nights"], typed, format(a["nightPay"] - i["nightPay"], ",")), ["CROSS_FILE_MATCH"], empNo=no, rowNo=row_of[no],
-          cells=[cell("nights", no)], values={"나이트횟수": {"actual": typed, "expected": i["nights"]},
-                                              "나이트수당": {"actual": a["nightPay"], "expected": i["nightPay"]}})
+          cells=[cell(k, no) for k in changed(no)], values=diff_vals(no), cascade=[H[k] for k in changed(no) if k != "nights"], affected=where(no))
     no = acc["typoEmp"]
     a, i = vals[no]
-    A.add("CARRIED_FROM_SOURCE", "간호부", "근무표의 'N '(공백) 사고(GNMD-DUTY-01)로 줄어든 N 집계를 그대로 옮김 → 나이트횟수 1회·야간시간 6.5시간 부족",
-          ["CROSS_FILE_MATCH"], empNo=no, rowNo=row_of[no], source="GNMD-DUTY-01", cells=[cell("nights", no), cell("nightH", no)],
-          values={"나이트수당": {"actual": a["nightPay"], "expected": i["nightPay"]}, "야간가산": {"actual": a["nightPrem"], "expected": i["nightPrem"]}})
+    A.add("CARRIED_FROM_SOURCE", "간호부", "근무표의 'N '(공백) 사고(GNMD-DUTY-01)로 줄어든 N 집계를 그대로 옮김 → 나이트횟수 1회·야간시간 6.5시간 부족, "
+          "나이트수당·야간가산과 그 뒤 지급계·보험료·세금·실지급액까지 같이 틀림",
+          ["CROSS_FILE_MATCH"], empNo=no, rowNo=row_of[no], source="GNMD-DUTY-01", cells=[cell(k, no) for k in changed(no)],
+          values=diff_vals(no), cascade=[H[k] for k in changed(no) if k not in ("nights", "nightH")], affected=where(no))
     night = sorted((e["empNo"] for e in nursing if e["shift"] == "야간전담"), key=lambda x: row_of[x])
     A.add("NIGHT_PREMIUM_MISSING", "간호부", "야간전담 간호사 %d명: 야간가산 칸에 수식 대신 0 (비고 '야간전담수당에 포함'), 별도 야간전담수당 항목·포괄 약정 없음 "
           "→ 야간근로 가산(통상임금 50%%) 미지급 (제56조)" % len(night), ["HARDCODED_IN_FORMULA_COLUMN", "LEGAL_RULE_COMPARE"], legal=True,
           empNos=night, rows=[row_of[x] for x in night], cells=[cell("nightPrem", x) for x in night],
-          values={x: {"야간가산": {"actual": 0, "expected": vals[x][1]["nightPrem"]}} for x in night})
+          values={x: diff_vals(x) for x in night}, cascade=sorted({H[k] for x in night for k in changed(x)} - {"야간가산"}, key=list(H.values()).index),
+          affected=where(*night))
     nb = sorted((e["empNo"] for e in nursing if e.get("newbie")), key=lambda x: row_of[x])
     hit = [x for x in nb if vals[x][0]["hourly"] != vals[x][1]["hourly"]]
     A.add("ORDINARY_WAGE_ITEM_MISSING", "간호부", "12/1 입사자 %d명 행(맨 아래 추가)의 통상시급 수식이 옛 양식 =ROUNDDOWN((기본급+직책수당)/209,0) — "
-          "매달 고정 지급하는 면허수당이 통상임금에서 빠짐 → 야간가산·휴일·연장수당 과소 (값이 달라진 행 %d명)" % (len(nb), len(hit)),
+          "매달 고정 지급하는 면허·자격수당이 통상임금에서 빠짐 → 야간가산·휴일·연장수당 과소 (값이 달라진 행 %d명)" % (len(nb), len(hit)),
           ["FORMULA_READ", "RULE_EXTRACTION", "LEGAL_RULE_COMPARE"], legal=True, empNos=nb, rows=[row_of[x] for x in nb],
           cells=[cell("hourly", x) for x in nb], formula={"actual": "=ROUNDDOWN((G{r}+H{r})/209,0)", "expected": "=ROUNDDOWN((G{r}+H{r}+I{r})/209,0)"},
-          values={x: {"통상시급": {"actual": vals[x][0]["hourly"], "expected": vals[x][1]["hourly"]}} for x in hit})
+          values={x: diff_vals(x) for x in hit}, cascade=sorted({H[k] for x in hit for k in changed(x)} - {"통상시급"}, key=list(H.values()).index),
+          affected=where(*nb))
     return {"file": path.name, "kind": "PAYROLL", "closestEntity": "PAY_RESULT_HISTORY", "supported": False,
             "sheetOrder": ["간호부", "진료지원", "기준", "세액표"],
             "sheets": {**meta, "기준": st.meta(), "세액표": tax_meta},
             "expectedMapping": {"monthlyPayrollNursing": {h: k for k, h in NURSE_COLS},
                                 "monthlyPayrollSupport": {h: k for k, h in SUP_COLS}},
             "rules": {"ordinaryHourlyWage": {"expr": "floor((basePay+dutyAllowance+licenseAllowance)/209)",
-                                             "note": "면허수당은 매달 고정 지급 → 통상임금"},
+                                             "note": "면허·자격수당(간호사·약사 등 면허, 간호조무사·영양사 자격)은 매달 고정 지급 → 통상임금"},
                       "nightAllowance": "N 1회 4만원 (회사 수당, 법정 야간가산과 별개)",
                       "nightPremium": "ROUND(통상시급 × 야간시간 × 0.5)", "holidayWork": "12/25 근무표 D/E/N이면 8시간 × 1.5 (회사 단순화)",
                       "dutyAllowance": "당직 1회 10만원 (의사·원무과)", "insuranceRounding": "floor10", "mealInInsuranceBase": False,
-                      "nationalPension": {"floor": B.NP_FLOOR, "cap": B.NP_CAP}, "incomeTax": "간이세액표(단순화) × 공제가족"},
+                      "nationalPension": {"floor": B.NP_FLOOR, "cap": B.NP_CAP, "period": "2026-07 ~ 2027-06 (보건복지부고시 제2026-31호, 귀속월 기준)"}, "incomeTax": "간이세액표(단순화) × 공제가족"},
             "legalDeviations": [{"rule": "minimumWage", "sheet": "간호부", "company": "기본급 2,096,270원 1명", "statutory": "2,156,880원 (10,320×209)"},
                                 {"rule": "nightPremium", "sheet": "간호부", "company": "야간전담 야간가산 0", "statutory": "통상임금 50% 가산"},
-                                {"rule": "ordinaryWageItems", "sheet": "간호부", "company": "신규 입사자 행 면허수당 제외", "statutory": "고정 수당은 통상임금"}],
+                                {"rule": "ordinaryWageItems", "sheet": "간호부", "company": "신규 입사자 행 면허·자격수당 제외", "statutory": "고정 수당은 통상임금"}],
             "accidents": A.items, "cleanSheets": ["진료지원"],
             "valueNoise": [{"type": "DIFFERENT_COLUMNS_PER_SHEET", "detail": "간호부(나이트·야간·휴일)와 진료지원(당직) 시트의 열 구성이 다름"},
                            {"type": "TWO_ROW_MERGED_HEADER", "detail": "간호부 시트 3행 병합 묶음 헤더 + 4행 컬럼 헤더"},
                            {"type": "NEW_ROWS_AT_BOTTOM", "detail": "신규 입사자는 병동 순서와 관계없이 맨 아래"}],
-            "legitUnusual": ["의사 국민연금은 상한 %s원 기준 (상한 적용이 맞음)" % format(B.NP_CAP, ","),
+            "legitUnusual": ["의사 국민연금은 기준소득월액 상한 %s원 기준 (2026-07부터 적용되는 상한, 보건복지부고시 제2026-31호 — 상한 적용이 맞음)"
+                             % format(B.NP_CAP, ","),
                              "휴직자 2명은 급여대장에 없음 (명부 재직구분 '휴직')", "야간전담 간호사 N 18~19회 (정상 근무 형태)"],
             "crossFile": {"duty": {"file": DUTY_FILE, "detail": "나이트횟수·야간시간 = 근무표 N 집계·야간시간"}}}
 
 
 # ================================================================ 직원명부·조직
 
-ROSTER_COLS = [("empNo", "사번"), ("name", "성명"), ("jobKind", "직종"), ("_license", "면허번호"), ("dept", "소속"), ("position", "직위"),
+ROSTER_COLS = [("empNo", "사번"), ("name", "성명"), ("jobKind", "직종"), ("_license", "면허·자격번호"), ("dept", "소속"), ("position", "직위"),
                ("_shift", "근무형태"), ("empType", "고용형태"), ("hireDate", "입사일"), ("birthDate", "생년월일"), ("_sex", "성별"),
                ("mobile", "휴대폰"), ("email", "이메일"), ("status", "재직구분"), ("resignDate", "퇴직일"), ("_memo", "비고")]
 
@@ -598,10 +626,10 @@ def write_roster(cdir, emps, seed):
         errs.add(i, "position", "POSITION_TYPO", "직위 오타 '책임간호시'", detectable=False)
     for i in take(1, lambda r: r["jobKind"] == "간호사" and r["status"] == "재직"):
         rows[i]["_license"] = None
-        errs.add(i, "면허번호", "LICENSE_MISSING", "직종 간호사인데 면허번호 빈 칸 (간호등급 산정·면허 확인 대상)", detectable=False)
+        errs.add(i, "면허·자격번호", "LICENSE_MISSING", "직종 간호사인데 면허·자격번호 빈 칸 (간호등급 산정·면허 확인 대상)", detectable=False)
     for i in take(1, lambda r: r["jobKind"] == "간호사" and r["status"] == "재직" and r["position"] == "간호사"):
         rows[i]["_license"] = rows[i]["_license"].replace("간호사", "간호조무사")
-        errs.add(i, "jobKind", "LICENSE_MISMATCH", "직종 '간호사'인데 면허번호는 '간호조무사' 자격 (직종 또는 면허 입력 오류)", detectable=False)
+        errs.add(i, "jobKind", "LICENSE_MISMATCH", "직종 '간호사'인데 면허·자격번호는 '간호조무사' 자격 (직종 또는 면허 입력 오류)", detectable=False)
     # 재입사: 예전 행을 퇴직 처리하지 않은 1명(오류) + 퇴직 처리된 예전 행이 남은 1명(정상 이력)
     src = take(2, lambda r: r["status"] == "재직" and r["jobKind"] in ("간호사", "간호조무사") and r["hireDate"] and r["hireDate"].year >= 2022)
     old = dict(rows[src[0]])
@@ -625,7 +653,7 @@ def write_roster(cdir, emps, seed):
     mapping = {h: (None if f.startswith("_") else f) for f, h in ROSTER_COLS}
     return {"mapping": mapping, "errors": errs.rows(first), "rows": len(rows),
             "layout": {"sheet": "직원현황", "titleRows": [1, 2], "headerRows": head_rows, "firstDataRow": first,
-                       "notes": ["사번 = 입사연도 + 순번 (7자리 문자)", "면허번호 '간호사 제123456호' 형식 (매핑 없는 열)",
+                       "notes": ["사번 = 입사연도 + 순번 (7자리 문자)", "면허·자격번호 '간호사 제123456호' 형식 (간호조무사·요양보호사는 자격, 매핑 없는 열)",
                                  "간호사·간호조무사·요양보호사 등 다수는 이메일 빈 칸 (오류 아님)", "재직구분 재직·휴직·퇴직, 고용형태 촉탁직(60세 이상)",
                                  "직위 병원장·진료부장·간호부장·수간호사·책임간호사·계장 (회사 고유 값)"],
                        "legitUnusual": [{"rowNo": first + legit_row, "detail": "재입사자의 예전 사번 행 — 퇴직 처리돼 있어 이력으로 정상 (오류 아님)"}]}}
@@ -647,7 +675,7 @@ def write_org(cdir):
 
 def build(df, used, out_dir, seed):
     company = {"id": CID, "name": NAME, "industry": "의료(요양병원)",
-               "profile": "160명 요양병원, 병동 3교대(D/E/N) 근무표가 코드로, 야간전담 간호사, 면허수당·나이트수당·당직, 시트마다 열 구성이 다른 급여대장"}
+               "profile": "160명 요양병원, 병동 3교대(D/E/N) 근무표가 코드로, 야간전담 간호사, 면허·자격수당·나이트수당·당직, 시트마다 열 구성이 다른 급여대장"}
     cdir = out_dir / CID
     cdir.mkdir(parents=True, exist_ok=True)
     emps = people(df, used, seed)
@@ -671,6 +699,16 @@ def build(df, used, out_dir, seed):
                     and e["basePay"] == MIN_MONTHLY)
     pacc = {"stale": prng.choice(carers), "hoursTypo": (typo_no, counts(duty[typo_no])["N"] + 2), "typoEmp": acc["typo"][0]}
     pay_key = write_payroll(cdir / PAY_FILE, emps, duty, duty_counts, pacc, prng)
+    # 근무표 'N ' 사고가 급여대장으로 번진 칸 (급여대장 쪽 사고는 GNMD-PAY-03)
+    carried = next(a for a in pay_key["accidents"] if a["type"] == "CARRIED_FROM_SOURCE")
+    typo = next(a for a in duty_key["accidents"] if a["type"] == "KIND_TYPO")
+    col_of = {h: xl_col_to_name(n) for n, (_k, h) in enumerate(NURSE_COLS)}
+    cells = ["%s%d" % (col_of[h], carried["rowNo"]) for h in carried["values"]]
+    total = next(r["rowNo"] for r in carried["affected"] if r["rowNo"] != carried["rowNo"])
+    typo["crossFileAffected"] = [
+        {"file": PAY_FILE, "sheet": carried["sheet"], "rowNo": carried["rowNo"], "accident": carried["id"], "cells": cells, "values": carried["values"]},
+        {"file": PAY_FILE, "sheet": carried["sheet"], "rowNo": total, "accident": carried["id"], "note": "합계 행 (SUM)",
+         "cells": ["%s%d" % (col_of[h], total) for h in carried["values"]]}]
     roster = write_roster(cdir, emps, seed)
     org, org_cols = write_org(cdir)
     return B.answer_key(company, "직원명부.xlsx", "조직.csv", roster["mapping"], org_cols, roster["errors"],

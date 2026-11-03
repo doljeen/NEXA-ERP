@@ -9,7 +9,8 @@
      급여대장_2026-12.xlsx(주간조·야간조 시트, 헤더가 '사번\\nID' 줄바꿈 한·영 병기, 외국인 성명은 한글 표기, 기숙사비·식비 공제, SETTING 시트),
      출퇴근기록_2026-12.csv(지문인식기 내보내기, UTF-8 BOM 없음, 한 줄 = 한 번 찍은 기록, 영문 헤더, 이름 10자에서 잘림, 야간조 퇴근은 다음 날).
 급여 규칙: 통상시급 = ROUND(기본급/209), 연장 1.5·야간 0.5·휴일 1.5 가산, 토요일(휴무일) 근무는 연장, 12/25는 시작일 기준 휴일,
-         기숙사 거주자 식대 현금 없음 + 기숙사비·식비 공제(숙식 모두 제공 시 통상임금 월액의 20% 이내, 가정: 지침 상한), 외국인도 4대보험 내국인과 같게(단순화).
+         기숙사 거주자 식대 현금 없음 + 기숙사비·식비 공제(합계 통상임금 월액의 20% 이내, 회사 적용값·가정: 지침은 숙소 유형별 8~20%),
+         외국인도 4대보험 내국인과 같게(단순화), 주 52시간 안(근무 계획에서 넘는 주의 연장을 줄임).
 """
 import datetime as dt
 
@@ -136,8 +137,26 @@ def plan_work(emps, rng):
                 continue
             ot = rng.choices([0, 1, 1.5, 2], [70, 12, 6, 12])[0] if e["dept"] != "운영지원팀" and d.weekday() < 5 else 0
             rows.append((d, e["shift"], ot))
+        cap_week(rows)
         plan[e["empNo"]] = rows
     return plan
+
+
+def cap_week(rows):
+    """주(월~일, 근무 시작일 기준) 근로시간 = 근무일 × 8 + 연장이 52시간을 넘지 않게, 넘는 주는 뒤쪽 날 연장부터 줄인다.
+    창고·물류는 근로시간 특례 업종이 아니라 주 52시간이 그대로 적용된다 (난수는 쓰지 않아 다른 값은 그대로)"""
+    weeks = {}
+    for n, (d, _s, _o) in enumerate(rows):
+        weeks.setdefault(d.isocalendar()[:2], []).append(n)
+    for ns in weeks.values():
+        over = sum(8 + rows[n][2] for n in ns) - 52
+        for n in reversed(ns):
+            if over <= 0:
+                break
+            d, s, o = rows[n]
+            cut = min(o, over)
+            rows[n] = (d, s, o - cut)
+            over -= cut
 
 
 def month_hours(rows):
@@ -198,8 +217,9 @@ def write_punch(path, emps, plan, acc, rng):
           ["CROSS_FIELD_RULE", "DUPLICATE_DETECT"], empNo=pb, rowNo=row_no[id(b_rec)], related={"empNo": pa, "rowNo": row_no[id(a_rec)]})
     ve = acc["visaEmp"]
     vrows = sorted(row_no[id(r)] for r in recs if r["id"] == ve["empNo"])
-    A.add("WORK_AFTER_VISA_EXPIRY", sheet, "체류기간 만료일 %s 이후 12월 내내 출퇴근 기록 (%d건) — 체류기간 연장·고용변동 신고 확인 필요"
-          % (ve["visaEnd"].isoformat(), len(vrows)), ["CROSS_FILE_MATCH", "CROSS_FIELD_RULE"], legal=True, empNo=ve["empNo"], rows=vrows[:1],
+    A.add("WORK_AFTER_VISA_EXPIRY", sheet, "직원명부 체류만료일 %s 이후 12월 내내 출퇴근 기록 (%d건) — 명부에 연장 허가 기록이 없어 확인 대상 "
+          "(만료 전 연장 신청 중이면 심사 중 취업 가능, 확정 위반 아님. MEOB-PAY-05와 같은 사람)"
+          % (ve["visaEnd"].isoformat(), len(vrows)), ["CROSS_FILE_MATCH", "CROSS_FIELD_RULE"], basis="회사 점검 기준 (확인 필요)", empNo=ve["empNo"], rows=vrows[:1],
           rowCount=len(vrows), firstRow=vrows[0], lastRow=vrows[-1])
     return {"file": path.name, "kind": "ATTENDANCE", "closestEntity": None, "supported": False, "format": "csv", "encoding": "utf-8 (BOM 없음)",
             "period": "2026-12", "sheetOrder": [sheet],
@@ -224,7 +244,7 @@ def write_punch(path, emps, plan, acc, rng):
 SETS = [("np", "National Pension 국민연금", B.RATES_2026["np"], "pct"), ("hi", "Health 건강보험", B.RATES_2026["hi"], "pct"),
         ("ltc", "LTC 장기요양", B.RATES_2026["ltc"], "pct"), ("ei", "Employment 고용보험", B.RATES_2026["ei"], "pct"),
         ("meal", "Meal non-tax 식대 비과세 한도", B.NONTAX_LIMIT, "won"), ("npFloor", "NP floor 하한", B.NP_FLOOR, "won"),
-        ("npCap", "NP cap 상한", B.NP_CAP, "won"), ("dormCap", "숙식비 공제 상한 (통상임금 월액 대비)", 0.2, "pct")]
+        ("npCap", "NP cap 상한", B.NP_CAP, "won"), ("dormCap", "숙식비 공제 상한 (통상임금 월액 대비, 회사 적용값)", 0.2, "pct")]
 COLS = [("empNo", "사번\nID"), ("name", "성명\nName"), ("nation", "국적\nNation"), ("dept", "팀\nTeam"), ("family", "공제가족\nDep."),
         ("basePay", "기본급\nBasic"), ("hourly", "통상시급\nHourly"), ("otH", "연장(h)\nOT"), ("nightH", "야간(h)\nNight"),
         ("holH", "휴일(h)\nHoliday"), ("otPay", "연장수당\nOT Pay"), ("nightPay", "야간수당\nNight Pay"), ("holPay", "휴일수당\nHoliday Pay"),
@@ -335,47 +355,84 @@ def write_payroll(path, emps, plan, acc):
     def loc(no):
         return {"rowNo": meta[sheet_of[no]]["rowOf"][no], "empNo": no}
 
+    H = dict(COLS)
+
+    def changed(no):
+        a, i = vals[no]
+        return [k for k, _ in COLS if k not in ("empNo", "name", "memo") and a.get(k) != i.get(k)]
+
+    def diff_vals(no):
+        a, i = vals[no]
+        return {H[k]: {"actual": a[k], "expected": i[k]} for k in changed(no)}
+
+    def where(no):
+        """값이 달라진 행 + 그 시트 합계 행 (SUM)"""
+        sh = sheet_of[no]
+        return [{"sheet": sh, "rowNo": meta[sh]["rowOf"][no]}, {"sheet": sh, "rowNo": meta[sh]["totalRow"]}]
+
     no = acc["dormOver"]
     a, i = vals[no]
     cap = ROUNDDOWN(a["hourly"] * 209 * S["dormCap"], 0)
-    A.add("DORM_DEDUCTION_OVER_LIMIT", at(no)["sheet"], "기숙사비 30만 + 식비 15만 = 45만원 공제 > 통상임금 월액의 20%% (%s원) — 숙식비 징수 상한 초과"
+    v = diff_vals(no)
+    v[H["dorm"]]["note"] = "기대값은 회사 표준 기숙사비. 1인실 30만원이면 식비 15만원과 합쳐 상한을 넘으므로 기숙사비는 %s원 이하여야 함"         % format(cap - a["food"], ",")
+    A.add("DORM_DEDUCTION_OVER_LIMIT", at(no)["sheet"], "기숙사비 30만(1인실) + 식비 15만 = 45만원 공제 > 통상임금 월액의 20%% (%s원) — 회사 숙식비 공제 상한 초과. "
+          "상한 20%%는 회사 적용값(가정, rules.dormitory): 지침의 숙소 유형별 상한(8~20%%) 중 가장 높은 값이라 어느 유형이어도 초과"
           % format(cap, ","), ["LEGAL_RULE_COMPARE", "CROSS_FIELD_RULE"], legal=True, **loc(no),
-          cells=["%s%d" % (L["dorm"], at(no)["rowNo"]), "%s%d" % (L["food"], at(no)["rowNo"])],
-          values={"숙식비 공제": {"actual": a["dorm"] + a["food"], "limit": cap}})
+          cells=["%s%d" % (L[k], at(no)["rowNo"]) for k in ("dorm", "food", "ded", "net")], values=v, limit={"숙식비 공제 합계": {"actual": a["dorm"] + a["food"], "limit": cap, "basis": "통상임금 월액(통상시급 × 209) × 20%"}},
+          cascade=[H[k] for k in changed(no) if k != "dorm"], affected=where(no))
     no = acc["movedOut"]
     a, i = vals[no]
     A.add("DORM_CHARGED_AFTER_MOVEOUT", at(no)["sheet"], "11/30 기숙사 퇴실(직원명부 기숙사 '퇴실 11/30')인데 12월에도 기숙사비·식비 공제, 식대 현금 0",
-          ["CROSS_FILE_MATCH"], **loc(no), cells=["%s%d" % (L[k], at(no)["rowNo"]) for k in ("meal", "dorm", "food")],
-          values={"실지급": {"actual": a["net"], "expected": i["net"]}})
+          ["CROSS_FILE_MATCH"], **loc(no), cells=["%s%d" % (L[k], at(no)["rowNo"]) for k in changed(no)],
+          values=diff_vals(no), cascade=[H[k] for k in changed(no) if k not in ("meal", "dorm", "food")], affected=where(no))
     no = acc["probation"]
     a, i = vals[no]
     A.add("PROBATION_REDUCTION_ILLEGAL", at(no)["sheet"], "11월 입사 물류(단순노무) 근로자 기본급을 수습 90%%(%s원)로 지급 — 단순노무업무는 수습 감액 불가, "
           "1년 미만 계약도 불가 (최저임금법 제5조)" % format(a["basePay"], ","), ["LEGAL_RULE_COMPARE", "CROSS_FILE_MATCH"], legal=True, **loc(no),
-          cells=["%s%d" % (L["basePay"], at(no)["rowNo"])], values={"기본급": {"actual": a["basePay"], "expected": i["basePay"]}})
+          cells=["%s%d" % (L[k], at(no)["rowNo"]) for k in changed(no)], values=diff_vals(no), cascade=[H[k] for k in changed(no) if k != "basePay"],
+          affected=where(no))
     no, typed = acc["otTypo"]
     a, i = vals[no]
     A.add("HOURS_MISMATCH_CROSS_FILE", at(no)["sheet"], "출퇴근기록 집계 연장 %s시간을 %s시간으로 입력" % (i["otH"], typed), ["CROSS_FILE_MATCH"], **loc(no),
-          cells=["%s%d" % (L["otH"], at(no)["rowNo"])], values={"연장(h)": {"actual": typed, "expected": i["otH"]},
-                                                               "연장수당": {"actual": a["otPay"], "expected": i["otPay"]}})
+          cells=["%s%d" % (L[k], at(no)["rowNo"]) for k in changed(no)], values=diff_vals(no), cascade=[H[k] for k in changed(no) if k != "otH"], affected=where(no))
     no = acc["visa"]
-    A.add("VISA_EXPIRED_STILL_PAID", at(no)["sheet"], "체류기간 만료(직원명부 체류만료일) 후 12월 급여 전액 지급, 비고 '체류연장 신청 중' — 연장 허가 확인 없이 고용 유지",
-          ["CROSS_FILE_MATCH", "CROSS_FIELD_RULE"], legal=True, **loc(no))
+    A.add("VISA_EXPIRED_STILL_PAID", at(no)["sheet"], "직원명부 체류만료일(2026-11-20)이 지났는데 12월 급여 전액 지급, 비고 '체류연장 신청 중' — 명부에 연장 허가 기록이 없어 "
+          "회사 점검 기준(만료일 지난 재직자는 확인 대상)에 걸림. 만료 전에 연장을 신청했으면 심사 중에도 취업할 수 있고 위반 책임은 고용 쪽이라, "
+          "법 위반인지는 신청·허가 서류로 확인해야 함 (확정 위반 아님)",
+          ["CROSS_FILE_MATCH", "CROSS_FIELD_RULE"], basis="회사 점검 기준 (확인 필요)", **loc(no))
     no = acc["keyMissing"]
     A.add("KEY_MISSING", at(no)["sheet"], "사번 칸이 비어 있고 성명은 한글 표기 '%s' (직원명부는 여권 영문 '%s') → 이름으로도 바로 못 찾음"
           % (vals[no][0]["name"], next(e["name"] for e in emps if e["empNo"] == no)), ["NAME_MATCH", "REQUIRED"], **loc(no),
           cells=["%s%d" % (L["empNo"], at(no)["rowNo"])])
     used = {at(x)["sheet"] for x in (acc["dormOver"], acc["movedOut"], acc["probation"], acc["otTypo"][0], acc["visa"], acc["keyMissing"])}
+    # 법정 기준과 다른 회사 규칙: 12/25 주간 근무의 정시 뒤 연장을 연장 1.5로 (휴일 8시간 초과분은 2배)
+    hol_ot = {no: sum(o for d, sft, o in plan[no] if d in HOLIDAYS_2026 and sft == "주간") for no in vals if sheet_of[no] == "주간조"}
+    hol_ot = {no: h for no, h in hol_ot.items() if h}
+    hol_rows = sorted(meta["주간조"]["rowOf"][no] for no in hol_ot)
+    eve = sorted(no for no in vals if sheet_of[no] == "야간조" and any(d == XMAS - dt.timedelta(days=1) for d, *_x in plan[no]))
+    legal = [{"rule": "holidayWorkBasis", "sheet": "야간조", "company": "야간조 12/24 밤 근무의 12/25 0~7시는 휴일로 안 봄 (시작일 기준)",
+              "statutory": "휴일(0~24시)에 걸친 시간은 휴일근로", "rows": sorted(meta["야간조"]["rowOf"][x] for x in eve), "empNos": eve}]
+    if hol_ot:
+        legal.append({"rule": "holidayPremium", "sheet": "주간조",
+                      "company": "12/25 휴일근무 8시간을 넘긴 연장 %d명을 연장(1.5배)으로 지급" % len(hol_ot),
+                      "statutory": "휴일근로 8시간 초과분은 통상임금의 100% 가산 = 2배 (근로기준법 제56조 제2항)",
+                      "rows": hol_rows, "empNos": sorted(hol_ot, key=lambda x: meta["주간조"]["rowOf"][x]),
+                      "values": {no: {"휴일 8시간 초과(h)": h, "부족액": ROUND(vals[no][0]["hourly"] * h * 0.5, 0)} for no, h in hol_ot.items()}})
+    # 비교군 = 사고 없는 시트. 회사 규칙의 법정 편차(legalDeviations, 행 목록 포함)는 비교군에도 있을 수 있다
+    clean = [s for s in ("주간조", "야간조") if s not in used]
     return {"file": path.name, "kind": "PAYROLL", "closestEntity": "PAY_RESULT_HISTORY", "supported": False,
             "sheetOrder": ["주간조", "야간조", "SETTING", "세액표"], "sheets": {**meta, "SETTING": st.meta(), "세액표": tax_meta},
             "expectedMapping": {"monthlyPayrollBilingual": {h: k for k, h in COLS}},
-            "rules": {"ordinaryHourlyWage": {"expr": "round(basePay/209)"}, "overtime": "연장 1.5 (토요일 휴무일 근무 8시간 포함)",
+            "rules": {"ordinaryHourlyWage": {"expr": "round(basePay/209)"},
+                      "overtime": "연장 1.5 (토요일 휴무일 근무 8시간 포함). 12/25 휴일근무 날 정시 뒤 연장도 연장 1.5 (법정은 휴일 8시간 초과분 2배 — legalDeviations)",
+                      "weeklyLimit": "주 52시간 (월~일, 근무 시작일 기준. 물류·창고는 근로시간 특례 업종 아님) — 넘는 주 없음",
                       "nightPremium": "야간 0.5 (야간조 하루 7시간)", "holidayWork": "12/25 시작 근무 8시간 × 1.5 (시작일 기준, 회사 단순화)",
-                      "dormitory": "기숙사 거주자: 식대 현금 0, 기숙사비 20만·식비 15만 공제. 숙식 모두 제공 시 통상임금 월액 20% 이내 (가정: 고용노동부 지침 상한)",
+                      "dormitory": "기숙사 거주자: 식대 현금 0, 기숙사비 20만·식비 15만 공제. 공제 합계 상한 = 통상임금 월액의 20% (회사 적용값, 가정: "
+                                   "고용노동부 외국인근로자 숙식비 징수 지침은 제공 숙식·숙소 유형별로 8~20%. 이 회사 기숙사를 숙식 모두 제공·주택형으로 보고 가장 높은 20%를 씀)",
                       "foreignWorkers": "외국인도 4대보험·간이세액표 내국인과 같게 (단순화. 국민연금은 실제로 국가별 상호주의)",
                       "insuranceRounding": "floor10", "mealInInsuranceBase": False},
-            "legalDeviations": [{"rule": "holidayWorkBasis", "company": "야간조 12/24 밤 근무의 12/25 0~7시는 휴일로 안 봄 (시작일 기준)",
-                                 "statutory": "휴일(0~24시)에 걸친 시간은 휴일근로"}],
-            "accidents": A.items, "cleanSheets": [s for s in ("주간조", "야간조") if s not in used],
+            "legalDeviations": legal,
+            "accidents": A.items, "cleanSheets": clean,
             "valueNoise": [{"type": "BILINGUAL_HEADER", "detail": "헤더 칸 안에 줄바꿈으로 한글·영문 ('사번\\nID')"},
                            {"type": "NAME_SCRIPT_DIFFERS", "detail": "외국인 성명이 급여대장은 한글 표기, 직원명부·출퇴근기록은 여권 영문 — 사번으로 맞춰야 함"}],
             "crossFile": {"punch": {"file": PUNCH_FILE, "detail": "연장·야간·휴일 시간"},

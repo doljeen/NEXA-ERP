@@ -53,6 +53,10 @@ def people(df, used, seed):
         e.update(name=p["name"], birthDate=B.birth_of(age, rng), sex=p["sex"], age=age, mobile=B.phone(rng),
                  hireDate=min(dt.date(max(2014, 2026 - rng.randint(0, 10)), rng.choice([1, 3, 3, 6, 9]), rng.choice([1, 2, 15])), dt.date(2026, 9, 1)),
                  resignDate=None, status="재직")
+        # 강사·직원은 대학 졸업(만 22세 무렵) 뒤 입사 (16세 입사 같은 값이 나오지 않게).
+        # 직원번호 순서는 처음 뽑은 날짜로 매겨 두어 다른 사람의 번호·시수 난수가 바뀌지 않게 한다
+        e["_hire0"] = e["hireDate"]
+        e["hireDate"] = min(max(e["hireDate"], dt.date(e["birthDate"].year + 22, 3, 2)), dt.date(2026, 9, 1))
         e["basePay"] = {"원장": 6_500_000, "부원장": 5_000_000, "상담실장": 3_400_000, "행정": 2_500_000, "차량기사": 2_400_000}.get(e["position"]) \
             if e["kind"] == "행정" else (rng.randint(26, 42) * 100_000 if e["kind"] == "상근" else None)
         e["unit"] = rng.choice([35_000, 40_000, 40_000, 45_000, 50_000]) if e["kind"] == "시간" else \
@@ -62,7 +66,7 @@ def people(df, used, seed):
     for div in INSTR:
         lead = max((e for e in emps if e["dept"] == div and e["kind"] == "상근"), key=lambda e: (e["age"], e["name"]))
         lead["position"] = "부장"
-    emps.sort(key=lambda e: (e["kind"] != "행정", e["hireDate"], e["name"]))
+    emps.sort(key=lambda e: (e["kind"] != "행정", e["_hire0"], e["name"]))
     na = nt = 0
     for e in emps:
         if e["kind"] == "행정":
@@ -103,6 +107,7 @@ def write_hours(path, emps, classes, acc):
     truth, shown_total = {}, {}
     sums = {}  # 시트·이름 → 엑셀이 계산하는 합 (문자 칸 제외)
     ranges = {}
+    emps = [e for e in emps if e["status"] == "재직"]  # 퇴사한 위촉강사는 12월 시수표에 없음
     for div in INSTR:
         sh = book.sheet(div)
         sh.put("A", 1, "2026년 12월 강의시수표 (%s)" % div, "title")
@@ -165,16 +170,22 @@ def write_hours(path, emps, classes, acc):
     A.add("NAME_KEY_COLLISION", "강사별집계", "동명이인 '%s'(%s %s, %s %s)을 이름 SUMIF로 합쳐 한 행 %s시간 — 두 사람 시수가 섞이고 %s 강사 행은 집계에 없음"
           % (e1["name"], e1["dept"], e1["empNo"], e2["dept"], e2["empNo"], shown_total[e1["name"]], e2["empNo"]),
           ["NAME_MATCH", "DUPLICATE_DETECT", "CROSS_SHEET_LOOKUP"], rowNo=rr, empNos=[e1["empNo"], e2["empNo"]], cells=["D%d" % rr],
-          values={e1["empNo"]: {"시수": {"actual": shown_total[e1["name"]], "expected": truth[e1["empNo"]]}},
-                  e2["empNo"]: {"시수": {"actual": None, "expected": truth[e2["empNo"]]}}})
+          values={"12월 시수": {"actual": shown_total[e1["name"]], "expected": truth[e1["empNo"]]}},
+          missingRows=[{"name": e2["name"], "dept": e2["dept"], "empNo": e2["empNo"], "12월 시수": truth[e2["empNo"]],
+                        "detail": "이 행(%s %s)의 시수만 남기고 %s %s 행을 따로 두어야 함" % (e1["dept"], e1["empNo"], e2["dept"], e2["empNo"])}])
     no, cname, wi = acc["text"]
     e = emp_of[no]
     rows = meta[e["dept"]]["rowsOf"][no]
     r = rows[[c for c, _w in classes[no]].index(cname)]
     h = dict(classes[no])[cname][wi]
+    rs = row_sum[e["name"]]
     A.add("TEXT_NUMBER", e["dept"], "%s %s 보강 시수를 '%d(보강)' 글자로 입력 → 계(SUM)·강사별집계에서 %d시간 빠짐" % (cname, WEEKS[wi], h, h),
           ["VALUE_NORMALIZE", "RECOMPUTE_CHECK"], empNo=no, rowNo=r, cells=["%s%d" % ("DEFGH"[wi], r)],
-          values={"보강 시수": {"actual": "%d(보강)" % h, "expected": h}})
+          cascade=["I%d" % r, "강사별집계!D%d" % rs],
+          affected=[{"sheet": e["dept"], "rowNo": r}, {"sheet": "강사별집계", "rowNo": rs}],
+          values={WEEKS[wi]: {"actual": "%d(보강)" % h, "expected": h},
+                  "계": {"actual": sum(dict(classes[no])[cname]) - h, "expected": sum(dict(classes[no])[cname])}},
+          cascadeValues={"강사별집계!D%d" % rs: {"header": "12월 시수", "actual": shown_total[e["name"]], "expected": shown_total[e["name"]] + h}})
     key = {"file": path.name, "kind": "LECTURE_HOURS", "closestEntity": None, "supported": False, "period": "2026-12",
            "sheetOrder": list(INSTR) + ["강사별집계"], "sheets": meta,
            "expectedMapping": {"lectureHoursByClass": {"강사": "name", "과목": "subject", "반": "className", **{w: "week%d" % (i + 1) for i, w in enumerate(WEEKS)},
@@ -240,6 +251,8 @@ def write_pay(path, emps, nov, dec_shown, truth, acc):
     plans = []
     for ym in ("2026-11", "2026-12"):
         for e in emps:
+            if e["status"] != "재직":  # 2026-08 이전 퇴사자(위촉강사)는 11·12월 강사료 없음
+                continue
             no = e["empNo"]
             if e["kind"] == "행정":
                 h = None
@@ -260,7 +273,6 @@ def write_pay(path, emps, nov, dec_shown, truth, acc):
                     opts["insurance"], tag = True, "INSBIZ"
                 if no == acc["unit"]:
                     opts["unitUsed"], tag = e["unit"] - 5_000, "UNIT"
-                    opts["memo"] = "12월 단가 인상"
                 if no == acc["noIns"]:
                     opts.update(noIns=True, memo="단시간")
                     tag = "NOINS"
@@ -282,6 +294,15 @@ def write_pay(path, emps, nov, dec_shown, truth, acc):
     def cells(r, ks):
         return ["%s%d" % (col[k], r) for k in ks]
 
+    hdr = dict(PAY_COLS)
+    amount_keys = [k for k, _ in PAY_COLS if k not in ("ym", "empNo", "name", "kindLabel", "dept", "subject", "incomeType", "memo")]
+
+    def full(r, a, i, primary):
+        """사고 행에서 회사 규칙 값과 다른 칸 전부: cells(원인 칸) + cascade(그 때문에 같이 틀린 칸) + values(헤더별 실제·기대)"""
+        diff = [k for k in amount_keys if a.get(k) != i.get(k) and k not in primary]
+        return {"cells": cells(r, primary), "cascade": cells(r, diff),
+                "values": {hdr[k]: {"actual": a[k], "expected": i[k]} for k in primary + diff if a.get(k) != i.get(k)}}
+
     for ym, e, a, i, tag in plans:
         r = row_no[(ym, e["empNo"])]
         if tag == "MISCLASS" and ym == "2026-12":
@@ -291,45 +312,52 @@ def write_pay(path, emps, nov, dec_shown, truth, acc):
                   empNo=e["empNo"], rows=rr, cells=cells(r, ["incomeType", "hours", "unit"]))
         elif tag == "COMBINED":
             A.add("WITHHOLDING_COMBINED_RATE", sheet, "사업소득 원천징수를 소득세 칸에 3.3%%(%s원) 한꺼번에, 지방소득세 0 → 소득세 3%%·지방소득세 0.3%% 따로 신고해야 함"
-                  % format(a["tax"], ","), ["LEGAL_RULE_COMPARE", "RECOMPUTE_CHECK"], legal=True, empNo=e["empNo"], rowNo=r, cells=cells(r, ["tax", "ltax"]),
-                  values={"소득세": {"actual": a["tax"], "expected": i["tax"]}, "지방소득세": {"actual": a["ltax"], "expected": i["ltax"]}})
+                  % format(a["tax"], ","), ["LEGAL_RULE_COMPARE", "RECOMPUTE_CHECK"], legal=True, empNo=e["empNo"], rowNo=r, **full(r, a, i, ["tax", "ltax"]))
         elif tag == "INSBIZ":
             A.add("INSURANCE_ON_BUSINESS_INCOME", sheet, "소득구분 '사업'(3.3%)인데 건강보험·장기요양·고용보험을 공제 — 사업소득자는 사업장 4대보험 대상 아님 (둘 중 하나가 틀림)",
-                  ["CROSS_FIELD_RULE", "LEGAL_RULE_COMPARE"], legal=True, empNo=e["empNo"], rowNo=r, cells=cells(r, ["hi", "ltc", "ei"]),
-                  values={"공제합계": {"actual": a["ded"], "expected": i["ded"]}})
+                  ["CROSS_FIELD_RULE", "LEGAL_RULE_COMPARE"], legal=True, empNo=e["empNo"], rowNo=r, **full(r, a, i, ["hi", "ltc", "ei"]))
         elif tag == "UNIT":
-            A.add("UNIT_PRICE_MISMATCH", sheet, "시간당단가는 인상된 %s원인데 강의료는 옛 단가 %s원 × %s시간 → 강의료 ≠ 시수 × 단가"
-                  % (format(e["unit"], ","), format(e["unit"] - 5_000, ","), a["hours"]), ["RECOMPUTE_CHECK"], empNo=e["empNo"], rowNo=r,
-                  cells=cells(r, ["unit", "lecture"]), values={"강의료": {"actual": a["lecture"], "expected": i["lecture"]}})
+            A.add("UNIT_PRICE_MISMATCH", sheet, "12월 강의료를 시간당단가 열(%s원, 11월 %d행과 같은 단가)이 아니라 %s원 × %s시간으로 계산 → 강의료 ≠ 시수 × 단가. "
+                  "4대보험·소득세도 줄어든 강의료 기준 (cascade)"
+                  % (format(e["unit"], ","), row_no[("2026-11", e["empNo"])], format(e["unit"] - 5_000, ","), a["hours"]), ["RECOMPUTE_CHECK"],
+                  empNo=e["empNo"], rowNo=r, **full(r, a, i, ["unit", "lecture"]))
         elif tag == "NOINS":
             A.add("INSURANCE_EXEMPTION_WRONG", sheet, "시간강사 12월 %s시간(60시간 이상)인데 4대보험 0, 비고 '단시간'" % a["hours"],
-                  ["LEGAL_RULE_COMPARE", "RECOMPUTE_CHECK"], legal=True, empNo=e["empNo"], rowNo=r, cells=cells(r, ["np", "hi", "ei"]),
-                  values={"국민연금": {"actual": 0, "expected": i["np"]}, "건강보험": {"actual": 0, "expected": i["hi"]}})
+                  ["LEGAL_RULE_COMPARE", "RECOMPUTE_CHECK"], legal=True, empNo=e["empNo"], rowNo=r, **full(r, a, i, ["np", "hi", "ltc", "ei"]))
         elif tag == "HOMONYM":
-            A.add("CARRIED_FROM_SOURCE", sheet, "강의시수표 강사별집계의 동명이인 합산(SEOE-HRS-01)을 그대로 옮김 → 강의시수 %s (실제 %s)" % (a["hours"], i["hours"]),
-                  ["CROSS_FILE_MATCH", "NAME_MATCH"], empNo=e["empNo"], rowNo=r, source="SEOE-HRS-01", cells=cells(r, ["hours", "lecture"]),
-                  values={"강의시수": {"actual": a["hours"], "expected": i["hours"]}, "강의료": {"actual": a["lecture"], "expected": i["lecture"]}})
+            under = e["kind"] == "시간" and i["hours"] < 60 <= a["hours"]
+            A.add("CARRIED_FROM_SOURCE", sheet, "강의시수표 강사별집계의 동명이인 합산(SEOE-HRS-01)을 그대로 옮김 → 강의시수 %s (실제 %s)%s" % (
+                a["hours"], i["hours"], ". 실제 시수로는 월 60시간 미만이라 회사 규칙상 4대보험 0, 소득세도 다시 계산 (cascade)" if under else ""),
+                  ["CROSS_FILE_MATCH", "NAME_MATCH"], empNo=e["empNo"], rowNo=r, source="SEOE-HRS-01", **full(r, a, i, ["hours", "lecture"]))
         elif tag == "TEXTCARRY":
             A.add("CARRIED_FROM_SOURCE", sheet, "강의시수표의 '보강' 글자 사고(SEOE-HRS-02)로 빠진 시수를 그대로 옮김 → 강의시수 %s (실제 %s), 80시간 미만이라 금액 영향은 없음"
-                  % (a["hours"], i["hours"]), ["CROSS_FILE_MATCH"], empNo=e["empNo"], rowNo=r, source="SEOE-HRS-02", cells=cells(r, ["hours"]),
-                  values={"강의시수": {"actual": a["hours"], "expected": i["hours"]}})
+                  % (a["hours"], i["hours"]), ["CROSS_FILE_MATCH"], empNo=e["empNo"], rowNo=r, source="SEOE-HRS-02", **full(r, a, i, ["hours"]))
         elif tag == "TYPO":
-            A.add("HOURS_MISMATCH_CROSS_FILE", sheet, "강사별집계 %s시간을 %s시간으로 옮겨 적음" % (i["hours"], a["hours"]), ["CROSS_FILE_MATCH"],
-                  empNo=e["empNo"], rowNo=r, cells=cells(r, ["hours", "lecture"]),
-                  values={"강의시수": {"actual": a["hours"], "expected": i["hours"]}, "강의료": {"actual": a["lecture"], "expected": i["lecture"]}})
+            A.add("HOURS_MISMATCH_CROSS_FILE", sheet, "강사별집계 %s시간을 %s시간으로 옮겨 적음 → 강의료와 4대보험·소득세도 같이 틀림 (cascade)" % (i["hours"], a["hours"]),
+                  ["CROSS_FILE_MATCH"], empNo=e["empNo"], rowNo=r, **full(r, a, i, ["hours", "lecture"]))
+    # 월 60시간 미만이라 4대보험 0인 시간강사 행 중 그달 1일에 3개월 이상 근무한 행 (고용보험은 법정 적용 대상)
+    short_rows = sorted(row_no[(ym, e["empNo"])] for ym, e, a, _i, _t in plans
+                        if e["kind"] == "시간" and a["hours"] is not None and a["hours"] < 60 and a["ei"] == 0
+                        and e["hireDate"] <= dt.date(int(ym[:4]), int(ym[5:]) - 3, 1))
     return {"file": path.name, "kind": "PAYROLL", "closestEntity": "PAY_RESULT_HISTORY", "supported": False, "format": "csv", "encoding": "cp949",
             "sheetOrder": [sheet],
             "sheets": {sheet: {"role": "lecturePayLong", "headerRows": [1], "firstDataRow": first, "lastDataRow": first + len(plans) - 1,
                                "note": "CSV라 시트가 없음", "rowOf": {"%s|%s" % k: v for k, v in row_no.items()}}},
             "expectedMapping": {"lecturePayLong": {h: ("payMonth" if k == "ym" else k) for k, h in PAY_COLS}},
             "rules": {"fullTime": "상근강사: 기본급 + 초과수당 MAX(0, 시수−80) × 25,000 + 식대 20만 (근로소득)",
-                      "hourly": "시간강사: 강의료 = 시수 × 시간당단가 (근로소득), 월 시수 60시간 이상만 4대보험",
+                      "hourly": "시간강사: 강의료 = 시수 × 시간당단가 (근로소득), 월 시수 60시간 이상만 4대보험 (회사 규칙. 고용보험은 법과 다름 → legalDeviations)",
+                      "director": "원장은 법인에 고용된 원장(대표자 아님)으로 보고 다른 직원처럼 4대보험 공제 (생성기 가정)",
                       "contractor": "위촉강사: 강의료 = 시수 × 단가 (사업소득), 소득세 3%·지방소득세 = 소득세×10% (각각 10원 미만 버림), 4대보험 없음",
                       "insuranceRounding": "floor10", "incomeTax": "근로소득은 간이세액표(단순화)"},
-            "legalDeviations": [{"rule": "businessIncomeWithholding", "company": "3.3%를 소득세 칸에 한꺼번에 1건", "statutory": "소득세 3% + 지방소득세 0.3%"}],
+            "legalDeviations": [{"rule": "businessIncomeWithholding", "company": "3.3%를 소득세 칸에 한꺼번에 1건", "statutory": "소득세 3% + 지방소득세 0.3%"},
+                                {"rule": "shortHoursEmploymentInsurance", "company": "월 60시간 미만 시간강사는 4대보험 전부 0 (고용보험 포함)",
+                                 "statutory": "고용보험은 월 60시간 미만이라도 3개월 이상 계속 근로하면 적용 (고용보험법 시행령 제3조). "
+                                              "국민연금·건강보험의 월 60시간 미만 제외는 생성기의 단순화 가정 (실제 가입 요건은 법마다 다름)",
+                                 "rows": short_rows}],
             "accidents": A.items,
             "legitUnusual": ["근로소득·사업소득 행이 한 파일 (소득구분 열)", "행정 직원은 강의시수·단가 빈 칸", "위촉강사는 4대보험 0이 정상",
-                             "시간강사 60시간 미만은 4대보험 0이 정상 (회사 규칙)"],
+                             "명부의 퇴사자 위촉강사 2명(2026년 8월 이전 퇴사)은 11·12월 강사료·시수표에 없음",
+                             "원장도 4대보험 공제: 법인에 고용된 원장(근로자)으로 가정"],
             "valueNoise": [{"type": "LONG_TWO_MONTHS", "detail": "11월·12월이 한 파일에 세로로 (지급월 열)"}],
             "crossFile": {"hours": {"file": HOURS_FILE, "detail": "12월 강의시수 = 강의시수표 강사별집계 (이름으로 옮겨 적음)"}}}
 
@@ -375,11 +403,11 @@ def write_roster(cdir, emps, acc, seed):
     for i in take(1, lambda r: r["_kind"] == "시간강사"):
         rows[i]["empType"] = "알바"
         errs.add(i, "empType", "INVALID_ENUM", "고용형태 '알바' (코드표: 정규직·계약직·시간제·위촉(사업소득))")
-    # 퇴사자 1명(정상) + 퇴사일 < 입사일 1명
-    q = take(2, lambda r: r["_kind"] == "위촉강사" and r["hireDate"])
-    rows[q[0]].update(status="퇴사", resignDate=dt.date(2026, 8, 31))
-    rows[q[1]].update(status="퇴사", resignDate=rows[q[1]]["hireDate"] - dt.timedelta(days=rng.randint(30, 200)))
-    errs.add(q[1], "resignDate", "DATE_ORDER", "퇴사일 < 입사일")
+    # 퇴사자 2명(위촉강사, 강사료·시수표에 없음) 중 1명은 퇴사일을 입사일보다 앞선 날짜로 잘못 적음. 재직구분 '퇴사'는 맞는 값
+    bad = next(n for n, r in enumerate(rows) if r["_e"]["empNo"] == acc["retBad"])
+    true_resign = rows[bad]["resignDate"]
+    rows[bad]["resignDate"] = rows[bad]["hireDate"] - dt.timedelta(days=rng.randint(30, 200))
+    errs.add(bad, "resignDate", "DATE_ORDER", "퇴사일 < 입사일 (실제 퇴사일 %s)" % true_resign.isoformat())
     # 시간강사 → 상근 전환하며 새 번호, 예전 시간강사 행 '재직' 그대로
     src = take(1, lambda r: r["_kind"] == "상근강사" and r["hireDate"])[0]
     old = dict(rows[src])
@@ -485,12 +513,22 @@ def build(df, used, out_dir, seed):
     text_e = rng.choice(full) if full else pick(lambda e: e["kind"] == "상근")[0]
     tc = rng.choice(classes[text_e["empNo"]])
     acc_h = {"homonym": (h1["empNo"], h2["empNo"]), "text": (text_e["empNo"], tc[0], 3 if tc[1][3] else 0)}
+    # 퇴사한 위촉강사 2명 (명부에만, 11·12월 강사료·시수표에 없음): 2026-08-31 퇴사 1명, 2026-02-28 퇴사 1명(명부 퇴사일 오기 DATE_ORDER)
+    busy = {misclass["empNo"], combined["empNo"], ins_biz["empNo"], unit_e["empNo"], typo_e["empNo"], noins_e["empNo"], text_e["empNo"], *acc_h["homonym"]}
+    ret_ok, ret_bad = B.rng_for(CID, "retire", seed).sample(
+        [e for e in pick(lambda e: e["kind"] == "위촉") if e["empNo"] not in busy and e["hireDate"] < dt.date(2026, 1, 1)], 2)
+    ret_ok.update(status="퇴사", resignDate=dt.date(2026, 8, 31))
+    ret_bad.update(status="퇴사", resignDate=dt.date(2026, 2, 28))
     hours_key, shown_total, truth = write_hours(cdir / HOURS_FILE, emps, classes, acc_h)
     acc_p = {"misclass": misclass["empNo"], "combined": combined["empNo"], "insBiz": ins_biz["empNo"], "unit": unit_e["empNo"],
              "noIns": noins_e["empNo"], "homonym": acc_h["homonym"], "textCarry": text_e["empNo"], "typo": (typo_e["empNo"], shown_total[typo_e["name"]] + 6)}
     pay_key = write_pay(cdir / PAY_FILE, emps, nov, shown_total, truth, acc_p)
-    acc_r = {"misclass": misclass["empNo"], "reserved": [misclass["empNo"], *acc_h["homonym"], combined["empNo"], ins_biz["empNo"], unit_e["empNo"],
-                                                          typo_e["empNo"], noins_e["empNo"], text_e["empNo"]]}
+    acc_r = {"misclass": misclass["empNo"], "retBad": ret_bad["empNo"],
+             "reserved": [misclass["empNo"], *acc_h["homonym"], combined["empNo"], ins_biz["empNo"], unit_e["empNo"],
+                          typo_e["empNo"], noins_e["empNo"], text_e["empNo"], ret_ok["empNo"], ret_bad["empNo"]]}
+    for h in hours_key["accidents"]:
+        h["crossFileAffected"] = [{"file": PAY_FILE, "sheet": a["sheet"], "rowNo": a["rowNo"], "cells": a["cells"] + a["cascade"], "values": a["values"],
+                                   "accident": a["id"]} for a in pay_key["accidents"] if a.get("source") == h["id"]]
     roster = write_roster(cdir, emps, acc_r, seed)
     org, org_cols = write_org(cdir)
     return B.answer_key(company, "직원명부.xlsx", "조직.csv", roster["mapping"], org_cols, roster["errors"],
