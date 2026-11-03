@@ -1,5 +1,5 @@
 verify-fastapi:
-  stage: verify
+  stage: build
   image: python:3.11-slim
 
   tags:

@@ -32,8 +32,9 @@ build-user:
         - .gitlab/ci/deploy.yml
         - .gitlab/ci/gradle.yml
         - compose.dev.yml
-        - infra/compose/**/*
-        - infra/docker/**/*
+        - infra/compose/backend.yml
+        - infra/compose/data.yml
+        - infra/docker/Dockerfile.user-ci
       when: on_success
       allow_failure: false
 
