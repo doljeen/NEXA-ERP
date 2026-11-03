@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from ai import llm
+from ai import llm, ocr
 from ai.schemas import LlmChatRequest, LlmChatResponse, LlmHealthResponse
 from core.response import ApiResult, ok
 
@@ -10,7 +10,7 @@ router = APIRouter(prefix="/llm", tags=["LLM"])
 @router.get("/health", response_model=ApiResult[LlmHealthResponse])
 def llm_health():
     """로컬 LLM 생존 여부와 GMS 설정 여부."""
-    return ok({"local": llm.local_status(), "gms": llm.gms_status()})
+    return ok({"local": llm.local_status(), "gms": llm.gms_status(), "ocr": ocr.ocr_status()})
 
 
 @router.post("/chat", response_model=ApiResult[LlmChatResponse])
