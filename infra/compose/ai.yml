@@ -35,6 +35,9 @@ services:
       UPLOAD_DIR: /app/uploads
       LLM_TEST_API_ENABLED: "false"
 
+      OCR_BASE_URL: ${OCR_BASE_URL:-}
+      OCR_TIMEOUT: ${OCR_TIMEOUT:-30}
+
     volumes:
       - fastapi-uploads:/app/uploads
 
