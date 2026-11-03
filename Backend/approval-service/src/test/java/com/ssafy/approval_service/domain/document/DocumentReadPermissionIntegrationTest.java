@@ -185,10 +185,11 @@ class DocumentReadPermissionIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
         expectReadable(documentId, user(firstApprover));    // 반려만으로는 결재선이 지워지지 않는다
 
+        // 그 사이 팀장이 바뀌어 재기안 결재선은 새 팀장으로 만들어진다
+        assignTeamHead(drafter, secondApprover);
         mvc.perform(post(BASE + "/" + documentId + "/resubmit").with(user(drafter))
                         .contentType(MediaType.APPLICATION_JSON).content("""
-                                {"title":"권한 테스트 (재기안)","approvalLines":[%s]}"""
-                                .formatted(line(secondApprover, 1, "APPROVER"))))
+                                {"title":"권한 테스트 (재기안)"}"""))
                 .andExpect(status().isOk());
 
         expectNotFound(documentId, user(firstApprover));

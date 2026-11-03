@@ -13,7 +13,6 @@ import com.ssafy.approval_service.domain.approval.policy.ApprovalPolicyPropertie
 import com.ssafy.approval_service.domain.approval.policy.GeneratedApprovalLine;
 import com.ssafy.approval_service.domain.approval.repository.ApprovalHistoryRepository;
 import com.ssafy.approval_service.domain.approval.repository.ApprovalLineRepository;
-import com.ssafy.approval_service.domain.approval.service.ApprovalLineValidator;
 import com.ssafy.approval_service.domain.document.model.dto.ApprovalLineRequest;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateRequest;
 import com.ssafy.approval_service.domain.document.model.entity.Document;
@@ -23,6 +22,7 @@ import com.ssafy.approval_service.domain.document.model.entity.enums.SourceType;
 import com.ssafy.approval_service.domain.document.repository.DocumentRepository;
 import com.ssafy.approval_service.global.exception.BusinessException;
 import com.ssafy.approval_service.global.exception.ErrorCode;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -39,6 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -50,7 +51,6 @@ class DocumentCreateServiceTest {
     private final RequestKeyLock requestKeyLock = mock(RequestKeyLock.class);
     private final ApprovalLineRepository lineRepository = mock(ApprovalLineRepository.class);
     private final ApprovalHistoryRepository historyRepository = mock(ApprovalHistoryRepository.class);
-    private final ApprovalLineValidator lineValidator = mock(ApprovalLineValidator.class);
     private final ApprovalLineGenerator lineGenerator = mock(ApprovalLineGenerator.class);
     private final ApprovalResultEventRecorder resultEventRecorder = mock(ApprovalResultEventRecorder.class);
     private final ApprovalPolicy policy = new ApprovalPolicy(new ApprovalPolicyProperties(
@@ -59,12 +59,18 @@ class DocumentCreateServiceTest {
             documentRepository,
             lineRepository,
             historyRepository,
-            lineValidator,
             numberGenerator,
             requestKeyLock,
             policy,
             lineGenerator,
             new DocumentCompleter(resultEventRecorder));
+
+    /** 기본 조직도: 팀장(2) 한 명이 결재. 테스트마다 다시 stub 하면 그 값이 쓰인다 */
+    @BeforeEach
+    void defaultApprovalLine() {
+        when(lineGenerator.generate(anyLong(), any())).thenReturn(new GeneratedApprovalLine(
+                List.of(new ApprovalLineRequest(2L, (short) 1, LineRole.APPROVER)), false));
+    }
 
     /** JPA 저장처럼 문서ID를 채워 돌려준다 */
     private static Document persist(InvocationOnMock inv) {
@@ -94,13 +100,10 @@ class DocumentCreateServiceTest {
         verifyNoInteractions(numberGenerator);
     }
 
-    private static final List<ApprovalLineRequest> LINES =
-            List.of(new ApprovalLineRequest(2L, (short) 1, LineRole.APPROVER));
-
     /** 출처가 있는 요청에는 요청 키를 채운다 (필수) */
     private static DocumentCreateRequest request(FormType formType, SourceType sourceType, Long sourceId) {
         UUID requestKey = sourceType == null || sourceType == SourceType.DIRECT ? null : UUID.randomUUID();
-        return new DocumentCreateRequest("테스트 문서", formType, LINES, sourceType, sourceId, requestKey, null);
+        return new DocumentCreateRequest("테스트 문서", formType, sourceType, sourceId, requestKey, null);
     }
 
     private static DocumentCreateRequest request(SourceType sourceType, Long sourceId) {
@@ -207,7 +210,7 @@ class DocumentCreateServiceTest {
 
     @Test
     void 출처가_있는데_요청_키가_없으면_400() {
-        var request = new DocumentCreateRequest("t", FormType.LEAVE, LINES, SourceType.LEAVE, 42L, null, null);
+        var request = new DocumentCreateRequest("t", FormType.LEAVE, SourceType.LEAVE, 42L, null, null);
         expectError(request, ErrorCode.REQUEST_KEY_REQUIRED);
     }
 
@@ -218,7 +221,7 @@ class DocumentCreateServiceTest {
         when(documentRepository.findByRequestKey(key)).thenReturn(Optional.of(existing));
 
         var result = service.create(
-                new DocumentCreateRequest("재시도", FormType.LEAVE, LINES, SourceType.LEAVE, 42L, key, null), 1L);
+                new DocumentCreateRequest("재시도", FormType.LEAVE, SourceType.LEAVE, 42L, key, null), 1L);
 
         assertThat(result.created()).isFalse();
         assertThat(result.response().documentId()).isEqualTo(12L);
@@ -235,55 +238,43 @@ class DocumentCreateServiceTest {
 
         // 원본 신청 ID가 다르다
         assertThatThrownBy(() -> service.create(
-                new DocumentCreateRequest("t", FormType.LEAVE, LINES, SourceType.LEAVE, 99L, key, null), 1L))
+                new DocumentCreateRequest("t", FormType.LEAVE, SourceType.LEAVE, 99L, key, null), 1L))
                 .isInstanceOf(BusinessException.class)
                 .matches(t -> ((BusinessException) t).getErrorCode() == ErrorCode.REQUEST_KEY_CONFLICT);
         // 기안자가 다르다
         assertThatThrownBy(() -> service.create(
-                new DocumentCreateRequest("t", FormType.LEAVE, LINES, SourceType.LEAVE, 42L, key, null), 2L))
+                new DocumentCreateRequest("t", FormType.LEAVE, SourceType.LEAVE, 42L, key, null), 2L))
                 .matches(t -> ((BusinessException) t).getErrorCode() == ErrorCode.REQUEST_KEY_CONFLICT);
         verify(documentRepository, never()).save(any());
     }
 
     // ===== 결재선 자동 결정 (위임전결 규정) =====
 
-    private static DocumentCreateRequest leaveWithoutLines(ApprovalAttributes attributes) {
-        return new DocumentCreateRequest("휴가", FormType.LEAVE, null, SourceType.LEAVE, 42L, UUID.randomUUID(), attributes);
+    private static DocumentCreateRequest leave(ApprovalAttributes attributes) {
+        return new DocumentCreateRequest("휴가", FormType.LEAVE, SourceType.LEAVE, 42L, UUID.randomUUID(), attributes);
     }
 
     @Test
-    void 결재선을_생략하면_전결_단계로_조직도에서_만든다() {
+    void 전결_단계로_조직도에서_결재선을_만들고_규정상_결재자로_표시한다() {
         when(documentRepository.save(any())).thenAnswer(DocumentCreateServiceTest::persist);
         when(lineGenerator.generate(1L, ApprovalLevel.DIVISION)).thenReturn(new GeneratedApprovalLine(List.of(
                 new ApprovalLineRequest(10L, (short) 1, LineRole.APPROVER),
                 new ApprovalLineRequest(20L, (short) 2, LineRole.APPROVER)), false));
         var attributes = new ApprovalAttributes(new BigDecimal("5"), null, null, null, null);
 
-        service.create(leaveWithoutLines(attributes), 1L);
+        service.create(leave(attributes), 1L);
 
         Document saved = savedDocument();
         assertThat(saved.getApprovalLevel()).isEqualTo(ApprovalLevel.DIVISION);
         assertThat(saved.getAttributes()).isEqualTo(attributes);
         assertThat(saved.getStatus()).isEqualTo(DocumentStatus.INPROGRESS);
-        verify(lineValidator, never()).validate(any(), any());
         verify(resultEventRecorder, never()).recordCompleted(any());
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<com.ssafy.approval_service.domain.approval.model.entity.ApprovalLine>> lines =
                 ArgumentCaptor.forClass(List.class);
         verify(lineRepository).saveAll(lines.capture());
         assertThat(lines.getValue()).extracting("empId").containsExactly(10L, 20L);
-    }
-
-    @Test
-    void 결재선을_지정하면_검증만_하고_조직도는_조회하지_않는다() {
-        when(documentRepository.save(any())).thenAnswer(DocumentCreateServiceTest::persist);
-
-        service.create(request(FormType.GENERAL, SourceType.DIRECT, null), 1L);
-
-        verify(lineValidator).validate(LINES, 1L);
-        verifyNoInteractions(lineGenerator);
-        // 지정해도 규정상 전결 단계는 기록한다
-        assertThat(savedDocument().getApprovalLevel()).isEqualTo(ApprovalLevel.TEAM);
+        assertThat(lines.getValue()).extracting("required").containsExactly(true, true);
     }
 
     @Test
@@ -291,7 +282,7 @@ class DocumentCreateServiceTest {
         when(documentRepository.save(any())).thenAnswer(DocumentCreateServiceTest::persist);
         when(lineGenerator.generate(1L, ApprovalLevel.TEAM)).thenReturn(new GeneratedApprovalLine(List.of(), true));
 
-        service.create(leaveWithoutLines(null), 1L);
+        service.create(leave(null), 1L);
 
         Document saved = savedDocument();
         assertThat(saved.getStatus()).isEqualTo(DocumentStatus.APPROVED);

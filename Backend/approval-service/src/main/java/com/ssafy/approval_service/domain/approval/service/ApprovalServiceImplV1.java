@@ -7,6 +7,10 @@ import com.ssafy.approval_service.domain.approval.model.entity.ApprovalLine;
 import com.ssafy.approval_service.domain.approval.model.entity.enums.HistoryAction;
 import com.ssafy.approval_service.domain.approval.model.entity.enums.LineRole;
 import com.ssafy.approval_service.domain.approval.repository.ApprovalHistoryRepository;
+import com.ssafy.approval_service.domain.approval.policy.ApprovalLevel;
+import com.ssafy.approval_service.domain.approval.policy.ApprovalLineGenerator;
+import com.ssafy.approval_service.domain.approval.policy.ApprovalPolicy;
+import com.ssafy.approval_service.domain.approval.policy.GeneratedApprovalLine;
 import com.ssafy.approval_service.domain.approval.repository.ApprovalLineRepository;
 import com.ssafy.approval_service.domain.document.model.entity.Document;
 import com.ssafy.approval_service.domain.document.service.DocumentService;
@@ -34,7 +38,8 @@ public class ApprovalServiceImplV1 implements ApprovalService {
     private final ApprovalLineRepository approvalLineRepository;
     private final ApprovalHistoryRepository approvalHistoryRepository;
     private final DocumentService documentService;
-    private final ApprovalLineValidator approvalLineValidator;
+    private final ApprovalPolicy approvalPolicy;
+    private final ApprovalLineGenerator approvalLineGenerator;
     private final DocumentCompleter documentCompleter;
 
     @Override
@@ -82,6 +87,10 @@ public class ApprovalServiceImplV1 implements ApprovalService {
         if (myLine.getRole() != LineRole.APPROVER) {
             throw new BusinessException(ErrorCode.FINAL_APPROVE_NOT_ALLOWED);
         }
+        // 규정상 결재자(전결권자까지)는 건너뛸 수 없다. 기안자가 추가한 결재자만 전결로 생략된다
+        if (approvers.stream().anyMatch(line -> line != myLine && line.isPending() && line.isRequired())) {
+            throw new BusinessException(ErrorCode.REQUIRED_APPROVER_NOT_SKIPPABLE);
+        }
 
         myLine.agree();
         // 뒤에 남은 결재자는 지우지 않고 생략 처리 (누가 건너뛰어졌는지 남김)
@@ -111,22 +120,33 @@ public class ApprovalServiceImplV1 implements ApprovalService {
     @Override
     @Transactional
     public void resubmit(Long employeeId, Long documentId, ResubmitRequest request) {
-        // 새 결재선 검증(user-service 호출 포함)은 문서를 잠그기 전에 한다. 잠근 채로 외부 응답을 기다리지 않도록
-        approvalLineValidator.validate(request.approvalLines(), employeeId);
+        // 반려 문서는 결재·결재선 변경 요청이 처리할 일이 없어(진행 중 문서만 받음), 잠근 채로 조직도를 조회해도 기다리는 요청이 없다
         Document document = documentService.getDocumentForUpdate(documentId);
         validateDrafter(document, employeeId);
+        // 출처 문서는 반려가 최종 (결과 이벤트를 이미 받은 원본 서비스와 어긋나지 않게). 다시 하려면 원본에서 새로 신청
+        if (document.isFromSource()) {
+            throw new BusinessException(ErrorCode.SOURCE_DOCUMENT_NOT_RESUBMITTABLE);
+        }
         if (!document.isRejected()) {
             throw new BusinessException(ErrorCode.DOCUMENT_NOT_REJECTED);
         }
 
-        // 이전 차수의 결재 기록은 이력에 남아 있으므로 결재선은 새로 지정
+        // 결재선은 규정과 지금 조직도로 다시 만든다 (그 사이 부서장이 바뀌었을 수 있음).
+        // 이전 차수의 결재 기록은 이력에 남아 있으므로 결재선은 통째로 바꾼다
+        ApprovalLevel level = approvalPolicy.requiredLevel(document.getFormType(), document.getAttributes());
+        GeneratedApprovalLine generated = approvalLineGenerator.generate(employeeId, level);
         approvalLineRepository.deleteByDocumentDocId(documentId);
-        approvalLineRepository.saveAll(request.approvalLines().stream()
-                .map(line -> line.toEntity(document))
-                .toList());
+        approvalLineRepository.saveAll(generated.toEntities(document));
 
+        int round = currentRound(documentId) + 1;
         document.resubmit(request.title());
-        recordHistory(document, currentRound(documentId) + 1, employeeId, HistoryAction.RESUBMIT, null);
+        recordHistory(document, round, employeeId, HistoryAction.RESUBMIT, null);
+
+        // 그 사이 기안자가 최상위 부서장이 됐으면 상신과 같이 자가결재
+        if (generated.selfApproval()) {
+            documentCompleter.approve(document);
+            recordHistory(document, round, employeeId, HistoryAction.FINAL_APPROVE, null);
+        }
     }
 
     // ===== 공통 =====

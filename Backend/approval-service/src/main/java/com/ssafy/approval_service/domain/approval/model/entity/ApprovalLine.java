@@ -54,12 +54,16 @@ public class ApprovalLine {
     @Column(name = "emp_id")
     private Long empId;                 // 결재자 사원ID (user-service employee.emp_id)
 
+    @Column(name = "required", nullable = false)
+    private boolean required;           // 위임전결 규정상 결재자. true 면 제외·순서 변경·전결 건너뛰기 불가
+
     @Builder
-    private ApprovalLine(Short step, LineRole role, Document document, Long empId) {
+    private ApprovalLine(Short step, LineRole role, Document document, Long empId, boolean required) {
         this.step = step;
         this.role = role;
         this.document = document;
         this.empId = empId;
+        this.required = required;
         this.action = LineAction.PENDING;
     }
 
