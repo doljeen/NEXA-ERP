@@ -156,6 +156,34 @@ class DocumentCreateServiceTest {
     }
 
     @Test
+    void 일반_기안은_업무_자동화에서_만들_수_있고_금액으로_전결_단계를_정한다() {
+        when(documentRepository.save(any())).thenAnswer(DocumentCreateServiceTest::persist);
+        var request = new DocumentCreateRequest("구매 품의", FormType.GENERAL, SourceType.AUTOMATION, 501L,
+                UUID.randomUUID(), new ApprovalAttributes(null, null, null, null, 5_000_000L));
+
+        service.create(request, 1L);
+
+        Document saved = savedDocument();
+        assertThat(saved.getSourceType()).isEqualTo(SourceType.AUTOMATION);
+        assertThat(saved.getSourceId()).isEqualTo(501L);
+        assertThat(saved.getApprovalLevel()).isEqualTo(ApprovalLevel.DIVISION);
+        assertThat(saved.isFromSource()).isTrue();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = FormType.class, names = "GENERAL", mode = EnumSource.Mode.EXCLUDE)
+    void 업무_자동화는_일반_기안_외_양식을_만들_수_없다(FormType formType) {
+        expectError(request(formType, SourceType.AUTOMATION, 501L), ErrorCode.FORM_SOURCE_MISMATCH);
+    }
+
+    @Test
+    void 업무_자동화인데_원본_ID나_요청_키가_없으면_400() {
+        expectError(request(FormType.GENERAL, SourceType.AUTOMATION, null), ErrorCode.INVALID_DOCUMENT_SOURCE);
+        expectError(new DocumentCreateRequest("t", FormType.GENERAL, SourceType.AUTOMATION, 501L, null, null),
+                ErrorCode.REQUEST_KEY_REQUIRED);
+    }
+
+    @Test
     void 휴가_외_양식은_직접_기안할_수_있다() {
         when(documentRepository.save(any())).thenAnswer(DocumentCreateServiceTest::persist);
 

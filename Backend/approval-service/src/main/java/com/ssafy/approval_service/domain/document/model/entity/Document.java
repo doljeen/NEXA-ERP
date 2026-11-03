@@ -152,7 +152,7 @@ public class Document {
         return this.status == DocumentStatus.REJECTED;
     }
 
-    /** 다른 서비스(휴가·근태)의 신청으로 만든 문서인지. 이런 문서는 반려가 최종이라 재기안할 수 없다 */
+    /** 다른 서비스(휴가·근태·업무 자동화)의 신청으로 만든 문서인지. 이런 문서는 반려가 최종이라 재기안할 수 없다 */
     public boolean isFromSource() {
         return this.sourceType != SourceType.DIRECT;
     }

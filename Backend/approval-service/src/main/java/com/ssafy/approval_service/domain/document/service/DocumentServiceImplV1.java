@@ -197,14 +197,14 @@ public class DocumentServiceImplV1 implements DocumentService {
 
     /**
      * 다른 서비스에서 온 문서는 원본 신청 ID가 있어야 하고, 직접 기안은 없어야 한다.
-     * 양식마다 만들 수 있는 출처가 정해져 있다 (FormType.requiredSource)
+     * 양식마다 만들 수 있는 출처가 정해져 있다 (FormType.allows)
      */
     private void validateSource(FormType formType, SourceType sourceType, Long sourceId, UUID requestKey) {
         boolean direct = sourceType == SourceType.DIRECT;
         if (direct != (sourceId == null)) {
             throw new BusinessException(ErrorCode.INVALID_DOCUMENT_SOURCE);
         }
-        if (formType.requiredSource() != sourceType) {
+        if (!formType.allows(sourceType)) {
             throw new BusinessException(ErrorCode.FORM_SOURCE_MISMATCH);
         }
         // 다른 서비스는 생성 요청을 재시도하므로 중복 생성을 막을 요청 키가 있어야 한다 (직접 기안은 선택)

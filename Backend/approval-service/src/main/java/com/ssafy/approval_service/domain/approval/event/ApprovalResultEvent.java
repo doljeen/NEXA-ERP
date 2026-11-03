@@ -10,7 +10,7 @@ import java.util.UUID;
 
 /**
  * 결재 결과 이벤트 (토픽 approval.document.result, 메시지 키 = documentId).
- * 출처가 있는 문서(휴가·근태)가 최종 승인·반려·취소되면 발행한다. 수신 측은 sourceType 으로 자기 것만 처리한다.
+ * 출처가 있는 문서(휴가·근태·업무 자동화)가 최종 승인·반려·취소되면 발행한다. 수신 측은 sourceType 으로 자기 것만 처리한다.
  * 필드를 추가할 때는 eventVersion 은 그대로 두고(수신 측은 모르는 필드 무시), 의미가 바뀌는 변경일 때만 올린다.
  */
 public record ApprovalResultEvent(
@@ -21,7 +21,7 @@ public record ApprovalResultEvent(
         Long documentId,
         String docNo,
         FormType formType,
-        SourceType sourceType,      // LEAVE | ATTENDANCE
+        SourceType sourceType,      // LEAVE | ATTENDANCE | AUTOMATION
         Long sourceId,              // 원본 신청 ID
         UUID requestKey,            // 생성 요청 키 (원본 서비스가 보낸 UUID)
         DocumentStatus status       // APPROVED | REJECTED | CANCEL
