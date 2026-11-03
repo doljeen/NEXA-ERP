@@ -11,16 +11,21 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.ResultActions;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static com.ssafy.approval_service.support.ApprovalTestFixtures.BASE;
 import static com.ssafy.approval_service.support.ApprovalTestFixtures.line;
 import static com.ssafy.approval_service.support.ApprovalTestFixtures.path;
 import static com.ssafy.approval_service.support.ApprovalTestFixtures.user;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -136,7 +141,8 @@ class ApprovalLinePolicyIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void 결재선을_지정하면_지금처럼_그대로_쓴다() throws Exception {
+    void 요청에_결재선을_보내도_무시하고_규정으로_만든다() throws Exception {
+        // 예전 형식 요청 (attendance 등). 400 으로 깨지지 않고 결재선만 무시된다
         String body = mvc.perform(post(BASE).with(user(MEMBER)).contentType(MediaType.APPLICATION_JSON).content("""
                         {"title":"일반","formType":"GENERAL","attributes":{"amount":50000000},"approvalLines":[%s]}"""
                         .formatted(line(7002L, 1, "APPROVER"))))
@@ -144,11 +150,103 @@ class ApprovalLinePolicyIntegrationTest extends AbstractIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
 
         mvc.perform(get(BASE + "/" + documentId(body)).with(user(MEMBER)))
-                .andExpect(jsonPath("$.data.approvalLines.length()").value(1))
-                .andExpect(jsonPath("$.data.approvalLines[0].empId").value(7002L))
-                // 규정상 단계는 기록한다 (5천만 원 → 대표이사)
                 .andExpect(jsonPath("$.data.approvalLevel").value("COMPANY"))
-                .andExpect(jsonPath("$.data.attributes.amount").value(50000000));
+                .andExpect(jsonPath("$.data.approvalLines[*].empId")
+                        .value(org.hamcrest.Matchers.contains((int) TEAM_HEAD, (int) DIVISION_HEAD, (int) CEO)))
+                .andExpect(jsonPath("$.data.approvalLines[*].required")
+                        .value(org.hamcrest.Matchers.contains(true, true, true)));
+    }
+
+    // ===== 규정 강제: 규정상 결재자는 빼거나 순서를 바꾸거나 전결로 건너뛸 수 없다 =====
+
+    private long createGeneral(long amount) throws Exception {
+        return documentId(mvc.perform(post(BASE).with(user(MEMBER)).contentType(MediaType.APPLICATION_JSON).content("""
+                        {"title":"일반","formType":"GENERAL","attributes":{"amount":%d}}""".formatted(amount)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString());
+    }
+
+    private ResultActions reorder(long docId, long... empIds) throws Exception {
+        return mvc.perform(patch(path(docId, "/approvers/order")).with(user(MEMBER))
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                        {"empIds":[%s]}""".formatted(Arrays.stream(empIds).mapToObj(String::valueOf)
+                        .collect(Collectors.joining(",")))));
+    }
+
+    @Test
+    void 규정상_결재자는_뺄_수_없다() throws Exception {
+        long docId = createGeneral(2_000_000);   // 팀장 → 본부장
+
+        mvc.perform(delete(path(docId, "/approvers/" + DIVISION_HEAD)).with(user(MEMBER)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("APPROVAL_024"));
+    }
+
+    @Test
+    void 추가한_결재자는_빼거나_옮길_수_있지만_규정상_결재자끼리_순서는_못_바꾼다() throws Exception {
+        long docId = createGeneral(2_000_000);   // 팀장(1) → 본부장(2)
+        long added = 7002L;
+        mvc.perform(post(path(docId, "/approvers")).with(user(MEMBER)).contentType(MediaType.APPLICATION_JSON)
+                        .content(line(added, 3, "AGREEMENT")))
+                .andExpect(status().isCreated());
+
+        // 추가한 합의자를 맨 앞으로: 규정상 결재자끼리 순서(팀장 → 본부장)는 그대로라 가능
+        reorder(docId, added, TEAM_HEAD, DIVISION_HEAD).andExpect(status().isOk());
+        // 규정상 결재자끼리 순서를 뒤집으면 409
+        reorder(docId, added, DIVISION_HEAD, TEAM_HEAD)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("APPROVAL_024"));
+        // 추가한 결재자는 뺄 수 있다
+        mvc.perform(delete(path(docId, "/approvers/" + added)).with(user(MEMBER))).andExpect(status().isOk());
+
+        mvc.perform(get(BASE + "/" + docId).with(user(MEMBER)))
+                .andExpect(jsonPath("$.data.approvalLines[*].empId")
+                        .value(org.hamcrest.Matchers.contains((int) TEAM_HEAD, (int) DIVISION_HEAD)));
+    }
+
+    @Test
+    void 규정상_결재자를_건너뛰는_전결은_안_되고_추가한_결재자만_건너뛸_수_있다() throws Exception {
+        long docId = createGeneral(2_000_000);   // 팀장(1) → 본부장(2)
+        long added = 7002L;
+        mvc.perform(post(path(docId, "/approvers")).with(user(MEMBER)).contentType(MediaType.APPLICATION_JSON)
+                        .content(line(added, 3, "APPROVER")))
+                .andExpect(status().isCreated());
+
+        // 팀장이 전결하면 본부장(규정상 전결권자)을 건너뛰게 된다 → 409
+        mvc.perform(post(path(docId, "/final-approve")).with(user(TEAM_HEAD)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("APPROVAL_025"));
+
+        // 팀장 승인 → 본부장이 전결하면 기안자가 추가한 결재자(added)만 생략되고 끝난다
+        mvc.perform(post(path(docId, "/approve")).with(user(TEAM_HEAD))).andExpect(status().isOk());
+        mvc.perform(post(path(docId, "/final-approve")).with(user(DIVISION_HEAD))).andExpect(status().isOk());
+        mvc.perform(get(BASE + "/" + docId).with(user(MEMBER)))
+                .andExpect(jsonPath("$.data.status").value("APPROVED"))
+                .andExpect(jsonPath("$.data.approvalLines[2].action").value("SKIPPED"));
+    }
+
+    @Test
+    void 재기안하면_지금_조직도와_규정으로_결재선을_다시_만든다() throws Exception {
+        long docId = createGeneral(2_000_000);   // 팀장 → 본부장
+        mvc.perform(post(path(docId, "/reject")).with(user(TEAM_HEAD)).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"comment":"보완"}"""))
+                .andExpect(status().isOk());
+        // 그 사이 팀장이 7003 으로 바뀌었다
+        userService.setOrgChain(MEMBER, new OrgUnit(73L, "개발팀", "TEAM", 7003L),
+                new OrgUnit(72L, "기술본부", "DIVISION", DIVISION_HEAD), new OrgUnit(71L, "회사", "COMPANY", CEO));
+
+        mvc.perform(post(path(docId, "/resubmit")).with(user(MEMBER)).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"일반 (재기안)"}"""))
+                .andExpect(status().isOk());
+
+        mvc.perform(get(BASE + "/" + docId).with(user(MEMBER)))
+                .andExpect(jsonPath("$.data.status").value("INPROGRESS"))
+                .andExpect(jsonPath("$.data.approvalLines[*].empId")
+                        .value(org.hamcrest.Matchers.contains(7003, (int) DIVISION_HEAD)))
+                .andExpect(jsonPath("$.data.approvalLines[*].required")
+                        .value(org.hamcrest.Matchers.contains(true, true)));
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.ssafy.approval_service.domain.approval;
 
 import com.jayway.jsonpath.JsonPath;
+import com.ssafy.approval_service.global.client.UserServiceClient.OrgUnit;
 import com.ssafy.approval_service.global.outbox.KafkaTopicConfig;
 import com.ssafy.approval_service.global.outbox.OutboxEvent;
 import com.ssafy.approval_service.global.outbox.OutboxEventRepository;
@@ -62,12 +63,13 @@ class ApprovalResultEventIntegrationTest extends AbstractIntegrationTest {
         consumer.close();
     }
 
-    /** 휴가 신청에서 온 문서를 만든다 */
+    /** 휴가 신청에서 온 문서를 만든다. 결재선은 규정대로 팀장(approver) 한 명 */
     private long createLeaveDocument(long drafter, long approver, long sourceId) throws Exception {
+        assignTeamHead(drafter, approver);
         String body = mvc.perform(post(BASE).with(user(drafter)).contentType(MediaType.APPLICATION_JSON).content("""
                         {"title":"휴가 신청","formType":"LEAVE","sourceType":"LEAVE","sourceId":%d,
-                         "requestKey":"%s","approvalLines":[%s]}"""
-                        .formatted(sourceId, UUID.randomUUID(), line(approver, 1, "APPROVER"))))
+                         "requestKey":"%s","attributes":{"days":1}}"""
+                        .formatted(sourceId, UUID.randomUUID())))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         Number id = JsonPath.read(body, "$.data.documentId");
@@ -136,11 +138,12 @@ class ApprovalResultEventIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void 중간_결재와_직접_기안_문서는_이벤트가_없다() throws Exception {
-        // 결재자 2명 중 1명만 승인 → 아직 진행 중
+        // 5일 휴가 → 본부장 전결, 결재자 2명(팀장 9408, 본부장 9409) 중 1명만 승인 → 아직 진행 중
+        fakeUserService.setOrgChain(9407L, new OrgUnit(94071L, "팀", "TEAM", 9408L), new OrgUnit(94072L, "본부", "DIVISION", 9409L));
         String body = mvc.perform(post(BASE).with(user(9407L)).contentType(MediaType.APPLICATION_JSON).content("""
                         {"title":"휴가 신청","formType":"LEAVE","sourceType":"LEAVE","sourceId":604,
-                         "requestKey":"%s","approvalLines":[%s,%s]}"""
-                        .formatted(UUID.randomUUID(), line(9408L, 1, "APPROVER"), line(9409L, 2, "APPROVER"))))
+                         "requestKey":"%s","attributes":{"days":5}}"""
+                        .formatted(UUID.randomUUID())))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         long inProgress = ((Number) JsonPath.read(body, "$.data.documentId")).longValue();
         mvc.perform(post(path(inProgress, "/approve")).with(user(9408L))).andExpect(status().isOk());
@@ -173,7 +176,7 @@ class ApprovalResultEventIntegrationTest extends AbstractIntegrationTest {
 
         mvc.perform(post(path(documentId, "/resubmit")).with(user(9414L))
                         .contentType(MediaType.APPLICATION_JSON).content("""
-                                {"title":"휴가 신청 (재기안)","approvalLines":[%s]}""".formatted(line(9416L, 1, "APPROVER"))))
+                                {"title":"휴가 신청 (재기안)"}"""))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("APPROVAL_023"));
 
