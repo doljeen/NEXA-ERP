@@ -14,3 +14,4 @@ class LlmChatResponse(CamelModel):
 class LlmHealthResponse(CamelModel):
     local: str                  # up / down / disabled
     gms: str                    # configured / disabled
+    ocr: str                    # up / down / disabled

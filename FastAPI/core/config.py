@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     local_llm_model: str = "qwen3.8-27b"
     local_llm_timeout: float = 60.0
 
+    # OCR 서버 (GPU 서버 PyTriton, Tailscale 경유)
+    ocr_base_url: str = ""          # "호스트:포트" 형식, http:// 없이 (예: 100.x.x.x:18100)
+    ocr_timeout: float = 30.0       # OCR 응답 대기 최대 시간(초)
+
     # GMS (fallback when the local LLM is down)
     GMS_API_KEY: str = ""
     gms_base_url: str = ""
