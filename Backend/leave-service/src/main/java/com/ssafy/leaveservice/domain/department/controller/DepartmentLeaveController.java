@@ -17,11 +17,13 @@ import java.util.List;
 public class DepartmentLeaveController {
     private final DepartmentLeaveService departmentLeaveService;
 
+    // 부서 소속 직원의 휴가 신청 목록 조회
     @GetMapping("/requests")
     public ResponseEntity<ApiResult<List<AdminLeaveRequestListResponse>>> getRequests(@PathVariable Long departmentId) {
         return ResponseEntity.ok(ApiResult.success(departmentLeaveService.getRequests(departmentId)));
     }
 
+    // 부서 소속 직원의 휴가 잔액 조회
     @GetMapping("/balances")
     public ResponseEntity<ApiResult<DepartmentLeaveBalancesResponse>> getBalances(@PathVariable Long departmentId) {
         return ResponseEntity.ok(ApiResult.success(departmentLeaveService.getBalances(departmentId)));

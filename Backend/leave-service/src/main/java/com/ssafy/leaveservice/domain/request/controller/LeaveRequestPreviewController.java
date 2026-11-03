@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 public class LeaveRequestPreviewController {
     private final LeaveRequestPreviewService previewService;
 
+    // 휴가 신청 전 차감 시간과 잔액 미리보기
     @PostMapping
     public ResponseEntity<ApiResult<LeaveRequestPreviewResponse>> preview(@Valid @RequestBody LeaveRequestPreviewRequest request) {
         LeaveRequestPreviewResponse response = previewService.preview(request);

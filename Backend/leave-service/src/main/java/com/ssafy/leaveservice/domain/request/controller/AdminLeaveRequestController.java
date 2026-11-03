@@ -20,12 +20,14 @@ public class AdminLeaveRequestController {
 
     private final AdminLeaveRequestService adminLeaveRequestService;
 
+    // 관리자용 휴가 신청 목록 조회
     @GetMapping
     public ResponseEntity<ApiResult<List<AdminLeaveRequestListResponse>>> getAllRequests() {
         List<AdminLeaveRequestListResponse> response = adminLeaveRequestService.getAllRequests();
         return ResponseEntity.ok(ApiResult.success(response));
     }
 
+    // 관리자용 휴가 신청 상세 조회
     @GetMapping("/{requestId}")
     public ResponseEntity<ApiResult<MyLeaveRequestDetailResponse>> getRequest(@PathVariable String requestId) {
         MyLeaveRequestDetailResponse response = adminLeaveRequestService.getRequest(requestId);

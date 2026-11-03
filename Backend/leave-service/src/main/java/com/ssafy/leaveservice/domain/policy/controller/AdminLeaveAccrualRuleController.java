@@ -23,6 +23,7 @@ public class AdminLeaveAccrualRuleController {
 
     private final LeaveAccrualRuleService leaveAccrualRuleService;
 
+    // 정책 버전의 연차 발생 규칙 전체 교체
     @PutMapping
     public ResponseEntity<ApiResult<List<LeaveAccrualRuleResponse>>> replaceAccrualRules(
             @PathVariable Long policyId,
@@ -33,6 +34,7 @@ public class AdminLeaveAccrualRuleController {
         return ResponseEntity.ok(ApiResult.success(accrualRules));
     }
 
+    // 정책 버전의 연차 발생 규칙 목록 조회
     @GetMapping
     public ResponseEntity<ApiResult<List<LeaveAccrualRuleResponse>>> getAccrualRules(
             @PathVariable Long policyId,

@@ -18,6 +18,7 @@ public class MyLeaveBalanceController {
 
     private final MyLeaveBalanceService myLeaveBalanceService;
 
+    // 내 휴가 잔액 유형별 잔여량 조회
     @GetMapping
     public ResponseEntity<ApiResult<List<MyLeaveBalanceResponse>>> getMyBalances() {
         List<MyLeaveBalanceResponse> response = myLeaveBalanceService.getMyBalances();

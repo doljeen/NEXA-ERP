@@ -18,6 +18,7 @@ public class MyLeaveGrantController {
 
     private final MyLeaveGrantService myLeaveGrantService;
 
+    // 내 휴가 발생 내역 조회
     @GetMapping
     public ResponseEntity<ApiResult<List<MyLeaveGrantResponse>>> getMyGrants() {
         List<MyLeaveGrantResponse> response = myLeaveGrantService.getMyGrants();

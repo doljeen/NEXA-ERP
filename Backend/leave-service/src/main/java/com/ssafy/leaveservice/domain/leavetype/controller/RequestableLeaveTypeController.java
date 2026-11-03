@@ -18,6 +18,7 @@ public class RequestableLeaveTypeController {
 
     private final RequestableLeaveTypeService requestableLeaveTypeService;
 
+    // 내가 신청할 수 있는 휴가 유형 조회
     @GetMapping
     public ResponseEntity<ApiResult<List<RequestableLeaveTypeResponse>>> getRequestableTypes() {
         List<RequestableLeaveTypeResponse> response = requestableLeaveTypeService.getRequestableTypes();

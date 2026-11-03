@@ -121,6 +121,23 @@ public class LeaveRequest {
     @OrderBy("leaveDate ASC, startAt ASC, requestDateId ASC")
     private List<LeaveRequestDate> dates = new ArrayList<>();
 
+    public void applyFinalApprovalDecision(LeaveRequestStatus finalStatus, OffsetDateTime now) {
+        if (status != LeaveRequestStatus.SUBMITTED || approvalCreationStatus != ApprovalCreationStatus.LINKED
+                || (finalStatus != LeaveRequestStatus.APPROVED && finalStatus != LeaveRequestStatus.REJECTED
+                    && finalStatus != LeaveRequestStatus.WITHDRAWN)
+                || cancelledAt != null || cancelledBy != null || cancelReason != null) {
+            throw new BusinessException(ErrorCode.DATA_INTEGRITY_VIOLATION);
+        }
+        status = finalStatus;
+        if (finalStatus == LeaveRequestStatus.WITHDRAWN) {
+            cancelledAt = now;
+            // Approval 회수 API는 기안자 본인만 허용한다.
+            cancelledBy = employeeId;
+            cancelReason = "기안자 결재 문서 회수";
+        }
+        updatedAt = now;
+    }
+
     public void startAdminCancellation(
             java.util.UUID operationId,
             Long administratorId,

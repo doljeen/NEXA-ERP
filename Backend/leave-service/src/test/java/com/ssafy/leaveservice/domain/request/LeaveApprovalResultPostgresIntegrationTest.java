@@ -7,6 +7,8 @@ import com.ssafy.leaveservice.domain.request.dto.*;
 import com.ssafy.leaveservice.domain.request.entity.*;
 import com.ssafy.leaveservice.domain.request.service.*;
 import com.ssafy.leaveservice.domain.account.service.MyLeaveBalanceService;
+import com.ssafy.leaveservice.domain.adjustment.dto.LeaveAdjustmentRequest;
+import com.ssafy.leaveservice.domain.adjustment.service.LeaveAdjustmentService;
 import com.ssafy.leaveservice.global.auth.EmployeeAccess;
 import com.ssafy.leaveservice.global.exception.*;
 import org.junit.jupiter.api.*;
@@ -44,6 +46,9 @@ class LeaveApprovalResultPostgresIntegrationTest {
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired LeaveSubmissionService submissionService;
     @Autowired LeaveApprovalResultService approvalResultService;
+    @Autowired LeaveApprovalSettlementService settlementService;
+    @Autowired AdminLeaveCancellationTransactionService cancellationTransactions;
+    @Autowired LeaveAdjustmentService adjustments;
     @Autowired MyLeaveRequestService myLeaveRequestService;
     @Autowired AdminLeaveRequestService adminLeaveRequestService;
     @Autowired com.ssafy.leaveservice.domain.ledger.service.MyLeaveLedgerService myLeaveLedgerService;
@@ -612,6 +617,292 @@ class LeaveApprovalResultPostgresIntegrationTest {
             executor.shutdownNow();
         }
     }
+    @ParameterizedTest
+    @ValueSource(strings = {"APPROVED", "REJECTED"})
+    void finalDecisionSettlesEachAllocationOnce(String status) {
+        splitGrants();
+        LeaveSubmissionResult initial = submissionService.submit(
+                "key", input(1, null, date(day, LeaveRequestPortion.FULL), date(day.plusDays(1), LeaveRequestPortion.FULL))
+        );
+        LeaveApprovalDecision decision = decision(initial, status, 1, 501L, initial.approvalRequestId());
+
+        assertThat(settlementService.settle(decision))
+                .isEqualTo(LeaveApprovalSettlementService.Outcome.AWAITING_DOCUMENT_LINK);
+        approvalResultService.startCall(initial.requestId(), initial.approvalRequestId());
+        approvalResultService.linkCreatedDocument(initial.requestId(), initial.approvalRequestId(), 501L);
+
+        assertThat(settlementService.settle(decision)).isEqualTo(LeaveApprovalSettlementService.Outcome.APPLIED);
+        assertThat(requestRow(initial)).containsEntry("status", status);
+        boolean approved = status.equals("APPROVED");
+        List<Map<String, Object>> entries = jdbcTemplate.queryForList("""
+                select l.event_type, l.quantity_delta, l.reserved_delta, l.actor_emp_id, l.idempotency_key,
+                       a.allocated_minutes, l.grant_id, a.grant_id as original_grant_id
+                from leave_ledger l join leave_request_allocation a on a.allocation_id = l.allocation_id
+                where l.leave_req_id = ? and l.event_type <> 'RESERVE'
+                """, initial.requestId());
+        assertThat(entries).hasSize(3).allSatisfy(entry -> {
+            int minutes = (Integer) entry.get("allocated_minutes");
+            assertThat(entry).containsEntry("event_type", approved ? "CONSUME" : "RELEASE")
+                    .containsEntry("quantity_delta", approved ? -minutes : 0)
+                    .containsEntry("reserved_delta", -minutes)
+                    .containsEntry("actor_emp_id", null)
+                    .containsEntry("grant_id", entry.get("original_grant_id"));
+        });
+
+        Map<String, List<Map<String, Object>>> after = rows();
+        assertThat(settlementService.settle(decision))
+                .isEqualTo(LeaveApprovalSettlementService.Outcome.ALREADY_APPLIED);
+        assertThat(settlementService.settle(decision(
+                initial, approved ? "REJECTED" : "APPROVED", 1, 501L, initial.approvalRequestId()
+        ))).isEqualTo(LeaveApprovalSettlementService.Outcome.CONFLICT);
+        assertThat(rows()).isEqualTo(after);
+    }
+
+    @Test
+    void finalDecisionRejectsWrongVersionDocumentAndUuidWithoutWriting() {
+        LeaveSubmissionResult initial = pending();
+        approvalResultService.startCall(initial.requestId(), initial.approvalRequestId());
+        approvalResultService.linkCreatedDocument(initial.requestId(), initial.approvalRequestId(), 501L);
+        Map<String, List<Map<String, Object>>> before = rows();
+
+        assertBusiness(() -> settlementService.settle(decision(
+                initial, "APPROVED", 2, 501L, initial.approvalRequestId()
+        )), ErrorCode.INVALID_INPUT);
+        assertThat(settlementService.settle(decision(initial, "APPROVED", 1, 502L, initial.approvalRequestId())))
+                .isEqualTo(LeaveApprovalSettlementService.Outcome.CONFLICT);
+        assertThat(settlementService.settle(decision(initial, "APPROVED", 1, 501L, UUID.randomUUID())))
+                .isEqualTo(LeaveApprovalSettlementService.Outcome.CONFLICT);
+        assertThat(rows()).isEqualTo(before);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"APPROVED", "REJECTED"})
+    void finalDecisionSettlesExpiredAllocation(String status) {
+        LeaveSubmissionResult initial = pending();
+        approvalResultService.startCall(initial.requestId(), initial.approvalRequestId());
+        approvalResultService.linkCreatedDocument(initial.requestId(), initial.approvalRequestId(), 501L);
+        jdbcTemplate.update("update leave_grant set expires_on=clock_timestamp()-interval '1 second' where grant_id=100");
+
+        assertThat(settlementService.settle(decision(initial, status, 1, 501L, initial.approvalRequestId())))
+                .isEqualTo(LeaveApprovalSettlementService.Outcome.APPLIED);
+        assertThat(jdbcTemplate.queryForObject(
+                "select sum(reserved_delta) from leave_ledger where grant_id=100", Long.class
+        )).isZero();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"true, APPROVED", "false, APPROVED", "true, CANCEL", "false, CANCEL"})
+    void finalDecisionRollsBackWhenLedgerInsertOrRequestUpdateFails(boolean failRequestUpdate, String status) {
+        splitGrants();
+        LeaveSubmissionResult initial = pending();
+        approvalResultService.startCall(initial.requestId(), initial.approvalRequestId());
+        approvalResultService.linkCreatedDocument(initial.requestId(), initial.approvalRequestId(), 501L);
+        String table = failRequestUpdate ? "leave_request" : "leave_ledger";
+        String operation = failRequestUpdate ? "update" : "insert";
+        boolean withdrawal = status.equals("CANCEL");
+        String finalStatus = withdrawal ? "WITHDRAWN" : "APPROVED";
+        String ledgerType = withdrawal ? "RELEASE" : "CONSUME";
+        String condition = failRequestUpdate ? "new.status='" + finalStatus + "'"
+                : "new.event_type='" + ledgerType + "' and new.grant_id=101";
+        jdbcTemplate.execute("create or replace function settlement_test_fail() returns trigger language plpgsql "
+                + "as $$ begin if " + condition + " then raise exception 'settlement rollback'; end if; return new; end $$");
+        jdbcTemplate.execute("create trigger settlement_fail before " + operation + " on " + table
+                + " for each row execute function settlement_test_fail()");
+        Map<String, List<Map<String, Object>>> before = rows();
+        try {
+            LeaveApprovalDecision decision = decision(initial, status, 1, 501L, initial.approvalRequestId());
+            assertThatThrownBy(() -> settlementService.settle(decision)).isInstanceOf(RuntimeException.class);
+            assertThat(rows()).isEqualTo(before);
+        } finally {
+            jdbcTemplate.execute("drop trigger settlement_fail on " + table);
+        }
+    }
+
+    @Test
+    void finalDecisionRejectsMissingReserve() {
+        LeaveSubmissionResult initial = pending();
+        approvalResultService.startCall(initial.requestId(), initial.approvalRequestId());
+        approvalResultService.linkCreatedDocument(initial.requestId(), initial.approvalRequestId(), 501L);
+        jdbcTemplate.update("delete from leave_ledger where event_type='RESERVE'");
+        Map<String, List<Map<String, Object>>> before = rows();
+
+        LeaveApprovalDecision decision = decision(initial, "APPROVED", 1, 501L, initial.approvalRequestId());
+        assertBusiness(() -> settlementService.settle(decision), ErrorCode.DATA_INTEGRITY_VIOLATION);
+        assertThat(rows()).isEqualTo(before);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"APPROVED", "REJECTED"})
+    void finalDecisionOnNonDeductingRequestWritesNoLedger(String status) {
+        LeaveSubmissionResult initial = submissionService.submit("key", input(2, null, date(day, LeaveRequestPortion.FULL)));
+        approvalResultService.startCall(initial.requestId(), initial.approvalRequestId());
+        approvalResultService.linkCreatedDocument(initial.requestId(), initial.approvalRequestId(), 501L);
+        int originalLedgerCount = count("leave_ledger");
+
+        assertThat(settlementService.settle(decision(initial, status, 1, 501L, initial.approvalRequestId())))
+                .isEqualTo(LeaveApprovalSettlementService.Outcome.APPLIED);
+        assertThat(requestRow(initial)).containsEntry("status", status);
+        assertThat(count("leave_ledger")).isEqualTo(originalLedgerCount);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"APPROVED", "REJECTED"})
+    void concurrentFinalDecisionsOnlySettleOnce(String otherStatus) throws Exception {
+        LeaveSubmissionResult initial = pending();
+        approvalResultService.startCall(initial.requestId(), initial.approvalRequestId());
+        approvalResultService.linkCreatedDocument(initial.requestId(), initial.approvalRequestId(), 501L);
+        CountDownLatch start = new CountDownLatch(1);
+        try (ExecutorService workers = Executors.newFixedThreadPool(2)) {
+            Future<LeaveApprovalSettlementService.Outcome> first = workers.submit(() -> {
+                start.await();
+                return settlementService.settle(decision(initial, "APPROVED", 1, 501L, initial.approvalRequestId()));
+            });
+            Future<LeaveApprovalSettlementService.Outcome> second = workers.submit(() -> {
+                start.await();
+                return settlementService.settle(decision(initial, otherStatus, 1, 501L, initial.approvalRequestId()));
+            });
+            start.countDown();
+
+            LeaveApprovalSettlementService.Outcome expectedOther = otherStatus.equals("APPROVED")
+                    ? LeaveApprovalSettlementService.Outcome.ALREADY_APPLIED : LeaveApprovalSettlementService.Outcome.CONFLICT;
+            assertThat(List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(LeaveApprovalSettlementService.Outcome.APPLIED, expectedOther);
+        }
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from leave_ledger where leave_req_id=? and event_type in ('CONSUME','RELEASE')",
+                Integer.class, initial.requestId()
+        )).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"APPROVED", "REJECTED"})
+    void pendingAdminCancellationDoesNotSuppressDecisionAndLateCompletionCannotReleaseAgain(String status) {
+        LeaveSubmissionResult initial = pending();
+        approvalResultService.startCall(initial.requestId(), initial.approvalRequestId());
+        approvalResultService.linkCreatedDocument(initial.requestId(), initial.approvalRequestId(), 501L);
+        when(employeeAccess.isAdmin(1L)).thenReturn(true);
+        AdminCancellationAttempt attempt = cancellationTransactions.start(initial.requestId(), "관리자 취소");
+        cancellationTransactions.recordUnknown(attempt.command());
+
+        assertThat(settlementService.settle(decision(initial, status, 1, 501L, initial.approvalRequestId())))
+                .isEqualTo(LeaveApprovalSettlementService.Outcome.APPLIED);
+        Map<String, List<Map<String, Object>>> after = rows();
+
+        assertBusiness(() -> cancellationTransactions.complete(attempt.command()), ErrorCode.LEAVE_CANCELLATION_NOT_ALLOWED);
+        assertThat(rows()).isEqualTo(after);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"APPROVED", "REJECTED"})
+    void adjustmentAndFinalDecisionPreserveSharedGrantTotals(String status) throws Exception {
+        LeaveSubmissionResult initial = pending();
+        approvalResultService.startCall(initial.requestId(), initial.approvalRequestId());
+        approvalResultService.linkCreatedDocument(initial.requestId(), initial.approvalRequestId(), 501L);
+        when(employeeAccess.isAdmin(1L)).thenReturn(true);
+        CountDownLatch start = new CountDownLatch(1);
+        try (ExecutorService workers = Executors.newFixedThreadPool(2)) {
+            Future<?> adjusted = workers.submit(() -> {
+                start.await();
+                return adjustments.adjust(1L, "decision-race", new LeaveAdjustmentRequest(1L, 100L, -240, "정정"));
+            });
+            Future<LeaveApprovalSettlementService.Outcome> settled = workers.submit(() -> {
+                start.await();
+                return settlementService.settle(decision(initial, status, 1, 501L, initial.approvalRequestId()));
+            });
+            start.countDown();
+            adjusted.get(10, TimeUnit.SECONDS);
+            assertThat(settled.get(10, TimeUnit.SECONDS)).isEqualTo(LeaveApprovalSettlementService.Outcome.APPLIED);
+        }
+
+        assertThat(balanceService.getMyBalances().getFirst().reservedMinutes()).isZero();
+        assertThat(balanceService.getMyBalances().getFirst().quantityMinutes())
+                .isEqualTo(status.equals("APPROVED") ? 720 : 1200);
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {1, 2})
+    void drafterWithdrawalIsAuditedAndIdempotent(long leaveTypeId) {
+        splitGrants();
+        LeaveSubmissionResult initial = submissionService.submit(
+                "key", input(leaveTypeId, null, date(day, LeaveRequestPortion.FULL), date(day.plusDays(1), LeaveRequestPortion.FULL))
+        );
+        LeaveApprovalDecision cancel = decision(initial, "CANCEL", 1, 501L, initial.approvalRequestId());
+        assertThat(settlementService.settle(cancel))
+                .isEqualTo(LeaveApprovalSettlementService.Outcome.AWAITING_DOCUMENT_LINK);
+        approvalResultService.startCall(initial.requestId(), initial.approvalRequestId());
+        approvalResultService.linkCreatedDocument(initial.requestId(), initial.approvalRequestId(), 501L);
+
+        assertThat(settlementService.settle(cancel)).isEqualTo(LeaveApprovalSettlementService.Outcome.APPLIED);
+        assertThat(requestRow(initial)).containsEntry("status", "WITHDRAWN")
+                .containsEntry("cancelled_by", 1L)
+                .containsEntry("cancel_reason", "기안자 결재 문서 회수")
+                .containsEntry("admin_cancel_status", null);
+        assertThat(requestRow(initial).get("cancelled_at")).isNotNull();
+        List<Map<String, Object>> releases = jdbcTemplate.queryForList("""
+                select quantity_delta, reserved_delta, actor_emp_id, idempotency_key
+                from leave_ledger where leave_req_id=? and event_type='RELEASE'
+                """, initial.requestId());
+        assertThat(releases).hasSize(leaveTypeId == 1 ? 3 : 0).allSatisfy(release -> {
+            assertThat(release).containsEntry("quantity_delta", 0).containsEntry("actor_emp_id", null);
+            assertThat((Integer) release.get("reserved_delta")).isNegative();
+            assertThat((String) release.get("idempotency_key")).startsWith("leave:approval:withdraw:request:");
+        });
+        Map<String, List<Map<String, Object>>> after = rows();
+        assertThat(settlementService.settle(cancel)).isEqualTo(LeaveApprovalSettlementService.Outcome.ALREADY_APPLIED);
+        assertThat(settlementService.settle(decision(initial, "APPROVED", 1, 501L, initial.approvalRequestId())))
+                .isEqualTo(LeaveApprovalSettlementService.Outcome.CONFLICT);
+        assertThat(rows()).isEqualTo(after);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"APPROVED", "REJECTED", "IN_PROGRESS", "UNKNOWN", "CANCELLED"})
+    void withdrawalDoesNotOverwriteTerminalDecisionOrAmbiguousAdminCancellation(String priorState) {
+        LeaveSubmissionResult initial = pending();
+        approvalResultService.startCall(initial.requestId(), initial.approvalRequestId());
+        approvalResultService.linkCreatedDocument(initial.requestId(), initial.approvalRequestId(), 501L);
+        if (priorState.equals("APPROVED") || priorState.equals("REJECTED")) {
+            settlementService.settle(decision(initial, priorState, 1, 501L, initial.approvalRequestId()));
+        } else {
+            when(employeeAccess.isAdmin(1L)).thenReturn(true);
+            AdminCancellationAttempt attempt = cancellationTransactions.start(initial.requestId(), "관리자 취소");
+            if (priorState.equals("UNKNOWN")) {
+                cancellationTransactions.recordUnknown(attempt.command());
+            }
+            if (priorState.equals("CANCELLED")) {
+                cancellationTransactions.complete(attempt.command());
+            }
+        }
+
+        Map<String, List<Map<String, Object>>> before = rows();
+        assertThat(settlementService.settle(decision(initial, "CANCEL", 1, 501L, initial.approvalRequestId())))
+                .isEqualTo(LeaveApprovalSettlementService.Outcome.CONFLICT);
+        assertThat(rows()).isEqualTo(before);
+    }
+
+    private LeaveApprovalDecision decision(
+            LeaveSubmissionResult initial, String status, int version, Long documentId, UUID requestKey
+    ) {
+        return new LeaveApprovalDecision(
+                version, "DOCUMENT_COMPLETED", "LEAVE", "LEAVE", initial.requestId(), documentId, requestKey, status
+        );
+    }
+
+    @Test
+    void lateHttpFailurePreservesRecoveredDocumentAndReservation() {
+        LeaveSubmissionResult initial = pending();
+        approvalResultService.startCall(initial.requestId(), initial.approvalRequestId());
+        approvalResultService.recordUnknownAfterHttp(initial.requestId(), initial.approvalRequestId(), "TIMEOUT");
+        LeaveSubmissionResult linked = approvalResultService.linkCreatedDocument(
+                initial.requestId(), initial.approvalRequestId(), 501L
+        );
+        Map<String, List<Map<String, Object>>> after = rows();
+
+        assertThat(approvalResultService.recordUnknownAfterHttp(
+                initial.requestId(), initial.approvalRequestId(), "APPROVAL_HTTP_404"
+        )).isEqualTo(linked);
+        assertThat(rows()).isEqualTo(after);
+    }
+
     private LeaveSubmissionResult pending() {
         return submissionService.submit("key",input(1,null,date(day,LeaveRequestPortion.FULL)));
     }

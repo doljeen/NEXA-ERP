@@ -24,6 +24,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 public class AdminLeaveCancellationController {
     private final AdminLeaveCancellationService cancellationService;
 
+    // 관리자가 휴가 신청을 직접 취소
     @PostMapping("/{requestId}/cancel")
     public ResponseEntity<ApiResult<AdminLeaveCancellationResponse>> cancel(
             @PathVariable Long requestId,

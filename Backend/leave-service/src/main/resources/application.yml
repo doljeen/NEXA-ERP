@@ -14,9 +14,14 @@ leave:
       duty-id: ${LEAVE_HR_JWT_DUTY_ID_CLAIM:}
       position-id: ${LEAVE_HR_JWT_POSITION_ID_CLAIM:}
   approval:
+    results:
+      enabled: ${LEAVE_APPROVAL_RESULTS_ENABLED:false}
+      contract-verified: ${LEAVE_APPROVAL_RESULTS_CONTRACT_VERIFIED:false}
+      group-id: ${LEAVE_APPROVAL_RESULTS_GROUP_ID:leave-service}
     withdrawal:
       enabled: ${LEAVE_APPROVAL_WITHDRAWAL_ENABLED:false}
     enabled: ${LEAVE_APPROVAL_ENABLED:false}
+    http-contract-verified: ${LEAVE_APPROVAL_HTTP_CONTRACT_VERIFIED:false}
     base-url: ${LEAVE_APPROVAL_BASE_URL:}
     service-id: ${LEAVE_APPROVAL_SERVICE_ID:}
     connect-timeout: ${LEAVE_APPROVAL_CONNECT_TIMEOUT:2s}
@@ -31,6 +36,19 @@ nexa:
     # 토큰 검증 공개키 (user-service JWKS)
     jwks-uri: ${JWT_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
 spring:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:}
+    consumer:
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+      properties:
+        allow.auto.create.topics: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
   cloud:
     config:
       enabled: false
