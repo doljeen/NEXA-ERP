@@ -1,6 +1,9 @@
 package com.ssafy.approval_service.support;
 
 import com.ssafy.approval_service.global.client.UserServiceClient;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.ResourceAccessException;
 
 import java.util.List;
@@ -19,6 +22,7 @@ public class FakeUserServiceClient implements UserServiceClient {
     private final Map<Long, String> statuses = new ConcurrentHashMap<>();
     private final Set<Long> missing = ConcurrentHashMap.newKeySet();
     private final List<List<Long>> calls = new CopyOnWriteArrayList<>();
+    private final Map<Long, List<OrgUnit>> orgChains = new ConcurrentHashMap<>();
     private volatile boolean down;
 
     @Override
@@ -32,6 +36,24 @@ public class FakeUserServiceClient implements UserServiceClient {
                 .map(id -> new EmployeeStatus(id, statuses.getOrDefault(id, "EMPLOYED")))
                 .toList();
         return new EmployeeListResult(new EmployeeList(found));
+    }
+
+    /** 부서 체인. setOrgChain 으로 지정하지 않은 사원은 user-service 처럼 404 */
+    @Override
+    public OrgChainResult getOrgChain(Long employeeId) {
+        if (down) {
+            throw new ResourceAccessException("user-service 장애 (테스트)");
+        }
+        List<OrgUnit> chain = orgChains.get(employeeId);
+        if (chain == null) {
+            throw HttpClientErrorException.create(HttpStatus.NOT_FOUND, "Not Found", HttpHeaders.EMPTY, null, null);
+        }
+        return new OrgChainResult(new OrgChain(employeeId, chain.getFirst().deptId(), chain));
+    }
+
+    /** 사원의 부서 체인 지정. 소속 부서부터 최상위 순으로 */
+    public void setOrgChain(long empId, OrgUnit... chain) {
+        orgChains.put(empId, List.of(chain));
     }
 
     public void setStatus(long empId, String status) {

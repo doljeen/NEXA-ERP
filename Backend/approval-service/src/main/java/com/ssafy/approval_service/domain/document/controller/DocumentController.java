@@ -1,9 +1,12 @@
 package com.ssafy.approval_service.domain.document.controller;
 
+import com.ssafy.approval_service.domain.approval.policy.ApprovalAttributes;
+import com.ssafy.approval_service.domain.document.model.dto.ApprovalLinePreviewResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateRequest;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentInfoResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentListResponse;
+import com.ssafy.approval_service.domain.document.model.entity.enums.FormType;
 import com.ssafy.approval_service.domain.document.service.DocumentCreateResult;
 import com.ssafy.approval_service.domain.document.service.DocumentService;
 import com.ssafy.approval_service.global.dto.ApiResult;
@@ -16,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -47,6 +51,20 @@ public class DocumentController {
     ) {
         DocumentListResponse response = documentService.findByStatusAndType(approvalStatus, formType, box, requester);
         return ResponseEntity.ok(ApiResult.success(response));
+    }
+
+    /**
+     * 기본 결재선 미리보기. 요청자를 기안자로 보고 위임전결 규정과 조직도로 만든다 (저장하지 않음).
+     * 신청 값은 쿼리로: days, overtimeMinutes, monthlyOvertimeMinutes, overseas, amount (모두 선택)
+     */
+    @GetMapping("/approval-line-preview")
+    public ResponseEntity<ApiResult<ApprovalLinePreviewResponse>> previewApprovalLine(
+            @CurrentEmployeeId Long drafterId,
+            @RequestParam FormType formType,
+            @Valid @ModelAttribute ApprovalAttributes attributes
+    ) {
+        return ResponseEntity.ok(ApiResult.success(
+                documentService.previewApprovalLine(formType, attributes, drafterId)));
     }
 
     /** 문서 상세 (문서 + 결재선 + 이력) */

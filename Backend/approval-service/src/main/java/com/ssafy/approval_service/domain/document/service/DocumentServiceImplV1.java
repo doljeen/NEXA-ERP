@@ -5,7 +5,15 @@ import com.ssafy.approval_service.domain.approval.model.entity.ApprovalLine;
 import com.ssafy.approval_service.domain.approval.model.entity.enums.HistoryAction;
 import com.ssafy.approval_service.domain.approval.repository.ApprovalHistoryRepository;
 import com.ssafy.approval_service.domain.approval.repository.ApprovalLineRepository;
+import com.ssafy.approval_service.domain.approval.policy.ApprovalAttributes;
+import com.ssafy.approval_service.domain.approval.policy.ApprovalLevel;
+import com.ssafy.approval_service.domain.approval.policy.ApprovalLineGenerator;
+import com.ssafy.approval_service.domain.approval.policy.ApprovalPolicy;
+import com.ssafy.approval_service.domain.approval.policy.GeneratedApprovalLine;
 import com.ssafy.approval_service.domain.approval.service.ApprovalLineValidator;
+import com.ssafy.approval_service.domain.approval.service.DocumentCompleter;
+import com.ssafy.approval_service.domain.document.model.dto.ApprovalLinePreviewResponse;
+import com.ssafy.approval_service.domain.document.model.dto.ApprovalLineRequest;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentBox;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateRequest;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateResponse;
@@ -40,6 +48,9 @@ public class DocumentServiceImplV1 implements DocumentService {
     private final ApprovalLineValidator approvalLineValidator;
     private final DocumentNumberGenerator documentNumberGenerator;
     private final RequestKeyLock requestKeyLock;
+    private final ApprovalPolicy approvalPolicy;
+    private final ApprovalLineGenerator approvalLineGenerator;
+    private final DocumentCompleter documentCompleter;
 
     @Override
     public DocumentListResponse findByStatusAndType(String approvalStatus, String formType, String box,
@@ -56,7 +67,8 @@ public class DocumentServiceImplV1 implements DocumentService {
     }
 
     /*
-     * 문서 생성 + 상신: 출처·요청 키 검증 → 결재선 검증 → 문서번호 채번 → 문서·결재선·SUBMIT 이력 저장
+     * 문서 생성 + 상신: 출처·요청 키 검증 → 전결 단계 결정 → 결재선 준비(지정 검증 또는 조직도로 생성)
+     * → 문서번호 채번 → 문서·결재선·SUBMIT 이력 저장 (자가결재면 즉시 승인)
      */
     @Override
     @Transactional
@@ -73,8 +85,20 @@ public class DocumentServiceImplV1 implements DocumentService {
             }
         }
 
-        // 결재선 검증
-        approvalLineValidator.validate(request.approvalLines(), drafterId);
+        // 위임전결 규정상 전결 단계. 결재선을 직접 지정해도 기록용으로 남긴다
+        ApprovalLevel level = approvalPolicy.requiredLevel(request.formType(), request.attributes());
+
+        // 결재선: 지정했으면 검증만, 생략했으면 조직도로 만든다
+        List<ApprovalLineRequest> lineRequests;
+        boolean selfApproval = false;
+        if (request.hasApprovalLines()) {
+            approvalLineValidator.validate(request.approvalLines(), drafterId);
+            lineRequests = request.approvalLines();
+        } else {
+            GeneratedApprovalLine generated = approvalLineGenerator.generate(drafterId, level);
+            lineRequests = generated.lines();
+            selfApproval = generated.selfApproval();
+        }
 
         // 문서 생성
         Document draft = Document.builder()
@@ -84,33 +108,45 @@ public class DocumentServiceImplV1 implements DocumentService {
                 .sourceType(request.sourceType())
                 .sourceId(request.sourceId())
                 .requestKey(request.requestKey())
+                .approvalLevel(level)
+                .attributes(request.attributes())
                 .build();
         // 양식·연도별 일련번호를 받아 문서번호를 채운 뒤 저장한다
         draft.assignDocNo(documentNumberGenerator.next(draft.getFormType(), draft.numberingYear()));
         Document document = documentRepository.save(draft);
 
-        // req -> 결재선
-        List<ApprovalLine> lines = request.approvalLines().stream()
-                .map(line -> ApprovalLine.builder()
-                        .document(document)
-                        .empId(line.empId())
-                        .step(line.step())
-                        .role(line.role())
-                        .build())
-                .toList();
-
         // 결재선 우선 저장
-        approvalLineRepository.saveAll(lines);
+        approvalLineRepository.saveAll(lineRequests.stream()
+                .map(line -> line.toEntity(document))
+                .toList());
 
         // 결재 이력 저장
+        recordFirstRoundHistory(document, drafterId, HistoryAction.SUBMIT);
+
+        // 자가결재(대표이사 기안): 결재자가 없으므로 상신과 함께 최종 승인. 출처가 있으면 결과 이벤트도 남긴다
+        if (selfApproval) {
+            documentCompleter.approve(document);
+            recordFirstRoundHistory(document, drafterId, HistoryAction.FINAL_APPROVE);
+        }
+
+        return new DocumentCreateResult(new DocumentCreateResponse(document.getDocId(), document.getDocNo()), true);
+    }
+
+    private void recordFirstRoundHistory(Document document, Long actorId, HistoryAction action) {
         approvalHistoryRepository.save(ApprovalHistory.builder()
                 .document(document)
                 .round(FIRST_ROUND)
-                .actorId(drafterId)
-                .action(HistoryAction.SUBMIT)
+                .actorId(actorId)
+                .action(action)
                 .build());
+    }
 
-        return new DocumentCreateResult(new DocumentCreateResponse(document.getDocId(), document.getDocNo()), true);
+    /** 기본 결재선 미리보기. 요청자를 기안자로 보고 위임전결 규정과 조직도로 만든다 (저장하지 않음) */
+    @Override
+    public ApprovalLinePreviewResponse previewApprovalLine(FormType formType, ApprovalAttributes attributes,
+                                                           Long drafterId) {
+        ApprovalLevel level = approvalPolicy.requiredLevel(formType, attributes);
+        return ApprovalLinePreviewResponse.of(formType, level, approvalLineGenerator.generate(drafterId, level));
     }
 
     /** 이미 있는 문서를 재요청에 돌려준다. 같은 키인데 다른 신청이면 409 */
