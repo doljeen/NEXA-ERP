@@ -36,6 +36,7 @@ import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.YearMonth;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -107,7 +108,7 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
         AttendanceRequestType reqType = request.reqType();
 
         // 1. 미리보기와 같은 검증 (중복 신청, 주 최대 근로시간, 대상 로그 등)
-        preview(empId, request.toPreviewRequest());
+        AttendanceRequestPreviewResponse preview = preview(empId, request.toPreviewRequest());
 
         // 2. 신청서 저장. 결재 문서에 신청 ID를 넘기려고 먼저 저장한다
         AttendanceRequest attendanceRequest = AttendanceRequest.builder()
@@ -124,7 +125,7 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
 
         // 3. 결재 문서 생성 (신청한 사원의 토큰으로 호출). 실패하면 예외로 신청서 저장도 롤백된다
         ApprovalDocument document = approvalClient.createDocument(ApprovalDocumentCreateRequest.ofAttendance(
-                titleOf(request), reqType, attendanceRequest.getAttReqId(), toApprovalLines(request.approvalLines())));
+                titleOf(request), reqType, attendanceRequest.getAttReqId(), attributesOf(empId, request, preview)));
         attendanceRequest.linkApprovalDocument(document.documentId(), document.docNo());
 
         return AttendanceRequestDetailResponse.from(attendanceRequest);
@@ -160,11 +161,25 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
         };
     }
 
-    private static List<ApprovalDocumentCreateRequest.ApprovalLine> toApprovalLines(
-            List<AttendanceRequestSubmitRequest.ApprovalLine> lines) {
-        return lines.stream()
-                .map(line -> new ApprovalDocumentCreateRequest.ApprovalLine(line.empId(), line.step(), line.role()))
-                .toList();
+    /** 결재 전결 판단 값. 초과근무만 신청 시간과 그 달 누적(이번 신청 포함)을 보낸다 */
+    private ApprovalDocumentCreateRequest.Attributes attributesOf(Long empId, AttendanceRequestSubmitRequest request,
+                                                                 AttendanceRequestPreviewResponse preview) {
+        if (request.reqType() != AttendanceRequestType.OVERTIME) {
+            return null;
+        }
+        int requestedMin = preview.overtime().requestedMin();
+        return new ApprovalDocumentCreateRequest.Attributes(
+                requestedMin, monthlyOvertimeMinExcept(empId, request.targetDate()) + requestedMin);
+    }
+
+    /** 대상일이 속한 달에서 대상일을 제외한 초과근로(연장 + 휴일) 합 */
+    private int monthlyOvertimeMinExcept(Long empId, LocalDate targetDate) {
+        YearMonth month = YearMonth.from(targetDate);
+        return attendanceDailyRepository
+                .findByEmpIdAndWorkDateBetweenOrderByWorkDateAsc(empId, month.atDay(1), month.atEndOfMonth()).stream()
+                .filter(d -> !d.getWorkDate().equals(targetDate))
+                .mapToInt(d -> d.getOtExtendedMin() + d.getOtHolidayMin())
+                .sum();
     }
 
     // ===== 휴일대체 =====
