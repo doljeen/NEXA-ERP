@@ -28,6 +28,14 @@ public interface AttendanceRequestService {
     AttendanceRequestDetailResponse getMyRequest(Long empId, Long requestId);
 
     /**
+     * 신청서 회수. 결재 대기 중인 본인 신청서만 회수하고, 결재 문서도 함께 회수한다.
+     * 없거나 본인 신청서가 아니면 BusinessException(ATTENDANCE_REQUEST_NOT_FOUND),
+     * 결재 대기가 아니면 BusinessException(REQUEST_NOT_PENDING),
+     * 결재가 이미 진행됐으면 BusinessException(APPROVAL_CANCEL_REJECTED)
+     */
+    AttendanceRequestDetailResponse cancel(Long empId, Long requestId);
+
+    /**
      * 결재 결과 반영 (결재 결과 이벤트 수신 시 호출).
      * 결재 대기(PENDING)일 때만 반영하고 이미 처리된 신청은 무시한다 (같은 결과가 두 번 와도 결과가 같다).
      * 승인이면 신청 내용을 근태에 적용한다.

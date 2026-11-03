@@ -30,6 +30,8 @@ public enum ErrorCode {
     ATTENDANCE_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "ATTN_012", "근태 신청서를 찾을 수 없습니다."),
     APPROVAL_REQUEST_REJECTED(HttpStatus.BAD_REQUEST, "ATTN_013", "결재 문서를 만들 수 없습니다."),
     APPROVAL_CALL_FAILED(HttpStatus.BAD_GATEWAY, "ATTN_014", "결재 서비스 호출에 실패했습니다."),
+    APPROVAL_CANCEL_REJECTED(HttpStatus.CONFLICT, "ATTN_016", "결재가 진행되어 회수할 수 없습니다."),
+    REQUEST_NOT_PENDING(HttpStatus.CONFLICT, "ATTN_017", "결재 대기 중인 신청서만 회수할 수 있습니다."),
 
     // 공통 (user-service와 동일)
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),

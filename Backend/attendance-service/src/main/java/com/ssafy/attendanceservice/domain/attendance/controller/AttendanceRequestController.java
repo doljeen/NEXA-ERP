@@ -64,4 +64,12 @@ public class AttendanceRequestController {
             @PathVariable Long requestId) {
         return ResponseEntity.ok(ApiResult.success(attendanceRequestService.getMyRequest(empId, requestId)));
     }
+
+    // 신청서 회수 API (결재 대기 중이고 아직 아무도 결재하지 않은 신청서)
+    @PostMapping("/{requestId}/cancel")
+    public ResponseEntity<ApiResult<AttendanceRequestDetailResponse>> cancel(
+            @CurrentEmployeeId Long empId,
+            @PathVariable Long requestId) {
+        return ResponseEntity.ok(ApiResult.success(attendanceRequestService.cancel(empId, requestId)));
+    }
 }

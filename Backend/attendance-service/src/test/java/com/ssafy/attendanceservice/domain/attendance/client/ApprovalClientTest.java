@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -25,6 +26,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 /** 결재 서비스 호출: 토큰 전달, 요청 형식, 오류 변환 (Spring 컨텍스트 없이 MockRestServiceServer 로) */
@@ -32,6 +34,7 @@ class ApprovalClientTest {
 
     private static final String BASE_URL = "http://approval-service";
     private static final String DOCUMENTS_URL = BASE_URL + "/api/v1/documents";
+    private static final String CANCEL_URL = DOCUMENTS_URL + "/128/cancel";
 
     private MockRestServiceServer server;
     private ApprovalClient client;
@@ -122,5 +125,41 @@ class ApprovalClientTest {
                 AttendanceRequestType.TIME_FIX, 43L, null));
 
         server.verify();
+    }
+
+    @Test
+    void 신청한_사원의_토큰으로_결재_문서를_회수() {
+        server.expect(requestTo(CANCEL_URL))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer employee-access-token"))
+                .andRespond(withSuccess("""
+                        {"success":true,"data":null}""", MediaType.APPLICATION_JSON));
+
+        client.cancelDocument(128L);
+
+        server.verify();
+    }
+
+    @Test
+    void 결재가_진행된_문서는_409와_결재_서비스_메시지() {
+        server.expect(requestTo(CANCEL_URL))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON).body("""
+                        {"success":false,"error":{"code":"APPROVAL_008","message":"결재가 진행된 문서는 회수할 수 없습니다."},"data":null}"""));
+
+        assertThatThrownBy(() -> client.cancelDocument(128L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("결재가 진행된 문서는 회수할 수 없습니다.")
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.APPROVAL_CANCEL_REJECTED);
+    }
+
+    @Test
+    void 회수_중_결재_서비스_오류는_502() {
+        server.expect(requestTo(CANCEL_URL)).andRespond(withServerError());
+
+        assertThatThrownBy(() -> client.cancelDocument(128L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.APPROVAL_CALL_FAILED);
     }
 }
