@@ -9,6 +9,8 @@ import java.util.List;
 
 public interface LeaveLedgerRepository extends JpaRepository<LeaveLedger, Long> {
 
+    boolean existsByReversesEntryIdIn(List<Long> entryIds);
+
     @Query("""
             select ledgerEntry from LeaveLedger ledgerEntry
             join fetch ledgerEntry.account account

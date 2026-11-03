@@ -213,6 +213,13 @@ services:
         max-size: "10m"
         max-file: "3"
 
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "3", "http://localhost:8087/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
   payroll-service:
     image: nexa-payroll:local
     restart: unless-stopped

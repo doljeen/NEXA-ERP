@@ -71,10 +71,12 @@ class MyLeaveRequestPostgresIntegrationTest {
             // 격리된 테스트에서만 SELECT 실행 중의 동시 커밋을 제어한다.
             if (gateQuery.get() && sql.contains("from leave_request ")) {
                 gateQuery.remove();
+                // pg_stat_activity는 SQL 앞부분만 보관하므로 컬럼 증가에도 게이트 대기를 식별한다.
+                String gateMarker = "/* request_query_test_gate() */ ";
                 if (sql.contains(" where ")) {
-                    return sql.replace(" where ", " where request_query_test_gate() and ");
+                    return gateMarker + sql.replace(" where ", " where request_query_test_gate() and ");
                 }
-                return sql.replace(" order by ", " where request_query_test_gate() order by ");
+                return gateMarker + sql.replace(" order by ", " where request_query_test_gate() order by ");
             }
             return sql;
         }

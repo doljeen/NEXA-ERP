@@ -14,7 +14,7 @@ build-attendance:
 
   artifacts:
     when: always
-    expire_in: 7 days
+    expire_in: 2 days
     paths:
       - Backend/attendance-service/build/libs/*.jar
     reports:
