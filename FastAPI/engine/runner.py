@@ -114,18 +114,26 @@ def _run_graph(run_id: int, graph_json: dict, thread_id: str, graph_input) -> No
         return
 
     if "__interrupt__" in result:
-        _set_waiting(run_id)
+        # interrupt()에 넘긴 값 = 사람이 확인해야 할 내용
+        payload = result["__interrupt__"][0].value
+        _set_waiting(run_id, payload)
         return
 
     _finish(run_id, RunStatus.SUCCEEDED, outputs=result["outputs"])
 
 
-def _set_waiting(run_id: int) -> None:
+def _set_waiting(run_id: int, payload: dict | None = None) -> None:
     with SessionLocal() as db:
         run = db.get(Run, run_id)
         if run.status == RunStatus.CANCELED:
             return
         run.status = RunStatus.WAITING
+        # 대기 중인 단계에 "무엇을 확인해야 하는지" 저장 → 화면이 /steps로 읽어서 보여 줌
+        step = db.scalars(
+            select(RunStep).where(RunStep.run_id == run_id, RunStep.status == RunStatus.WAITING)
+        ).first()
+        if step is not None:
+            step.output = {"waiting_for": payload}
         db.commit()
 
 

@@ -1,27 +1,51 @@
-import time
+"""OCR 노드: 업로드된 이미지 파일 → 줄 단위 텍스트."""
+from pathlib import Path
 
+from ai.ocr import ocr_image
 from nodes.base import BaseNode, NodeContext, NodeResult
+
+# OCR 대상 확장자 (PDF는 나중에 페이지를 이미지로 바꿔서 지원)
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
 class OcrExtractNode(BaseNode):
     node_type = "ocr_extract"
-    name = "서류 항목 추출"
+    name = "OCR 글자 인식"
     category = "ai"
-    description = "OCR + LLM으로 가맹점·금액·날짜 추출"
+    description = "업로드한 이미지에서 글자를 읽어 줄 단위 텍스트로 변환"
     config_fields = [
-        {"key": "fields", "label": "추출할 항목", "type": "text", "required": True},
+        {"key": "min_confidence", "label": "최소 신뢰도", "type": "number", "required": False},
     ]
     branches = ["성공", "확인 필요"]
     output_vars = [
-        {"key": "items", "label": "추출 결과", "type": "object"},
-        {"key": "confidence", "label": "신뢰도", "type": "number"},
+        {"key": "text", "label": "인식 텍스트", "type": "text"},
+        {"key": "pages", "label": "파일별 텍스트", "type": "list"},
+        {"key": "confidence", "label": "평균 신뢰도", "type": "number"},
     ]
 
-
     def run(self, ctx: NodeContext) -> NodeResult:
-        time.sleep(1)
-        fields = [f.strip() for f in ctx.config["fields"].split(",")]
-        items = {f: f"{f} 샘플값" for f in fields}
-        confidence = 0.97
-        branch = "성공" if confidence >= 0.8 else "확인 필요"
-        return NodeResult(output={"items": items, "confidence": confidence}, branch=branch)
+        # 실행 시 첨부된 파일 중 이미지만 대상
+        files = [
+            f for f in ctx.inputs.get("files", [])
+            if Path(f["path"]).suffix.lower() in IMAGE_EXTS
+        ]
+        if not files:
+            raise ValueError("OCR할 이미지 파일이 없습니다")
+
+        pages, scores = [], []
+        for f in files:
+            result = ocr_image(Path(f["path"]).read_bytes())          # GPU 서버 OCR 호출
+            pages.append({"file_id": f["file_id"], "name": f["name"], "text": result.text})
+            scores += [item.score for item in result.items]           # 글자 덩어리별 신뢰도
+
+        # 평균 신뢰도가 기준 미만이면 "확인 필요" 분기 (흐리거나 잘린 사진)
+        confidence = round(sum(scores) / len(scores), 4) if scores else 0.0
+        threshold = float(ctx.config.get("min_confidence") or 0.8)
+        branch = "성공" if confidence >= threshold else "확인 필요"
+
+        # 여러 장이면 빈 줄로 구분해서 합침
+        text = "\n\n".join(p["text"] for p in pages)
+        return NodeResult(
+            output={"text": text, "pages": pages, "confidence": confidence},
+            branch=branch,
+        )

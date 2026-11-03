@@ -9,8 +9,9 @@ class RunCreateRequest(CamelModel):
 
 
 class ResumeRequest(CamelModel):
-    approved: bool
-    comment: str | None = None
+    approved: bool                  # 확인(True) / 반려(False)
+    comment: str | None = None      # 의견
+    data: dict | None = None        # 사람이 고친 값 (human_confirm용, 고친 필드만 보내도 됨)
 
 
 class RunCreated(CamelModel):
