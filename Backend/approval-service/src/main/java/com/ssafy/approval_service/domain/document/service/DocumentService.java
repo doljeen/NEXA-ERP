@@ -1,9 +1,12 @@
 package com.ssafy.approval_service.domain.document.service;
 
+import com.ssafy.approval_service.domain.approval.policy.ApprovalAttributes;
+import com.ssafy.approval_service.domain.document.model.dto.ApprovalLinePreviewResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateRequest;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentInfoResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentListResponse;
 import com.ssafy.approval_service.domain.document.model.entity.Document;
+import com.ssafy.approval_service.domain.document.model.entity.enums.FormType;
 import com.ssafy.nexa.security.AuthUser;
 
 import java.util.UUID;
@@ -18,6 +21,9 @@ public interface DocumentService {
      * 같은 요청 키로 이미 만든 문서가 있으면 새로 만들지 않고 그 문서를 돌려준다 (created=false)
      */
     DocumentCreateResult create(DocumentCreateRequest request, Long drafterId);
+
+    /** 기본 결재선 미리보기. 위임전결 규정과 조직도로 만든다 (저장하지 않음) */
+    ApprovalLinePreviewResponse previewApprovalLine(FormType formType, ApprovalAttributes attributes, Long drafterId);
 
     /** 문서 상세 (문서 + 결재선 + 이력) */
     DocumentInfoResponse findById(Long documentId, AuthUser requester);

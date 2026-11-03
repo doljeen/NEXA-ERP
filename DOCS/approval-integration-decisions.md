@@ -214,6 +214,31 @@ GET /api/v1/documents/by-request/{requestKey}
 
 ---
 
+## D5. 결재선을 누가 정할까 — ✅ 확정: approval 이 위임전결 규정으로 (구현 완료)
+
+지금까지는 생성 요청이 결재선을 정해서 보냈습니다. 이 방식이면 "누가 결재자인지" 찾는 로직이 leave·attendance·결재 화면에 흩어지고, 전결 규정이 바뀌면 여러 서비스를 함께 고쳐야 합니다.
+
+| 항목 | 결정 |
+|---|---|
+| 규칙 위치 | 결재 규칙(위임전결 규정)은 **approval**, 조직(부서·부서장)은 **user-service**, 업무 사실(휴가 일수 등)은 **원본 서비스** |
+| 전결 단계 | 양식별 기본 팀장. 휴가 5일 이상·초과근무 월 12시간 초과·해외 출장 → 본부장. 일반 기안 100만 원 초과 → 본부장, 1,000만 원 초과 → 대표이사. 기준값은 설정 |
+| 판단 값 전달 | 원본 서비스가 생성 요청의 `attributes`로 보낸다. approval 은 leave·attendance 를 호출하지 않는다 (순환 의존 방지) |
+| 조직 데이터 | user-service `department.dept_type`(COMPANY/DIVISION/TEAM), `head_emp_id`(부서장). approval 은 상신 시점에 `GET /api/v1/employees/{id}/org-chain` 동기 조회 |
+| 예외 | 팀장 기안 → 한 단계 위, 대표이사 기안 → 자가결재(즉시 승인), 공석·휴직 부서장 → 위 단계, 겸직 → 한 번만 |
+| 하위 호환 | `approvalLines`를 보내면 지금처럼 검증만 하고 그대로 쓴다. 생략하면 서버가 만든다 |
+| 결재 대상 | **급여는 결재 대상이 아니다** (payroll 은 출처로 추가하지 않음) |
+
+자세한 내용과 요청 형식: `DOCS/approval-document-source.md`의 "결재선 자동 결정"
+
+### 남은 논의
+
+- [ ] attendance: 상신 요청에서 `approvalLines` 빼고 `monthlyOvertimeMinutes` 보내기 (지금 요청도 동작하지만 결재선을 보내면 규정이 적용되지 않음)
+- [ ] leave: HTTP 구현체를 만들 때 `attributes.days`를 담고 결재선은 생략
+- [ ] 프런트: 미리보기 API, 출장 `overseas`·일반 기안 `amount` 입력, 부서장 관리 화면 (지금은 seed 로만 지정)
+- [ ] 나중: 대결(부재 시 대리 결재), 관리자 결재선 변경, 재기안 시 결재선 자동 생성
+
+---
+
 ## 메시지로 확인할 항목
 
 | # | 항목 | 대상 | 질문 | 결정 |
@@ -229,8 +254,8 @@ GET /api/v1/documents/by-request/{requestKey}
 1. 이 문서 공유 → 각 담당자가 질문에 의견 남기기
 2. 회의로 D1 남은 논의(재기안·멱등 방식), D3, D4 결정 (D2 확인, M1~M3는 메시지로)
 3. 구현
-   - approval: ~~D2 요청 키·조회 API~~ (완료) → ~~브로커(compose) + 아웃박스 + Kafka 발행(D1)~~ (완료) → 출처 문서 재기안 금지 → 취소 API(D3)
-   - leave/attendance: 생성 요청에 `requestKey` 추가, 조회 클라이언트(D2) → Kafka 수신·멱등 처리·DLQ(D1) → 취소 호출(D3)
+   - approval: ~~D2 요청 키·조회 API~~ (완료) → ~~브로커(compose) + 아웃박스 + Kafka 발행(D1)~~ (완료) → ~~결재선 자동 결정(D5)~~ (완료) → 출처 문서 재기안 금지 → 취소 API(D3)
+   - leave/attendance: 생성 요청에 `requestKey` 추가, 조회 클라이언트(D2) → 결재선 생략·`attributes` 전달(D5) → Kafka 수신·멱등 처리·DLQ(D1) → 취소 호출(D3)
 
 ## 결정 기록
 
@@ -240,3 +265,4 @@ GET /api/v1/documents/by-request/{requestKey}
 | 2026-11-02 | D1 | 브로커 구축은 approval 담당자가 approval-service compose 범위에서 진행. 세부 설계는 추천안 기준 | 재기안 금지·멱등 방식은 합의 필요 |
 | 2026-11-02 | D2 | `requestKey` 구현: 출처 문서 필수, 같은 신청 재요청은 200으로 기존 문서, 다른 신청은 409, `GET /by-request/{key}` 조회 | 필드 이름·404 의미는 leave 확인 필요 |
 | 2026-11-02 | D1 | approval 발행 구현: 아웃박스(V7) + 1초 발행기 + 토픽 생성 + compose 브로커 | 수신 가이드 `DOCS/approval-result-event.md` |
+| 2026-11-03 | D5 | 결재선은 approval 이 위임전결 규정과 user-service 조직도(부서 유형·부서장)로 만든다. 판단 값은 생성 요청 `attributes`로 받는다. 급여는 결재 대상 아님 | 조건부 전결까지 구현. `approvalLines`를 보내면 기존처럼 검증만 (하위 호환) |

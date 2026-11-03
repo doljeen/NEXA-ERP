@@ -4,6 +4,8 @@ import com.ssafy.approval_service.domain.approval.model.dto.ApprovalHistoryRespo
 import com.ssafy.approval_service.domain.approval.model.dto.ApprovalLineResponse;
 import com.ssafy.approval_service.domain.approval.model.entity.ApprovalHistory;
 import com.ssafy.approval_service.domain.approval.model.entity.ApprovalLine;
+import com.ssafy.approval_service.domain.approval.policy.ApprovalAttributes;
+import com.ssafy.approval_service.domain.approval.policy.ApprovalLevel;
 import com.ssafy.approval_service.domain.document.model.entity.Document;
 import com.ssafy.approval_service.domain.document.model.entity.enums.DocumentStatus;
 import com.ssafy.approval_service.domain.document.model.entity.enums.FormType;
@@ -26,6 +28,8 @@ public record DocumentInfoResponse(
         SourceType sourceType,                      // 출처 서비스
         Long sourceId,                              // 출처 서비스의 원본 신청 ID
         UUID requestKey,                            // 생성 요청 키
+        ApprovalLevel approvalLevel,                // 규정상 전결 단계 (이 기능 전에 만든 문서는 null)
+        ApprovalAttributes attributes,              // 전결 판단에 쓴 신청 값 (없으면 null)
         List<ApprovalLineResponse> approvalLines,   // 결재선 (step 순)
         List<ApprovalHistoryResponse> histories     // 변경 이력 (발생 순)
 ) {
@@ -44,6 +48,8 @@ public record DocumentInfoResponse(
                 document.getSourceType(),
                 document.getSourceId(),
                 document.getRequestKey(),
+                document.getApprovalLevel(),
+                document.getAttributes(),
                 lines.stream().map(ApprovalLineResponse::from).toList(),
                 histories.stream().map(ApprovalHistoryResponse::from).toList()
         );
