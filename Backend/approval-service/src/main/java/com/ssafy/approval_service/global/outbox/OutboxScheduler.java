@@ -21,6 +21,7 @@ public class OutboxScheduler {
     private static final int RETENTION_DAYS = 7;
 
     private final OutboxPublisher outboxPublisher;
+    private final OutboxMonitor outboxMonitor;
 
     /** 이전 실행이 끝나고 1초 뒤 다시 실행 (fixedDelay 라 실행이 겹치지 않는다) */
     @Scheduled(fixedDelayString = "${app.outbox.publish-interval:1000}")
@@ -29,6 +30,13 @@ public class OutboxScheduler {
         if (published > 0) {
             log.debug("아웃박스 이벤트 {}건 발행", published);
         }
+    }
+
+    /** 발행 지연 점검 (기본 1분마다). 게이지를 갱신하고, 기준 시간 넘게 밀려 있으면 ERROR 로그 */
+    @Scheduled(fixedDelayString = "${app.outbox.monitor-interval:60000}",
+            initialDelayString = "${app.outbox.monitor-interval:60000}")
+    public void monitor() {
+        outboxMonitor.check();
     }
 
     /** 매일 새벽 4시에 오래된 발행 완료 이벤트 정리 */

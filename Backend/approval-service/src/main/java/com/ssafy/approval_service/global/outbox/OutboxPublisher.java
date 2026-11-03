@@ -1,6 +1,7 @@
 package com.ssafy.approval_service.global.outbox;
 
-import lombok.RequiredArgsConstructor;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
@@ -21,8 +22,10 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class OutboxPublisher {
+
+    static final String PUBLISHED_COUNTER = "approval.outbox.published";
+    static final String FAILED_COUNTER = "approval.outbox.publish.failures";
 
     /** 한 번에 보낼 최대 개수 */
     static final int BATCH_SIZE = 100;
@@ -35,6 +38,21 @@ public class OutboxPublisher {
 
     private final OutboxEventRepository outboxEventRepository;
     private final KafkaTemplate<String, String> kafkaTemplate;
+    private final Counter publishedCounter;     // 지금까지 발행 성공 수 (카운터: 계속 증가)
+    private final Counter failedCounter;        // 지금까지 발행 실패 수
+
+    public OutboxPublisher(OutboxEventRepository outboxEventRepository,
+                           KafkaTemplate<String, String> kafkaTemplate,
+                           MeterRegistry meterRegistry) {
+        this.outboxEventRepository = outboxEventRepository;
+        this.kafkaTemplate = kafkaTemplate;
+        this.publishedCounter = Counter.builder(PUBLISHED_COUNTER)
+                .description("Kafka 로 발행한 아웃박스 이벤트 수")
+                .register(meterRegistry);
+        this.failedCounter = Counter.builder(FAILED_COUNTER)
+                .description("아웃박스 이벤트 발행 실패 수")
+                .register(meterRegistry);
+    }
 
     /** 발행 전 이벤트를 보내고, 보낸 개수를 돌려준다 */
     @Transactional
@@ -52,9 +70,11 @@ public class OutboxPublisher {
                 // 브로커 장애 등. 여기서 멈추고 다음 주기에 이 이벤트부터 다시 보낸다
                 log.warn("아웃박스 발행 실패, 다음 주기에 재시도: id={}, eventId={}, cause={}",
                         event.getId(), event.getEventId(), e.toString());
+                failedCounter.increment();
                 break;
             }
             event.markPublished();
+            publishedCounter.increment();
             published++;
         }
         return published;

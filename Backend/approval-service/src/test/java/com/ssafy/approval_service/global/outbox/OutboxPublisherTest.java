@@ -1,5 +1,6 @@
 package com.ssafy.approval_service.global.outbox;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
@@ -24,7 +25,12 @@ class OutboxPublisherTest {
     private final OutboxEventRepository repository = mock(OutboxEventRepository.class);
     @SuppressWarnings("unchecked")
     private final KafkaTemplate<String, String> kafkaTemplate = mock(KafkaTemplate.class);
-    private final OutboxPublisher publisher = new OutboxPublisher(repository, kafkaTemplate);
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    private final OutboxPublisher publisher = new OutboxPublisher(repository, kafkaTemplate, meterRegistry);
+
+    private double count(String name) {
+        return meterRegistry.get(name).counter().count();
+    }
 
     private static OutboxEvent event(long id, String key) {
         OutboxEvent event = new OutboxEvent(UUID.randomUUID(), "topic", key, "{}");
@@ -50,6 +56,8 @@ class OutboxPublisherTest {
         assertThat(publisher.publishPending()).isEqualTo(2);
         assertThat(a.isPublished()).isTrue();
         assertThat(b.isPublished()).isTrue();
+        assertThat(count(OutboxPublisher.PUBLISHED_COUNTER)).isEqualTo(2);
+        assertThat(count(OutboxPublisher.FAILED_COUNTER)).isZero();
     }
 
     @Test
@@ -67,6 +75,8 @@ class OutboxPublisherTest {
         assertThat(c.isPublished()).isFalse();
         // 순서가 바뀌지 않도록 실패 뒤 이벤트는 시도하지 않는다
         verify(kafkaTemplate, never()).send(anyString(), eq("12"), anyString());
+        assertThat(count(OutboxPublisher.PUBLISHED_COUNTER)).isEqualTo(1);
+        assertThat(count(OutboxPublisher.FAILED_COUNTER)).isEqualTo(1);
     }
 
     @Test
