@@ -116,7 +116,7 @@ record ApprovalResultEvent(String eventId, Long documentId, String sourceType, L
 @Transactional
 public void applyApprovalResult(Long requestId, String status) {
     LeaveRequest request = repository.findByIdForUpdate(requestId);   // 동시 처리 대비 잠금
-    if (!request.isWaitingApproval()) {
+    if (!request.isWaitingApproval()) {                              // SUBMITTING 또는 SUBMITTED
         return;                                                      // 이미 반영됨 → 무시
     }
     switch (status) {
@@ -126,6 +126,10 @@ public void applyApprovalResult(Long requestId, String status) {
     }
 }
 ```
+
+**결재 대기에는 "결재 요청 중" 상태도 포함합니다** (leave 의 `SUBMITTING`, attendance 의 같은 의미 상태).
+대표이사 기안(자가결재)은 상신과 함께 승인되어 `APPROVED` 이벤트가 바로 나가므로, 생성 응답(201)을 반영하기 전에 이벤트가 먼저 올 수 있습니다.
+`SUBMITTED`일 때만 반영하면 이 이벤트를 "이미 반영됨"으로 무시해 놓칩니다. 이벤트의 `sourceId`·`requestKey`로 신청을 찾으므로 `documentId`를 아직 저장하지 않았어도 반영할 수 있습니다.
 
 처리 이력이 필요하면 `eventId`를 유니크 키로 하는 테이블에 기록하는 방식도 있습니다(어떤 방식을 쓸지는 각 서비스 결정).
 

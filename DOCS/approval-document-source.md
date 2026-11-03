@@ -20,7 +20,7 @@ Content-Type: application/json
 |---|---|---|---|
 | `title` | string | O | 제목 (최대 255자) |
 | `formType` | string | O | 문서 양식. 아래 [양식별로 보내야 하는 값](#양식별로-보내야-하는-값) 참고 |
-| `approvalLines` | array | X | 결재선. **생략하면 서버가 위임전결 규정과 조직도로 만듭니다 (권장).** 보내면 지금처럼 검증만 하고 그대로 씁니다 |
+| `approvalLines` | array | X | 결재선. **생략하면 서버가 위임전결 규정과 조직도로 만듭니다 (권장).** 빈 배열 `[]`도 생략과 같습니다. 보내면 지금처럼 검증만 하고 그대로 씁니다 |
 | `sourceType` | string | 조건부 | 문서가 만들어진 곳: `DIRECT` \| `LEAVE` \| `ATTENDANCE`. 생략하면 `DIRECT` |
 | `sourceId` | number | 조건부 | 원본 신청 ID. `DIRECT`가 아니면 필수, `DIRECT`면 보내지 않음 |
 | `requestKey` | string (UUID) | 조건부 | 생성 요청 키. **요청하는 쪽이 만들어서** 보냄. `DIRECT`가 아니면 필수, `DIRECT`면 선택. 아래 [requestKey 만드는 법](#requestkey-만드는-법) 참고 |
@@ -166,14 +166,14 @@ Authorization: Bearer {access token}
 | 응답 | 원본 서비스가 할 일 |
 |---|---|
 | `201` / `200` | `documentId` 저장. 같은 키 재요청이면 `200`으로 처음 문서가 옴 |
-| `201`인데 문서가 이미 `APPROVED` | 대표이사 기안(자가결재). 결과 이벤트도 곧바로 옴. 별도 처리 필요 없음 |
+| (자가결재) `201`, 응답 형식은 같음 | 대표이사 기안이면 결재자 없이 상신과 함께 승인됩니다. 응답만으로는 알 수 없고, **`APPROVED` 결과 이벤트가 곧바로** 옵니다. 이벤트가 생성 응답 처리보다 먼저 올 수 있으니 [결과 이벤트 가이드](approval-result-event.md#멱등-처리-필수)대로 신청 중(`SUBMITTING`) 상태에서도 반영 |
 | `400` | 요청 값 문제. 신청을 실패로 처리하고 `error.message`를 사용자에게 보여줌 |
 | `409 APPROVAL_022` | 조직도에 부서장이 없어 결재자를 못 정함. 재시도해도 같음. 관리자에게 부서장 지정 요청 |
 | `503 APPROVAL_017` | user-service 장애. 같은 `requestKey`로 재시도 |
 
 반려 후 다시 신청하기
 
-- 출처 문서는 **반려가 최종**입니다. approval 의 재기안(`POST /api/v1/approvals/{documentId}/resubmit`)은 직접 기안 문서만 되고, 출처 문서는 `409 APPROVAL_023`입니다.
+- 출처 문서는 **반려가 최종**입니다. approval 의 재기안(`POST /api/v1/documents/{documentId}/resubmit`)은 직접 기안 문서만 되고, 출처 문서는 `409 APPROVAL_023`입니다.
 - `REJECTED` 결과를 받으면 그 신청을 종료(예약한 휴가 일수 반환 등)합니다.
 - 사용자가 다시 신청하면 **새 신청**으로 만들고 새 `requestKey`로 결재 문서를 새로 만듭니다. 화면에 "반려된 신청 복사해서 새로 신청" 기능을 두면 재기안처럼 편하게 쓸 수 있습니다 (선택, 각 서비스 화면).
 
@@ -266,6 +266,7 @@ restClient.post().uri("/api/v1/documents").body(body).retrieve()...   // 신청�
 | `SUBMITTED_CONFIRMED` | `201` / `200` (`data.documentId` 저장) |
 | `NOT_CREATED_CONFIRMED` | `400`, `409` (재시도해도 같은 결과) |
 | `UNKNOWN` | 타임아웃, `5xx`. 같은 `requestKey`로 재시도하거나 `findByRequestId` |
+| `DRAFT_CREATED` | 쓰지 않음. approval 은 임시저장 문서를 만들지 않고 생성 즉시 상신한다 |
 
 `findByRequestId(approvalRequestId)`는 `GET /api/v1/documents/by-request/{approvalRequestId}`입니다. `200`이면 `SUBMITTED_CONFIRMED`, `404`면 `NOT_CREATED_CONFIRMED`(문서가 안 만들어진 것이 확정).
 
