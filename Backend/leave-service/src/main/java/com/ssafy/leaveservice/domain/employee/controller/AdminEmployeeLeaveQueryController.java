@@ -28,18 +28,21 @@ public class AdminEmployeeLeaveQueryController {
     private final MyLeaveGrantService myLeaveGrantService;
     private final MyLeaveLedgerService myLeaveLedgerService;
 
+    // 직원별 휴가 잔액 조회
     @GetMapping("/balances")
     public ResponseEntity<ApiResult<List<MyLeaveBalanceResponse>>> getEmployeeBalances(@PathVariable Long employeeId) {
         List<MyLeaveBalanceResponse> response = myLeaveBalanceService.getEmployeeBalances(employeeId);
         return ResponseEntity.ok(ApiResult.success(response));
     }
 
+    // 직원별 휴가 발생 내역 조회
     @GetMapping("/grants")
     public ResponseEntity<ApiResult<List<MyLeaveGrantResponse>>> getEmployeeGrants(@PathVariable Long employeeId) {
         List<MyLeaveGrantResponse> response = myLeaveGrantService.getEmployeeGrants(employeeId);
         return ResponseEntity.ok(ApiResult.success(response));
     }
 
+    // 직원별 휴가 원장 조회
     @GetMapping("/ledger")
     public ResponseEntity<ApiResult<List<MyLeaveLedgerResponse>>> getEmployeeLedger(@PathVariable Long employeeId) {
         List<MyLeaveLedgerResponse> response = myLeaveLedgerService.getEmployeeLedger(employeeId);

@@ -18,6 +18,7 @@ public class MyLeaveLedgerController {
 
     private final MyLeaveLedgerService myLeaveLedgerService;
 
+    // 내 휴가 원장 조회
     @GetMapping
     public ResponseEntity<ApiResult<List<MyLeaveLedgerResponse>>> getMyLedger() {
         List<MyLeaveLedgerResponse> response = myLeaveLedgerService.getMyLedger();

@@ -20,6 +20,7 @@ public class AdminLeavePolicyActivationController {
 
     private final LeavePolicyActivationService leavePolicyActivationService;
 
+    // 정책 그룹의 활성 버전 선택
     @PutMapping("/{policyId}/active-version")
     public ResponseEntity<ApiResult<LeavePolicyActivationResponse>> activateVersion(
             @PathVariable Long policyId,

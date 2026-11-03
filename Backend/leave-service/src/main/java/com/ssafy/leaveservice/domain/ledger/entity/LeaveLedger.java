@@ -2,6 +2,7 @@ package com.ssafy.leaveservice.domain.ledger.entity;
 
 import com.ssafy.leaveservice.domain.account.entity.LeaveAccount;
 import com.ssafy.leaveservice.domain.request.entity.LeaveRequestAllocation;
+import com.ssafy.leaveservice.domain.request.entity.LeaveRequestStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -106,6 +107,39 @@ public class LeaveLedger {
         ledger.reason = "휴가 신청 배분 예약";
         ledger.createdAt = asOf;
         ledger.idempotencyKey = "leave:reserve:allocation:" + allocation.getAllocationId();
+        return ledger;
+    }
+
+    public static LeaveLedger settleApprovalReservation(
+            LeaveAccount account,
+            LeaveRequestAllocation allocation,
+            LeaveRequestStatus finalStatus,
+            OffsetDateTime asOf
+    ) {
+        LeaveLedger ledger = new LeaveLedger();
+        ledger.account = account;
+        ledger.grantId = allocation.getGrantId();
+        ledger.leaveReqId = allocation.getRequestId();
+        ledger.allocationId = allocation.getAllocationId();
+        boolean approved = finalStatus == LeaveRequestStatus.APPROVED;
+        ledger.eventType = approved ? LedgerEventType.CONSUME : LedgerEventType.RELEASE;
+        ledger.quantityDelta = approved ? -allocation.getAllocatedMinutes() : 0;
+        ledger.reservedDelta = -allocation.getAllocatedMinutes();
+        ledger.reason = switch (finalStatus) {
+            case APPROVED -> "최종 결재 승인에 따른 예약 사용";
+            case REJECTED -> "최종 결재 반려에 따른 예약 해제";
+            case WITHDRAWN -> "기안자 결재 문서 회수에 따른 예약 해제";
+            default -> throw new IllegalArgumentException("Unsupported settlement status");
+        };
+        ledger.createdAt = asOf;
+        String operation = switch (finalStatus) {
+            case APPROVED -> "consume";
+            case REJECTED -> "release";
+            case WITHDRAWN -> "withdraw";
+            default -> throw new IllegalArgumentException("Unsupported settlement status");
+        };
+        ledger.idempotencyKey = "leave:approval:" + operation + ":request:" + allocation.getRequestId()
+                + ":allocation:" + allocation.getAllocationId();
         return ledger;
     }
 

@@ -23,12 +23,14 @@ public class MyLeaveRequestController {
 
     private final MyLeaveRequestService myLeaveRequestService;
 
+    // 내 휴가 신청 목록 조회
     @GetMapping
     public ResponseEntity<ApiResult<List<MyLeaveRequestListResponse>>> getMyRequests() {
         List<MyLeaveRequestListResponse> response = myLeaveRequestService.getMyRequests();
         return ResponseEntity.ok(ApiResult.success(response));
     }
 
+    // 내 휴가 신청 상세 조회
     @GetMapping("/{requestId}")
     public ResponseEntity<ApiResult<MyLeaveRequestDetailResponse>> getMyRequest(@PathVariable Long requestId) {
         MyLeaveRequestDetailResponse response = myLeaveRequestService.getMyRequest(requestId);

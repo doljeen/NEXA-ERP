@@ -16,6 +16,7 @@ public class MyLeavePolicyController {
 
     private final MyLeavePolicyService myLeavePolicyService;
 
+    // 현재 나에게 적용되는 휴가 정책 조회
     @GetMapping
     public ResponseEntity<ApiResult<MyLeavePolicyResponse>> getMyPolicy() {
         MyLeavePolicyResponse response = myLeavePolicyService.getMyPolicy();

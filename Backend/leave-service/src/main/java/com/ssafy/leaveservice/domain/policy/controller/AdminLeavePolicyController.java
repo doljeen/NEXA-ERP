@@ -26,18 +26,21 @@ public class AdminLeavePolicyController {
 
     private final LeavePolicyGroupService leavePolicyGroupService;
 
+    // 휴가 정책 그룹 목록 조회
     @GetMapping
     public ResponseEntity<ApiResult<List<LeavePolicyGroupResponse>>> getAllPolicies() {
         List<LeavePolicyGroupResponse> policyGroups = leavePolicyGroupService.getAllPolicies();
         return ResponseEntity.ok(ApiResult.success(policyGroups));
     }
 
+    // 휴가 정책 그룹 상세 조회
     @GetMapping("/{policyId}")
     public ResponseEntity<ApiResult<LeavePolicyGroupResponse>> getPolicyGroup(@PathVariable Long policyId) {
         LeavePolicyGroupResponse response = leavePolicyGroupService.getPolicyGroup(policyId);
         return ResponseEntity.ok(ApiResult.success(response));
     }
 
+    // 휴가 정책 그룹 생성
     @PostMapping
     public ResponseEntity<ApiResult<LeavePolicyGroupResponse>> createPolicyGroup(
             @Valid @RequestBody LeavePolicyGroupCreateRequest request
@@ -46,6 +49,7 @@ public class AdminLeavePolicyController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResult.success(response));
     }
 
+    // 휴가 정책 그룹 이름 수정
     @PatchMapping("/{policyId}")
     public ResponseEntity<ApiResult<LeavePolicyGroupResponse>> updatePolicyGroup(
             @PathVariable Long policyId,

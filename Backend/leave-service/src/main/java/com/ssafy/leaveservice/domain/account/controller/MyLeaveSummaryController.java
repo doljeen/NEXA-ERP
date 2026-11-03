@@ -16,6 +16,7 @@ public class MyLeaveSummaryController {
 
     private final MyLeaveBalanceService myLeaveBalanceService;
 
+    // 내 휴가 잔액 요약 조회
     @GetMapping
     public ResponseEntity<ApiResult<MyLeaveSummaryResponse>> getMySummary() {
         MyLeaveSummaryResponse response = myLeaveBalanceService.getMySummary();

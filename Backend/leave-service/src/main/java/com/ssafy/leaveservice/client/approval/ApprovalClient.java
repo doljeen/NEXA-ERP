@@ -10,4 +10,12 @@ public interface ApprovalClient {
 
     // TODO: Approval의 UUID 결과 조회 계약을 확정한 뒤 HTTP 구현체에서 연결한다.
     ApprovalCreationResult findByRequestId(UUID approvalRequestId);
+
+    default boolean supportsRecovery() {
+        return false;
+    }
+
+    default ApprovalCreationResult recover(com.ssafy.leaveservice.domain.request.dto.LeaveSubmissionResult request) {
+        return findByRequestId(request.approvalRequestId());
+    }
 }

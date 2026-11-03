@@ -23,6 +23,7 @@ public class AdminLeavePolicyTypeRuleController {
 
     private final LeavePolicyTypeRuleService leavePolicyTypeRuleService;
 
+    // 정책 버전의 특정 휴가 유형 규칙 저장
     @PutMapping("/{leaveTypeId}")
     public ResponseEntity<ApiResult<LeavePolicyTypeRuleResponse>> upsertTypeRule(
             @PathVariable Long policyId,
@@ -34,6 +35,7 @@ public class AdminLeavePolicyTypeRuleController {
         return ResponseEntity.ok(ApiResult.success(response));
     }
 
+    // 정책 버전의 휴가 유형 규칙 목록 조회
     @GetMapping
     public ResponseEntity<ApiResult<List<LeavePolicyTypeRuleResponse>>> getTypeRules(
             @PathVariable Long policyId,

@@ -25,6 +25,7 @@ public class AdminLeaveAdjustmentController {
 
     private final LeaveAdjustmentService adjustmentService;
 
+    // 직원의 휴가 잔액 수동 조정
     @PostMapping
     public ResponseEntity<ApiResult<LeaveAdjustmentResponse>> adjust(
             @PathVariable Long employeeId,

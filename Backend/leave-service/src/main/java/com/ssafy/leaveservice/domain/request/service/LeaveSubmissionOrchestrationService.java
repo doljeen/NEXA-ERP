@@ -9,6 +9,7 @@ import com.ssafy.leaveservice.domain.request.dto.LeaveRequestPreviewRequest;
 import com.ssafy.leaveservice.domain.request.dto.LeaveSubmissionResult;
 import com.ssafy.leaveservice.domain.request.dto.MyLeaveRequestDetailResponse;
 import com.ssafy.leaveservice.domain.request.entity.LeaveRequestStatus;
+import com.ssafy.leaveservice.domain.request.entity.ApprovalCreationStatus;
 import com.ssafy.leaveservice.global.auth.EmployeeAccess;
 import com.ssafy.leaveservice.global.exception.BusinessException;
 import com.ssafy.leaveservice.global.exception.ErrorCode;
@@ -51,7 +52,14 @@ public class LeaveSubmissionOrchestrationService {
         // 최초 호출자만 T2 시작 마커 커밋 후 외부 생성 단계로 진행
         LeaveApprovalCallStartResult started = approvalResultService.startCall(submission.requestId(), submission.approvalRequestId());
         if (!started.callRequired()) {
-            return started.request();
+            LeaveSubmissionResult existing = started.request();
+            if (approvalClient.supportsRecovery() && existing.status() == LeaveRequestStatus.SUBMITTING
+                    && (existing.approvalCreationStatus() == ApprovalCreationStatus.UNKNOWN
+                    || existing.approvalCreationStatus() == ApprovalCreationStatus.IN_PROGRESS)) {
+                // 생성은 다시 보내지 않고 저장된 UUID로 조회만 한다.
+                return completeSubmission(existing, approvalClient.recover(existing));
+            }
+            return existing;
         }
         MyLeaveRequestDetailResponse storedRequest = myLeaveRequestService.getMyRequest(submission.requestId());
         if (storedRequest.status() != LeaveRequestStatus.SUBMITTING || storedRequest.approvalDocId() != null) {
@@ -66,7 +74,7 @@ public class LeaveSubmissionOrchestrationService {
         } catch (RuntimeException exception) {
             log.warn("Approval outcome unknown: requestId={}, traceId={}, cause={}",
                     submission.requestId(), submission.approvalRequestId(), exception.getClass().getSimpleName());
-            return approvalResultService.recordUnknown(submission.requestId(), submission.approvalRequestId(), "APPROVAL_CLIENT_EXCEPTION");
+            return recordUnknown(submission.requestId(), submission.approvalRequestId(), "APPROVAL_CLIENT_EXCEPTION");
         }
 
         // T2의 성공·확정 실패·결과 불명 로직을 별도 트랜잭션으로 연결
@@ -80,7 +88,7 @@ public class LeaveSubmissionOrchestrationService {
         Long requestId = submission.requestId();
         UUID approvalRequestId = submission.approvalRequestId();
         if (result == null || result.outcome() == null || !approvalRequestId.equals(result.approvalRequestId())) {
-            return approvalResultService.recordUnknown(requestId, approvalRequestId, "APPROVAL_RESULT_UNVERIFIABLE");
+            return recordUnknown(requestId, approvalRequestId, "APPROVAL_RESULT_UNVERIFIABLE");
         }
         if (result.outcome() == ApprovalCreationResult.Outcome.SUBMITTED_CONFIRMED
                 && result.documentId() != null && result.documentId() > 0) {
@@ -90,6 +98,19 @@ public class LeaveSubmissionOrchestrationService {
         if (result.outcome() == ApprovalCreationResult.Outcome.NOT_CREATED_CONFIRMED && result.documentId() == null) {
             return approvalResultService.confirmNotCreated(requestId, approvalRequestId, "APPROVAL_NOT_CREATED_CONFIRMED");
         }
-        return approvalResultService.recordUnknown(requestId, approvalRequestId, "APPROVAL_SUBMISSION_UNCONFIRMED");
+        String reason = result.reason() == null ? "APPROVAL_SUBMISSION_UNCONFIRMED" : result.reason();
+        LeaveSubmissionResult pending = recordUnknown(requestId, approvalRequestId, reason);
+        if (result.outcome() == ApprovalCreationResult.Outcome.CONFLICT
+                && pending.approvalCreationStatus() != ApprovalCreationStatus.LINKED) {
+            throw new BusinessException(ErrorCode.DATA_INTEGRITY_VIOLATION);
+        }
+        return pending;
+    }
+
+    private LeaveSubmissionResult recordUnknown(Long requestId, UUID approvalRequestId, String reason) {
+        if (approvalClient.supportsRecovery()) {
+            return approvalResultService.recordUnknownAfterHttp(requestId, approvalRequestId, reason);
+        }
+        return approvalResultService.recordUnknown(requestId, approvalRequestId, reason);
     }
 }

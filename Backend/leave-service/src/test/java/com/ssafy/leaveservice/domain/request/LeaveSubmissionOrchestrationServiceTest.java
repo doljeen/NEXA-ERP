@@ -43,6 +43,27 @@ class LeaveSubmissionOrchestrationServiceTest {
         when(t2.recordUnknown(eq(7L),eq(traceId),anyString())).thenReturn(unknown);
     }
 
+    @ParameterizedTest
+    @EnumSource(value = ApprovalCreationStatus.class, names = {"IN_PROGRESS", "UNKNOWN"})
+    void replaysPendingSubmissionByLookupWithoutAnotherCreate(ApprovalCreationStatus creationStatus) {
+        LeaveSubmissionResult existing = new LeaveSubmissionResult(
+                7L, 1L, traceId, LeaveRequestStatus.SUBMITTING, creationStatus, null
+        );
+        LeaveSubmissionResult linked = new LeaveSubmissionResult(
+                7L, 1L, traceId, LeaveRequestStatus.SUBMITTED, ApprovalCreationStatus.LINKED, 901L
+        );
+        when(t2.startCall(7L, traceId)).thenReturn(new LeaveApprovalCallStartResult(existing, false));
+        when(client.supportsRecovery()).thenReturn(true);
+        when(client.recover(existing)).thenReturn(
+                new ApprovalCreationResult(traceId, ApprovalCreationResult.Outcome.SUBMITTED_CONFIRMED, 901L)
+        );
+        when(t2.linkCreatedDocument(7L, traceId, 901L)).thenReturn(linked);
+
+        assertThat(service.submit("key", input)).isEqualTo(linked);
+        verify(client, never()).create(any());
+        verifyNoInteractions(queries);
+    }
+
     @Test
     void disabledGatePreventsT1AndAnyExternalClientAction() {
         assertCode(()->service(false).submit("key",input),ErrorCode.APPROVAL_INTEGRATION_UNAVAILABLE);

@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class LeaveSubmissionController {
     private final LeaveSubmissionOrchestrationService orchestrationService;
 
+    // 휴가 신청 제출
     @PostMapping
     public ResponseEntity<ApiResult<LeaveSubmissionResponse>> submit(
             @RequestHeader("Idempotency-Key") String submissionKey,

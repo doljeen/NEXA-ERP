@@ -84,9 +84,20 @@ public class LeaveApprovalResultService {
     }
 
     public LeaveSubmissionResult recordUnknown(Long requestId, UUID approvalRequestId, String reason) {
-        // 타임아웃·5xx·응답 유실은 미생성 확정이 아니므로 예약을 유지
+        return recordUnknown(requestId, approvalRequestId, reason, false);
+    }
+
+    public LeaveSubmissionResult recordUnknownAfterHttp(Long requestId, UUID approvalRequestId, String reason) {
+        return recordUnknown(requestId, approvalRequestId, reason, true);
+    }
+
+    private LeaveSubmissionResult recordUnknown(Long requestId, UUID approvalRequestId, String reason, boolean keepLinked) {
+        // 늦은 HTTP 실패가 먼저 커밋된 문서 연결을 되돌리지 않도록 한다.
         validateReason(reason);
         LeaveRequest request = lockOwnedRequest(requestId, approvalRequestId);
+        if (keepLinked && request.getApprovalCreationStatus() == ApprovalCreationStatus.LINKED) {
+            return LeaveSubmissionResult.from(request);
+        }
         requirePending(request);
         if (request.getApprovalCreationStatus() == ApprovalCreationStatus.UNKNOWN
                 && Objects.equals(request.getApprovalLastError(), reason)) {

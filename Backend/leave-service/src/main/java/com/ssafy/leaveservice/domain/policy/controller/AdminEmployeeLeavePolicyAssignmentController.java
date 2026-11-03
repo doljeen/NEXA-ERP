@@ -27,6 +27,7 @@ public class AdminEmployeeLeavePolicyAssignmentController {
 
     private final EmployeeLeavePolicyAssignmentService employeeLeavePolicyAssignmentService;
 
+    // 직원에게 휴가 정책 배정
     @PostMapping
     public ResponseEntity<ApiResult<EmployeeLeavePolicyAssignmentResponse>> createPolicyAssignment(
             @PathVariable Long employeeId,
@@ -37,6 +38,7 @@ public class AdminEmployeeLeavePolicyAssignmentController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResult.success(response));
     }
 
+    // 직원의 휴가 정책 배정 이력 조회
     @GetMapping
     public ResponseEntity<ApiResult<List<EmployeeLeavePolicyAssignmentResponse>>> getPolicyAssignments(
             @PathVariable Long employeeId

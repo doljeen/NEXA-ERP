@@ -28,6 +28,7 @@ public class AdminLeavePolicyVersionController {
 
     private final LeavePolicyVersionService leavePolicyVersionService;
 
+    // 휴가 정책 버전 삭제
     @DeleteMapping("/{versionId}")
     public ResponseEntity<ApiResult<Void>> deletePolicyVersion(
             @PathVariable Long policyId,
@@ -37,6 +38,7 @@ public class AdminLeavePolicyVersionController {
         return ResponseEntity.ok(ApiResult.success(null));
     }
 
+    // 휴가 정책 버전 수정
     @PatchMapping("/{versionId}")
     public ResponseEntity<ApiResult<LeavePolicyVersionDetailResponse>> updatePolicyVersion(
             @PathVariable Long policyId,
@@ -47,6 +49,7 @@ public class AdminLeavePolicyVersionController {
         return ResponseEntity.ok(ApiResult.success(policyVersion));
     }
 
+    // 휴가 정책 버전 생성
     @PostMapping
     public ResponseEntity<ApiResult<LeavePolicyVersionDetailResponse>> createPolicyVersion(
             @PathVariable Long policyId,
@@ -56,6 +59,7 @@ public class AdminLeavePolicyVersionController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResult.success(policyVersion));
     }
 
+    // 휴가 정책 버전 상세 조회
     @GetMapping("/{versionId}")
     public ResponseEntity<ApiResult<LeavePolicyVersionDetailResponse>> getPolicyVersion(
             @PathVariable Long policyId,
@@ -65,6 +69,7 @@ public class AdminLeavePolicyVersionController {
         return ResponseEntity.ok(ApiResult.success(policyVersion));
     }
 
+    // 휴가 정책 버전 목록 조회
     @GetMapping
     public ResponseEntity<ApiResult<List<LeavePolicyVersionListResponse>>> getPolicyVersions(@PathVariable Long policyId) {
         List<LeavePolicyVersionListResponse> policyVersions = leavePolicyVersionService.getPolicyVersions(policyId);
