@@ -15,6 +15,11 @@ class ErrorCode(Enum):
     NOT_FOUND = (404, "COMMON_003", "요청한 리소스를 찾을 수 없습니다.")
     INTERNAL_ERROR = (500, "COMMON_999", "서버 오류가 발생했습니다.")
 
+    # 인증
+    UNAUTHORIZED = (401, "AUTH_001", "인증이 필요합니다.")
+    INVALID_TOKEN = (401, "AUTH_002", "유효하지 않은 토큰입니다.")
+    AUTH_KEY_UNAVAILABLE = (503, "AUTH_003", "인증 서버에 연결할 수 없습니다.")
+
     #노드
     NODE_NOT_FOUND = (404, "NODE_001", "존재하지 않는 노드입니다.")
 
@@ -30,6 +35,7 @@ class ErrorCode(Enum):
     RUN_ALREADY_FINISHED = (409, "RUN_002", "이미 끝난 실행입니다.")
     RUN_MISSING_INPUT = (400, "RUN_003", "필수 입력값이 비어 있습니다.")
     RUN_NOT_WAITING = (409, "RUN_004", "확인 대기 중인 실행이 아닙니다.")
+    RUN_FORBIDDEN = (403, "RUN_005", "본인이 요청한 실행만 처리할 수 있습니다.")
 
     # 첨부 파일
     FILE_NOT_FOUND = (404, "FILE_001", "존재하지 않는 파일입니다")

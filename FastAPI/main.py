@@ -1,10 +1,11 @@
 from contextlib import asynccontextmanager
 
 import py_eureka_client.eureka_client as eureka_client
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
 import runs.models
 import workflows.models  # noqa: F401  테이블 등록용
+from core.auth import get_current_user
 from core.config import settings
 from core.database import Base, engine
 from engine.checkpointer import close_checkpointer, init_checkpointer
@@ -44,13 +45,15 @@ app = FastAPI(title="업무 자동화", lifespan=lifespan)
 
 register_exception_handlers(app)
 
-app.include_router(nodes_router, prefix=API_PREFIX)
-app.include_router(workflows_router, prefix=API_PREFIX)
-app.include_router(runs_router, prefix=API_PREFIX)
+# /api/v1/ai/** 는 전부 로그인 필요 (/health 는 헬스체크용으로 열어둠)
+AUTH = [Depends(get_current_user)]
+app.include_router(nodes_router, prefix=API_PREFIX, dependencies=AUTH)
+app.include_router(workflows_router, prefix=API_PREFIX, dependencies=AUTH)
+app.include_router(runs_router, prefix=API_PREFIX, dependencies=AUTH)
 
 # 개발용 LLM 테스트 API는 설정으로 켰을 때만 등록
 if settings.llm_test_api_enabled:
-    app.include_router(ai_router, prefix=API_PREFIX)
+    app.include_router(ai_router, prefix=API_PREFIX, dependencies=AUTH)
 
 @app.get("/health")
 def health():
