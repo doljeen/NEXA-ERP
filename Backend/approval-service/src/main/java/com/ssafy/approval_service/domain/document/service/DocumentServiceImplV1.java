@@ -5,13 +5,13 @@ import com.ssafy.approval_service.domain.approval.model.entity.ApprovalLine;
 import com.ssafy.approval_service.domain.approval.model.entity.enums.HistoryAction;
 import com.ssafy.approval_service.domain.approval.repository.ApprovalHistoryRepository;
 import com.ssafy.approval_service.domain.approval.repository.ApprovalLineRepository;
-import com.ssafy.approval_service.domain.approval.event.ApprovalResultEventRecorder;
 import com.ssafy.approval_service.domain.approval.policy.ApprovalAttributes;
 import com.ssafy.approval_service.domain.approval.policy.ApprovalLevel;
 import com.ssafy.approval_service.domain.approval.policy.ApprovalLineGenerator;
 import com.ssafy.approval_service.domain.approval.policy.ApprovalPolicy;
 import com.ssafy.approval_service.domain.approval.policy.GeneratedApprovalLine;
 import com.ssafy.approval_service.domain.approval.service.ApprovalLineValidator;
+import com.ssafy.approval_service.domain.approval.service.DocumentCompleter;
 import com.ssafy.approval_service.domain.document.model.dto.ApprovalLinePreviewResponse;
 import com.ssafy.approval_service.domain.document.model.dto.ApprovalLineRequest;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentBox;
@@ -50,7 +50,7 @@ public class DocumentServiceImplV1 implements DocumentService {
     private final RequestKeyLock requestKeyLock;
     private final ApprovalPolicy approvalPolicy;
     private final ApprovalLineGenerator approvalLineGenerator;
-    private final ApprovalResultEventRecorder resultEventRecorder;
+    private final DocumentCompleter documentCompleter;
 
     @Override
     public DocumentListResponse findByStatusAndType(String approvalStatus, String formType, String box,
@@ -115,40 +115,30 @@ public class DocumentServiceImplV1 implements DocumentService {
         draft.assignDocNo(documentNumberGenerator.next(draft.getFormType(), draft.numberingYear()));
         Document document = documentRepository.save(draft);
 
-        // req -> 결재선
-        List<ApprovalLine> lines = lineRequests.stream()
-                .map(line -> ApprovalLine.builder()
-                        .document(document)
-                        .empId(line.empId())
-                        .step(line.step())
-                        .role(line.role())
-                        .build())
-                .toList();
-
         // 결재선 우선 저장
-        approvalLineRepository.saveAll(lines);
+        approvalLineRepository.saveAll(lineRequests.stream()
+                .map(line -> line.toEntity(document))
+                .toList());
 
         // 결재 이력 저장
-        approvalHistoryRepository.save(ApprovalHistory.builder()
-                .document(document)
-                .round(FIRST_ROUND)
-                .actorId(drafterId)
-                .action(HistoryAction.SUBMIT)
-                .build());
+        recordFirstRoundHistory(document, drafterId, HistoryAction.SUBMIT);
 
         // 자가결재(대표이사 기안): 결재자가 없으므로 상신과 함께 최종 승인. 출처가 있으면 결과 이벤트도 남긴다
         if (selfApproval) {
-            document.approve();
-            approvalHistoryRepository.save(ApprovalHistory.builder()
-                    .document(document)
-                    .round(FIRST_ROUND)
-                    .actorId(drafterId)
-                    .action(HistoryAction.FINAL_APPROVE)
-                    .build());
-            resultEventRecorder.recordCompleted(document);
+            documentCompleter.approve(document);
+            recordFirstRoundHistory(document, drafterId, HistoryAction.FINAL_APPROVE);
         }
 
         return new DocumentCreateResult(new DocumentCreateResponse(document.getDocId(), document.getDocNo()), true);
+    }
+
+    private void recordFirstRoundHistory(Document document, Long actorId, HistoryAction action) {
+        approvalHistoryRepository.save(ApprovalHistory.builder()
+                .document(document)
+                .round(FIRST_ROUND)
+                .actorId(actorId)
+                .action(action)
+                .build());
     }
 
     /** 기본 결재선 미리보기. 요청자를 기안자로 보고 위임전결 규정과 조직도로 만든다 (저장하지 않음) */

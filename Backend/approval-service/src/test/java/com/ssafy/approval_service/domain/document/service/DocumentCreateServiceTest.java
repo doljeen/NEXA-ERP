@@ -1,6 +1,7 @@
 package com.ssafy.approval_service.domain.document.service;
 
 import com.ssafy.approval_service.domain.approval.event.ApprovalResultEventRecorder;
+import com.ssafy.approval_service.domain.approval.service.DocumentCompleter;
 import com.ssafy.approval_service.domain.approval.model.entity.ApprovalHistory;
 import com.ssafy.approval_service.domain.approval.model.entity.enums.HistoryAction;
 import com.ssafy.approval_service.domain.approval.model.entity.enums.LineRole;
@@ -63,7 +64,7 @@ class DocumentCreateServiceTest {
             requestKeyLock,
             policy,
             lineGenerator,
-            resultEventRecorder);
+            new DocumentCompleter(resultEventRecorder));
 
     /** JPA 저장처럼 문서ID를 채워 돌려준다 */
     private static Document persist(InvocationOnMock inv) {
