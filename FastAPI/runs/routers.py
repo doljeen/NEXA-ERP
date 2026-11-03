@@ -114,8 +114,8 @@ def resume(
     user: AuthUser = Depends(get_current_user),
 ):
     run = service.get_waiting_run(db, run_id)
-    # 남의 실행을 대신 확인·재개하지 못하게 (관리자는 예외)
-    if run.requested_by != str(user.employee_id) and not user.is_admin:
+    # 재개한 사람의 토큰으로 결재가 상신되므로 요청자 본인만 재개 가능 (관리자도 불가: 기안자가 바뀜)
+    if run.requested_by != str(user.employee_id):
         raise BusinessException(ErrorCode.RUN_FORBIDDEN)
     background_tasks.add_task(resume_run, run.id, req.model_dump(), user.token)
     return ok({"run_id": run.id, "status": run.status})
