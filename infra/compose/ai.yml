@@ -6,6 +6,38 @@ services:
 
     restart: unless-stopped
 
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: nexa_ai
+      DB_USER: nexa_ai_app
+      DB_PASSWORD: ${AI_DB_PASSWORD:?AI_DB_PASSWORD is required}
+
+      EUREKA_SERVER_URL: "http://${EUREKA_USER:?EUREKA_USER is required}:${EUREKA_PASSWORD:?EUREKA_PASSWORD is required}@eureka-server:8761/eureka/"
+      INSTANCE_HOST: fastapi
+      INSTANCE_PORT: "8086"
+
+      LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-}
+      LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-}
+      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-qwen3.8-27b}
+      LOCAL_LLM_TIMEOUT: ${LOCAL_LLM_TIMEOUT:-60}
+
+      GMS_BASE_URL: ${GMS_BASE_URL:-}
+      GMS_API_KEY: ${GMS_API_KEY:-}
+      GMS_MODEL: ${GMS_MODEL:-}
+
+      UPLOAD_DIR: /app/uploads
+      LLM_TEST_API_ENABLED: "false"
+
+    volumes:
+      - fastapi-uploads:/app/uploads
+
     ports:
       - "127.0.0.1:8086:8086"
 
@@ -25,3 +57,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  fastapi-uploads:

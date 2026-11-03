@@ -89,4 +89,27 @@ class UserServiceClientTest {
 
         assertThatThrownBy(() -> client.getEmployees(List.of(1L))).isInstanceOf(HttpServerErrorException.class);
     }
+
+    @Test
+    void 부서_체인은_사원_ID를_경로로_보내고_공석은_null로_받음() {
+        authenticate("access-token-value");
+        server.expect(requestTo(BASE_URL + "/api/v1/employees/103/org-chain"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer access-token-value"))
+                .andRespond(withSuccess("""
+                        {"success":true,"error":null,"data":{"employeeId":103,"deptId":2,"chain":[
+                          {"deptId":2,"deptName":"개발팀","deptType":"TEAM","headEmpId":105},
+                          {"deptId":12,"deptName":"영업본부","deptType":"DIVISION","headEmpId":null},
+                          {"deptId":13,"deptName":"DEV COMPANY","deptType":"COMPANY","headEmpId":109,"extra":"무시"}]}}""",
+                        MediaType.APPLICATION_JSON));
+
+        UserServiceClient.OrgChain chain = client.getOrgChain(103L).data();
+
+        assertThat(chain.deptId()).isEqualTo(2L);
+        assertThat(chain.chain()).containsExactly(
+                new UserServiceClient.OrgUnit(2L, "개발팀", "TEAM", 105L),
+                new UserServiceClient.OrgUnit(12L, "영업본부", "DIVISION", null),
+                new UserServiceClient.OrgUnit(13L, "DEV COMPANY", "COMPANY", 109L));
+        server.verify();
+    }
 }

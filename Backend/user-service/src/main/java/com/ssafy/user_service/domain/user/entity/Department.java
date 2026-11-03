@@ -1,7 +1,10 @@
 package com.ssafy.user_service.domain.user.entity;
 
+import com.ssafy.user_service.domain.user.entity.enums.DeptType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -39,11 +42,21 @@ public class Department {
     @JoinColumn(name = "parent_dept_id")
     private Department parent;          // 상위부서 (최상위 부서는 null)
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "dept_type", length = 20)
+    private DeptType deptType;          // 부서 유형 (회사/본부/팀). 결재 전결 단계 기준
+
+    @Column(name = "head_emp_id")
+    private Long headEmpId;             // 부서장 사원ID (null 이면 공석)
+
     @Builder
-    private Department(String name, Integer sortOrder, Company company, Department parent) {
+    private Department(String name, Integer sortOrder, Company company, Department parent,
+                       DeptType deptType, Long headEmpId) {
         this.name = name;
         this.sortOrder = sortOrder;
         this.company = company;
         this.parent = parent;
+        this.deptType = deptType;
+        this.headEmpId = headEmpId;
     }
 }

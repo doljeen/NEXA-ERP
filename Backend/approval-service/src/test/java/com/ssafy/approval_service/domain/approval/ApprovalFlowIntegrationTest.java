@@ -58,10 +58,10 @@ class ApprovalFlowIntegrationTest extends AbstractIntegrationTest {
         return mvc.perform(post(path(documentId, "/cancel")).with(user(who)));
     }
 
-    private ResultActions resubmit(long documentId, long who, String title, String... lines) throws Exception {
+    private ResultActions resubmit(long documentId, long who, String title) throws Exception {
         return mvc.perform(post(path(documentId, "/resubmit")).with(user(who))
                 .contentType(MediaType.APPLICATION_JSON).content("""
-                        {"title":"%s","approvalLines":[%s]}""".formatted(title, String.join(",", lines))));
+                        {"title":"%s"}""".formatted(title)));
     }
 
     private ResultActions addApprover(long documentId, long who, String line) throws Exception {
@@ -309,15 +309,16 @@ class ApprovalFlowIntegrationTest extends AbstractIntegrationTest {
     // ===== 재기안 =====
 
     @Test
-    void 반려된_문서를_재기안하면_새_결재선으로_다음_차수_진행() throws Exception {
+    void 반려된_문서를_재기안하면_지금_조직도로_결재선을_다시_만들고_다음_차수_진행() throws Exception {
         long drafter = newEmployee();
         long firstApprover = newEmployee();
         long secondApprover = newEmployee();
         long documentId = createDocument(drafter, line(firstApprover, 1, "APPROVER"));
         reject(documentId, firstApprover, "금액 확인 필요").andExpect(status().isOk());
+        // 그 사이 팀장이 바뀌었다
+        assignTeamHead(drafter, secondApprover);
 
-        resubmit(documentId, drafter, "결재 흐름 테스트 (재기안)", line(secondApprover, 1, "APPROVER"))
-                .andExpect(status().isOk());
+        resubmit(documentId, drafter, "결재 흐름 테스트 (재기안)").andExpect(status().isOk());
 
         assertThat(documentStatus(documentId)).isEqualTo("INPROGRESS");
         assertThat(title(documentId)).isEqualTo("결재 흐름 테스트 (재기안)");
@@ -335,19 +336,15 @@ class ApprovalFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void 재기안_거부_진행_중_문서_기안자_아님_결재선에_기안자() throws Exception {
+    void 재기안_거부_진행_중_문서_기안자_아님() throws Exception {
         long drafter = newEmployee();
         long approver = newEmployee();
         long documentId = createDocument(drafter, line(approver, 1, "APPROVER"));
 
-        expectError(resubmit(documentId, drafter, "진행 중 재기안", line(newEmployee(), 1, "APPROVER")),
-                HttpStatus.CONFLICT, "APPROVAL_014");
+        expectError(resubmit(documentId, drafter, "진행 중 재기안"), HttpStatus.CONFLICT, "APPROVAL_014");
 
         reject(documentId, approver, "보완 필요").andExpect(status().isOk());
-        expectError(resubmit(documentId, approver, "남의 문서 재기안", line(newEmployee(), 1, "APPROVER")),
-                HttpStatus.FORBIDDEN, "APPROVAL_005");
-        expectError(resubmit(documentId, drafter, "기안자 포함", line(drafter, 1, "APPROVER")),
-                HttpStatus.BAD_REQUEST, "APPROVAL_002");
+        expectError(resubmit(documentId, approver, "남의 문서 재기안"), HttpStatus.FORBIDDEN, "APPROVAL_005");
 
         assertThat(documentStatus(documentId)).isEqualTo("REJECTED");
         assertThat(approverIds(documentId)).containsExactly(approver);

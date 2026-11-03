@@ -101,9 +101,86 @@ public class LeaveRequest {
     @Column(name = "approval_attempt_count")
     private Integer approvalAttemptCount;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "admin_cancel_status", length = 20)
+    private AdminCancellationStatus adminCancelStatus;
+
+    @Column(name = "admin_cancel_request_id")
+    private java.util.UUID adminCancelRequestId;
+
+    @Column(name = "admin_cancel_requested_by")
+    private Long adminCancelRequestedBy;
+
+    @Column(name = "admin_cancel_reason", length = 2000)
+    private String adminCancelReason;
+
+    @Column(name = "admin_cancel_status_changed_at")
+    private OffsetDateTime adminCancelStatusChangedAt;
+
     @OneToMany(mappedBy = "leaveRequest", fetch = FetchType.LAZY)
     @OrderBy("leaveDate ASC, startAt ASC, requestDateId ASC")
     private List<LeaveRequestDate> dates = new ArrayList<>();
+
+    public void startAdminCancellation(
+            java.util.UUID operationId,
+            Long administratorId,
+            String reason,
+            OffsetDateTime now
+    ) {
+        requireSubmittedForAdminCancellation();
+        if (adminCancelStatus != null) {
+            throw new BusinessException(ErrorCode.DATA_INTEGRITY_VIOLATION);
+        }
+        adminCancelStatus = AdminCancellationStatus.IN_PROGRESS;
+        adminCancelRequestId = operationId;
+        adminCancelRequestedBy = administratorId;
+        adminCancelReason = reason;
+        adminCancelStatusChangedAt = now;
+        updatedAt = now;
+    }
+
+    public void recordAdminCancellationUnknown(OffsetDateTime now) {
+        requirePendingAdminCancellation();
+        adminCancelStatus = AdminCancellationStatus.UNKNOWN;
+        adminCancelStatusChangedAt = now;
+        updatedAt = now;
+    }
+
+    public void failAdminCancellation(OffsetDateTime now) {
+        requirePendingAdminCancellation();
+        adminCancelStatus = AdminCancellationStatus.FAILED;
+        adminCancelStatusChangedAt = now;
+        updatedAt = now;
+    }
+
+    public void completeAdminCancellation(OffsetDateTime now) {
+        requireSubmittedForAdminCancellation();
+        requirePendingAdminCancellation();
+        status = LeaveRequestStatus.CANCELLED;
+        cancelledAt = now;
+        cancelledBy = adminCancelRequestedBy;
+        cancelReason = adminCancelReason;
+        adminCancelStatus = AdminCancellationStatus.COMPLETED;
+        adminCancelStatusChangedAt = now;
+        updatedAt = now;
+    }
+
+    public void requireSubmittedForAdminCancellation() {
+        // TODO 승인 이벤트와 CONSUME/RESTORE 계약 확정 후 APPROVED 취소는 별도 검증 분기로 추가한다.
+        if (status != LeaveRequestStatus.SUBMITTED || approvalCreationStatus != ApprovalCreationStatus.LINKED
+                || approvalDocId == null || approvalDocId <= 0) {
+            throw new BusinessException(ErrorCode.LEAVE_CANCELLATION_NOT_ALLOWED);
+        }
+        if (cancelledAt != null || cancelledBy != null || cancelReason != null) {
+            throw new BusinessException(ErrorCode.DATA_INTEGRITY_VIOLATION);
+        }
+    }
+
+    private void requirePendingAdminCancellation() {
+        if (adminCancelStatus != AdminCancellationStatus.IN_PROGRESS && adminCancelStatus != AdminCancellationStatus.UNKNOWN) {
+            throw new BusinessException(ErrorCode.LEAVE_CANCELLATION_NOT_ALLOWED);
+        }
+    }
 
     public static LeaveRequest submitting(
             Long employeeId,

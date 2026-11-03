@@ -30,9 +30,10 @@ class DocumentRequestKeyIntegrationTest extends AbstractIntegrationTest {
     /** 휴가 신청에서 온 결재 생성 요청 */
     private ResultActions submitLeave(long drafter, long approver, long sourceId, String requestKey) throws Exception {
         String keyJson = requestKey == null ? "" : "\"requestKey\":\"%s\",".formatted(requestKey);
+        assignTeamHead(drafter, approver);
         return mvc.perform(post(BASE).with(user(drafter)).contentType(MediaType.APPLICATION_JSON).content("""
-                {%s"title":"휴가 신청","formType":"LEAVE","sourceType":"LEAVE","sourceId":%d,
-                 "approvalLines":[%s]}""".formatted(keyJson, sourceId, line(approver, 1, "APPROVER"))));
+                {%s"title":"휴가 신청","formType":"LEAVE","sourceType":"LEAVE","sourceId":%d}"""
+                .formatted(keyJson, sourceId)));
     }
 
     private static long documentId(MockHttpServletResponse response) throws Exception {

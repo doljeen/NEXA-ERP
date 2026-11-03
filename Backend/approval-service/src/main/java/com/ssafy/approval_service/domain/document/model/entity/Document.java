@@ -1,9 +1,13 @@
 package com.ssafy.approval_service.domain.document.model.entity;
 
+import com.ssafy.approval_service.domain.approval.policy.ApprovalAttributes;
+import com.ssafy.approval_service.domain.approval.policy.ApprovalAttributesConverter;
+import com.ssafy.approval_service.domain.approval.policy.ApprovalLevel;
 import com.ssafy.approval_service.domain.document.model.entity.enums.DocumentStatus;
 import com.ssafy.approval_service.domain.document.model.entity.enums.FormType;
 import com.ssafy.approval_service.domain.document.model.entity.enums.SourceType;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -66,15 +70,26 @@ public class Document {
     @Column(name = "request_key", unique = true)
     private UUID requestKey;                // 생성 요청 키. 같은 키로 다시 요청하면 이 문서를 돌려준다
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "approval_level", length = 20)
+    private ApprovalLevel approvalLevel;    // 위임전결 규정상 전결 단계 (이 기능 전에 만든 문서는 null)
+
+    @Convert(converter = ApprovalAttributesConverter.class)
+    @Column(name = "attributes", columnDefinition = "TEXT")
+    private ApprovalAttributes attributes;  // 전결 판단에 쓴 신청 값 (상신 시점 스냅샷, 없으면 null)
+
     @Builder
     private Document(FormType formType, String title, Long drafterId,
-                     SourceType sourceType, Long sourceId, UUID requestKey) {
+                     SourceType sourceType, Long sourceId, UUID requestKey,
+                     ApprovalLevel approvalLevel, ApprovalAttributes attributes) {
         this.formType = formType;
         this.title = title;
         this.drafterId = drafterId;
         this.sourceType = sourceType == null ? SourceType.DIRECT : sourceType;
         this.sourceId = sourceId;
         this.requestKey = requestKey;
+        this.approvalLevel = approvalLevel;
+        this.attributes = attributes == null || attributes.isEmpty() ? null : attributes;
         this.status = DocumentStatus.INPROGRESS;
         this.draftedAt = OffsetDateTime.now();
     }
@@ -135,6 +150,11 @@ public class Document {
     /** 반려된 문서인지 (재기안 가능 여부) */
     public boolean isRejected() {
         return this.status == DocumentStatus.REJECTED;
+    }
+
+    /** 다른 서비스(휴가·근태)의 신청으로 만든 문서인지. 이런 문서는 반려가 최종이라 재기안할 수 없다 */
+    public boolean isFromSource() {
+        return this.sourceType != SourceType.DIRECT;
     }
 
     /** 해당 사원이 기안자인지 */

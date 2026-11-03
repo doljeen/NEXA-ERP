@@ -47,7 +47,8 @@
 | `requestKey` | 결재 문서를 만들 때 보낸 요청 키 (UUID) |
 | `status` | `APPROVED`(승인·전결) \| `REJECTED`(반려) \| `CANCEL`(기안자 회수) |
 
-> 반려 후 재기안 정책은 논의 중입니다(결정 문서 D1). 추천안은 "출처 문서는 반려가 최종"이며, 확정 전까지는 `REJECTED`를 받은 뒤 같은 문서의 `APPROVED`가 다시 올 수 있습니다.
+> **`APPROVED`·`REJECTED`·`CANCEL` 모두 최종입니다** (결정 문서 D1). 출처 문서(휴가·근태)는 approval 에서 재기안할 수 없으므로(`409 APPROVAL_023`), `REJECTED`를 받은 뒤 같은 문서의 결과가 다시 오지 않습니다.
+> 반려된 신청을 다시 하려면 원본 서비스에서 **새 신청**(새 원본 ID, 새 `requestKey`)으로 결재 문서를 새로 만듭니다.
 
 ## 수신 설정 (Spring Boot 4 / spring-kafka 4 기준 예시)
 
@@ -115,7 +116,7 @@ record ApprovalResultEvent(String eventId, Long documentId, String sourceType, L
 @Transactional
 public void applyApprovalResult(Long requestId, String status) {
     LeaveRequest request = repository.findByIdForUpdate(requestId);   // 동시 처리 대비 잠금
-    if (!request.isWaitingApproval()) {
+    if (!request.isWaitingApproval()) {                              // SUBMITTING 또는 SUBMITTED
         return;                                                      // 이미 반영됨 → 무시
     }
     switch (status) {
@@ -125,6 +126,10 @@ public void applyApprovalResult(Long requestId, String status) {
     }
 }
 ```
+
+**결재 대기에는 "결재 요청 중" 상태도 포함합니다** (leave 의 `SUBMITTING`, attendance 의 같은 의미 상태).
+대표이사 기안(자가결재)은 상신과 함께 승인되어 `APPROVED` 이벤트가 바로 나가므로, 생성 응답(201)을 반영하기 전에 이벤트가 먼저 올 수 있습니다.
+`SUBMITTED`일 때만 반영하면 이 이벤트를 "이미 반영됨"으로 무시해 놓칩니다. 이벤트의 `sourceId`·`requestKey`로 신청을 찾으므로 `documentId`를 아직 저장하지 않았어도 반영할 수 있습니다.
 
 처리 이력이 필요하면 `eventId`를 유니크 키로 하는 테이블에 기록하는 방식도 있습니다(어떤 방식을 쓸지는 각 서비스 결정).
 

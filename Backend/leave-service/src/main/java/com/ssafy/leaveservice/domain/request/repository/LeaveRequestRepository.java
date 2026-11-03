@@ -13,6 +13,13 @@ import java.util.Optional;
 
 public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long> {
 
+    @Query("select request.employeeId from LeaveRequest request where request.requestId = :requestId")
+    Optional<Long> findEmployeeIdByRequestId(@Param("requestId") Long requestId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select request from LeaveRequest request where request.requestId = :requestId")
+    Optional<LeaveRequest> findForAdminCancellation(@Param("requestId") Long requestId);
+
     @Query("""
             select distinct requestDate.leaveDate from LeaveRequestDate requestDate
             join requestDate.leaveRequest request

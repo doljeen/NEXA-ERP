@@ -27,6 +27,7 @@ import java.util.stream.Collectors;
 /**
  * 문서 참여자(결재자/참조자/열람자) 관리.
  * 변경은 기안자 본인 + 진행 중 문서에서만 가능하며, 이미 결재한 결재자는 제거하거나 순서를 바꿀 수 없다.
+ * 위임전결 규정상 결재자(required)는 제거할 수 없고 서로의 순서도 바꿀 수 없다. 결재자 추가는 자유 (결재가 늘어날 뿐)
  */
 @Service
 @RequiredArgsConstructor
@@ -90,6 +91,9 @@ public class ApprovalLineServiceImplV1 implements ApprovalLineService {
         if (!line.isPending()) {
             throw new BusinessException(ErrorCode.ALREADY_ACTED);
         }
+        if (line.isRequired()) {
+            throw new BusinessException(ErrorCode.REQUIRED_APPROVER_FIXED);
+        }
         if (approvers(documentId).size() <= 1) {
             throw new BusinessException(ErrorCode.LAST_APPROVER);
         }
@@ -111,6 +115,12 @@ public class ApprovalLineServiceImplV1 implements ApprovalLineService {
                 || new HashSet<>(approverIds).size() != approverIds.size()
                 || !byEmpId.keySet().containsAll(approverIds)) {
             throw new BusinessException(ErrorCode.INVALID_APPROVER_ORDER, "현재 결재자 전체를 중복 없이 보내야 합니다.");
+        }
+        // 규정상 결재자끼리의 순서(팀장 → 본부장 → 대표이사)는 그대로여야 한다. 추가한 결재자는 그 사이 어디든 둘 수 있다
+        List<Long> requiredBefore = approvers.stream().filter(ApprovalLine::isRequired).map(ApprovalLine::getEmpId).toList();
+        List<Long> requiredAfter = approverIds.stream().filter(id -> byEmpId.get(id).isRequired()).toList();
+        if (!requiredBefore.equals(requiredAfter)) {
+            throw new BusinessException(ErrorCode.REQUIRED_APPROVER_FIXED);
         }
 
         // 앞에서부터 step 1, 2, ... 다시 매김. 이미 결재한 사람은 자리가 바뀌면 안 된다

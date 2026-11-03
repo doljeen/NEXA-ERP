@@ -31,11 +31,12 @@ class DocumentNumberIntegrationTest extends AbstractIntegrationTest {
 
     /** 문서를 만들고 서버가 만든 문서번호를 돌려준다 */
     private String create(long drafter, String formType, String extraJson) throws Exception {
+        assignTeamHead(drafter, drafter + 1);
         String body = mvc.perform(post(BASE).with(user(drafter))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {%s"title":"번호 테스트","formType":"%s","approvalLines":[%s]}"""
-                                .formatted(extraJson, formType, line(drafter + 1, 1, "APPROVER"))))
+                                {%s"title":"번호 테스트","formType":"%s"}"""
+                                .formatted(extraJson, formType)))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return JsonPath.read(body, "$.data.docNo");
@@ -59,17 +60,6 @@ class DocumentNumberIntegrationTest extends AbstractIntegrationTest {
         create(9105L, "GENERAL", "");
         // 출장 신청은 이 테스트에서만 만들므로 1번부터 시작한다
         assertThat(create(9107L, "BUSINESS_TRIP", "")).isEqualTo("BUSINESS_TRIP-" + YEAR + "-0001");
-    }
-
-    @Test
-    void 결재자_없이_참조자만_있으면_400() throws Exception {
-        mvc.perform(post(BASE).with(user(9111L))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"title":"결재자 없음","formType":"GENERAL","approvalLines":[%s,%s]}"""
-                                .formatted(line(9112L, 1, "REFERENCE"), line(9113L, 2, "AGREEMENT"))))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code").value("APPROVAL_011"));
     }
 
     @Test

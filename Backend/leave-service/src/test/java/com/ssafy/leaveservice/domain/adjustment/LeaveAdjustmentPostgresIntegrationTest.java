@@ -502,7 +502,7 @@ class LeaveAdjustmentPostgresIntegrationTest {
                 select count(*) from information_schema.key_column_usage
                 where table_schema=? and table_name='leave_ledger' and column_name='actor_emp_id'
                 """, Integer.class, schema)).isZero();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("5");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("6");
         assertThat(jdbc.queryForObject("select version()", String.class)).contains("PostgreSQL 17");
     }
 
