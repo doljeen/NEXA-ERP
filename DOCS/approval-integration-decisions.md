@@ -224,6 +224,7 @@ GET /api/v1/documents/by-request/{requestKey}
 | 전결 단계 | 양식별 기본 팀장. 휴가 5일 이상·초과근무 월 12시간 초과·해외 출장 → 본부장. 일반 기안 100만 원 초과 → 본부장, 1,000만 원 초과 → 대표이사. 기준값은 설정 |
 | 판단 값 전달 | 원본 서비스가 생성 요청의 `attributes`로 보낸다. approval 은 leave·attendance 를 호출하지 않는다 (순환 의존 방지) |
 | 조직 데이터 | user-service `department.dept_type`(COMPANY/DIVISION/TEAM), `head_emp_id`(부서장). approval 은 상신 시점에 `GET /api/v1/employees/{id}/org-chain` 동기 조회 |
+| 조직 데이터 채우기 | 이미 있던 부서는 user-service `V4` 마이그레이션이 한 번 채운다 (유형 = 트리 깊이, 부서장 = 유형에 맞는 직책의 재직자가 한 명일 때만, 이미 값이 있으면 그대로). **V4 이후에 들어오는 부서(이관 등)는 넣는 쪽이 두 값을 채워야 한다.** 비어 있으면 결재선 자동 결정이 `409 APPROVAL_022` |
 | 예외 | 팀장 기안 → 한 단계 위, 대표이사 기안 → 자가결재(즉시 승인), 공석·휴직 부서장 → 위 단계, 겸직 → 한 번만 |
 | 하위 호환 | `approvalLines`를 보내면 지금처럼 검증만 하고 그대로 쓴다. 생략하면 서버가 만든다 |
 | 결재 대상 | **급여는 결재 대상이 아니다** (payroll 은 출처로 추가하지 않음) |
