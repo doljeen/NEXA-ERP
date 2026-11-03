@@ -226,17 +226,19 @@ GET /api/v1/documents/by-request/{requestKey}
 | 조직 데이터 | user-service `department.dept_type`(COMPANY/DIVISION/TEAM), `head_emp_id`(부서장). approval 은 상신 시점에 `GET /api/v1/employees/{id}/org-chain` 동기 조회 |
 | 조직 데이터 채우기 | 이미 있던 부서는 user-service `V4` 마이그레이션이 한 번 채운다 (유형 = 트리 깊이, 부서장 = 유형에 맞는 직책의 재직자가 한 명일 때만, 이미 값이 있으면 그대로). **V4 이후에 들어오는 부서(이관 등)는 넣는 쪽이 두 값을 채워야 한다.** 비어 있으면 결재선 자동 결정이 `409 APPROVAL_022` |
 | 예외 | 팀장 기안 → 한 단계 위, 대표이사 기안 → 자가결재(즉시 승인), 공석·휴직 부서장 → 위 단계, 겸직 → 한 번만 |
-| 하위 호환 | `approvalLines`를 보내면 지금처럼 검증만 하고 그대로 쓴다. 생략하면 서버가 만든다 |
+| 결재선 지정 | **받지 않는다** (2026-11-03 변경). 상신·재기안 모두 규정으로 만들고, 요청의 `approvalLines`는 무시. 참조·열람·추가 결재자는 상신 후 결재선 API |
+| 규정 강제 | 규정으로 정한 결재자는 `required`. 기안자가 빼거나(`409 APPROVAL_024`) 서로 순서를 바꾸거나(`024`) 전결로 건너뛸 수 없다(`409 APPROVAL_025`). 추가한 결재자는 자유 |
 | 결재 대상 | **급여는 결재 대상이 아니다** (payroll 은 출처로 추가하지 않음) |
 
 자세한 내용과 요청 형식: `DOCS/approval-document-source.md`의 "결재선 자동 결정"
 
 ### 남은 논의
 
-- [ ] attendance: 상신 요청에서 `approvalLines` 빼고 `monthlyOvertimeMinutes` 보내기 (지금 요청도 동작하지만 결재선을 보내면 규정이 적용되지 않음)
+- [ ] attendance: 상신 요청에서 `approvalLines` 빼고 `monthlyOvertimeMinutes` 보내기 (지금 보내는 결재선은 무시되고 규정으로 만들어짐. 화면 결재선 선택도 제거)
 - [ ] leave: HTTP 구현체를 만들 때 `attributes.days`를 담고 결재선은 생략
 - [ ] 프런트: 미리보기 API, 출장 `overseas`·일반 기안 `amount` 입력, 부서장 관리 화면 (지금은 seed 로만 지정)
-- [ ] 나중: 대결(부재 시 대리 결재), 관리자 결재선 변경, 재기안 시 결재선 자동 생성
+- [x] 재기안 시 결재선 자동 생성 → 재기안 시점 조직도로 다시 만든다 (2026-11-03)
+- [ ] 나중: 대결(부재 시 대리 결재), 관리자 결재선 변경
 
 ---
 
@@ -267,4 +269,5 @@ GET /api/v1/documents/by-request/{requestKey}
 | 2026-11-02 | D2 | `requestKey` 구현: 출처 문서 필수, 같은 신청 재요청은 200으로 기존 문서, 다른 신청은 409, `GET /by-request/{key}` 조회 | 필드 이름·404 의미는 leave 확인 필요 |
 | 2026-11-02 | D1 | approval 발행 구현: 아웃박스(V7) + 1초 발행기 + 토픽 생성 + compose 브로커 | 수신 가이드 `DOCS/approval-result-event.md` |
 | 2026-11-03 | D5 | 결재선은 approval 이 위임전결 규정과 user-service 조직도(부서 유형·부서장)로 만든다. 판단 값은 생성 요청 `attributes`로 받는다. 급여는 결재 대상 아님 | 조건부 전결까지 구현. `approvalLines`를 보내면 기존처럼 검증만 (하위 호환) |
+| 2026-11-03 | D5 | 결재선 지정 기능 제거: 생성·재기안 요청에서 `approvalLines` 삭제(보내면 무시). 규정상 결재자는 `required`로 표시하고 제외·순서 변경·전결 건너뛰기 금지 | `APPROVAL_024`, `APPROVAL_025`. 기존 문서는 `required=false`라 영향 없음 |
 | 2026-11-03 | D1 | 출처 문서(휴가·근태)는 재기안 금지, 반려가 최종. 재신청은 원본 서비스의 새 신청(새 `requestKey`). 직접 기안만 재기안 허용 | `409 APPROVAL_023`. 결과 이벤트는 모두 최종 상태 |

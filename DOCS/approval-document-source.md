@@ -20,13 +20,15 @@ Content-Type: application/json
 |---|---|---|---|
 | `title` | string | O | 제목 (최대 255자) |
 | `formType` | string | O | 문서 양식. 아래 [양식별로 보내야 하는 값](#양식별로-보내야-하는-값) 참고 |
-| `approvalLines` | array | X | 결재선. **생략하면 서버가 위임전결 규정과 조직도로 만듭니다 (권장).** 빈 배열 `[]`도 생략과 같습니다. 보내면 지금처럼 검증만 하고 그대로 씁니다 |
 | `sourceType` | string | 조건부 | 문서가 만들어진 곳: `DIRECT` \| `LEAVE` \| `ATTENDANCE`. 생략하면 `DIRECT` |
 | `sourceId` | number | 조건부 | 원본 신청 ID. `DIRECT`가 아니면 필수, `DIRECT`면 보내지 않음 |
 | `requestKey` | string (UUID) | 조건부 | 생성 요청 키. **요청하는 쪽이 만들어서** 보냄. `DIRECT`가 아니면 필수, `DIRECT`면 선택. 아래 [requestKey 만드는 법](#requestkey-만드는-법) 참고 |
 | `attributes` | object | X | 전결 단계를 정하는 신청 값. 아래 [결재선 자동 결정](#결재선-자동-결정-위임전결-규정) 참고 |
 
 > 문서번호(`docNo`)는 서버가 만듭니다. 요청에 넣어도 무시합니다.
+>
+> **결재선은 받지 않습니다.** 위임전결 규정과 조직도로 서버가 만듭니다([결재선 자동 결정](#결재선-자동-결정-위임전결-규정)). 예전 형식처럼 `approvalLines`를 보내면 오류 없이 **무시**됩니다.
+> 참조자·열람자, 추가 결재자는 상신 후 [결재선 변경 API](#상신-후-결재선-변경)로 넣습니다.
 
 ### requestKey 만드는 법
 
@@ -62,27 +64,12 @@ approvalClient.create(new CreateDocument(..., leaveRequest.getApprovalRequestId(
 | 상황 | 응답 |
 |---|---|
 | 처음 요청 | `201`, 새 문서 |
-| 같은 키, 같은 신청 (기안자·양식·출처·원본 ID가 같음) | `200`, 처음 만든 문서 (제목·결재선이 달라도 처음 문서 그대로) |
+| 같은 키, 같은 신청 (기안자·양식·출처·원본 ID가 같음) | `200`, 처음 만든 문서 (제목·신청 값이 달라도 처음 문서 그대로) |
 | 같은 키, 다른 신청 | `409` `APPROVAL_021` |
-
-### approvalLines 항목
-
-| 필드 | 타입 | 필수 | 설명 |
-|---|---|---|---|
-| `empId` | number | O | 결재선에 넣을 사원 ID |
-| `step` | number | O | 결재 순서 (1부터) |
-| `role` | string | O | `APPROVER`(결재) \| `AGREEMENT`(합의) \| `REFERENCE`(참조) \| `VIEWER`(열람) |
-
-결재선 규칙
-- 결재자(`APPROVER`)가 최소 1명 있어야 합니다.
-- 기안자 본인은 넣을 수 없습니다.
-- 같은 사원을 두 번 넣을 수 없습니다.
-- 같은 `step`을 두 번 쓸 수 없습니다.
-- 재직 중인 사원만 넣을 수 있습니다.
 
 ## 결재선 자동 결정 (위임전결 규정)
 
-`approvalLines`를 생략하면 approval이 결재선을 만듭니다. 결재자를 찾는 로직을 각 서비스가 따로 가질 필요가 없습니다.
+결재선은 항상 approval이 만듭니다 (상신·재기안 모두). 결재자를 찾는 로직을 각 서비스가 따로 가질 필요가 없습니다.
 
 1. 양식과 `attributes`로 **전결 단계**(최종 결재권자)를 정합니다.
 2. user-service 조직도에서 기안자 부서부터 위로 올라가며 각 부서의 부서장을 결재자로 넣고, 전결 단계 부서장에서 멈춥니다.
@@ -151,14 +138,31 @@ Authorization: Bearer {access token}
 }
 ```
 
-화면은 이 결과를 보여주고, 사용자가 참조자 추가 등으로 고쳤으면 `approvalLines`로 보내고 그대로면 생략하면 됩니다.
+화면은 이 결과를 보여주고 그대로 상신합니다. 참조자·열람자, 추가 결재자는 상신 후 [결재선 변경 API](#상신-후-결재선-변경)로 넣습니다.
+
+### 상신 후 결재선 변경
+
+규정으로 정한 결재자는 `required: true`로 표시되고(결재선 조회 응답), **빼거나 서로 순서를 바꾸거나 전결로 건너뛸 수 없습니다.**
+기안자가 추가하는 결재자·합의자·참조자·열람자는 자유롭게 넣고 뺄 수 있습니다 (결재가 늘어날 뿐 규정을 우회하지 않음).
+
+| API | 내용 | 규칙 |
+|---|---|---|
+| `POST /{documentId}/approvers` `{empId, step, role}` | 결재자(`APPROVER`)·합의자(`AGREEMENT`) 추가 | 이미 결재가 끝난 순서 앞에는 못 넣음 |
+| `DELETE /{documentId}/approvers/{empId}` | 결재자 제외 | 규정상 결재자는 `409 APPROVAL_024` |
+| `PATCH /{documentId}/approvers/order` `{empIds}` | 결재자 순서 변경 (전체 목록) | 규정상 결재자끼리의 순서(팀장 → 본부장 → 대표이사)가 바뀌면 `409 APPROVAL_024`. 추가한 결재자는 그 사이 어디든 |
+| `POST /{documentId}/final-approve` | 전결 (차례인 결재자가 남은 결재 생략) | 뒤에 규정상 결재자가 남아 있으면 `409 APPROVAL_025`. 규정상 마지막 결재자는 기안자가 추가한 뒤쪽 결재자를 건너뛸 수 있음 |
+| `POST·DELETE /{documentId}/referrers`, `/viewers` | 참조자·열람자 추가·제외 | — |
+
+공통: 기안자만, 진행 중 문서만, 기안자 본인·이미 있는 사원 불가(`APPROVAL_002`, `APPROVAL_003`), 재직 중인 사원만(`APPROVAL_015`, `APPROVAL_016`). 경로 앞부분은 `/api/v1/documents`.
+
+재기안(`POST /api/v1/documents/{documentId}/resubmit`, 본문 `{ "title": "..." }`)은 직접 기안 문서만 되고, 결재선을 **재기안 시점의 조직도**로 다시 만듭니다 (그 사이 부서장이 바뀌었으면 새 부서장).
 
 ## 서비스별 호출 방법
 
 공통 규칙
 
 - **신청한 사원의 access 토큰**으로 호출합니다 (`BearerTokenRelayInterceptor`). 그 사원이 기안자가 되고, 결재선도 그 사원의 부서 기준으로 만들어집니다.
-- **`approvalLines`는 보내지 않습니다.** 결재선은 approval이 만듭니다. 보내면 검증만 하고 그대로 써서 전결 규정이 적용되지 않습니다.
+- **`approvalLines`는 보내지 않습니다.** 결재선은 approval이 만듭니다. 보내도 무시됩니다.
 - 전결 판단에 필요한 값만 `attributes`에 담습니다 (양식별로 아래 표).
 - 타임아웃·503이면 **같은 `requestKey`로** 다시 보내거나 [요청 키로 조회](#요청-키로-문서-조회)합니다.
 - 생성 요청 타임아웃은 짧게(연결 3초, 응답 10초 정도). approval이 그 안에서 user-service 조직도를 조회합니다.
@@ -179,7 +183,8 @@ Authorization: Bearer {access token}
 
 ### attendance-service
 
-현재 상신 요청 DTO(`AttendanceRequestSubmitRequest`)가 화면에서 결재선을 받아(`approvalLines @NotEmpty`) 그대로 approval에 넘깁니다. 지금 요청도 동작하지만, 전결 규정을 쓰려면 아래처럼 바꿉니다.
+현재 상신 요청 DTO(`AttendanceRequestSubmitRequest`)가 화면에서 결재선을 받아(`approvalLines @NotEmpty`) 그대로 approval에 넘깁니다.
+**approval은 이제 이 값을 무시하고 규정으로 결재선을 만듭니다** (요청은 실패하지 않음). 화면에서 고른 결재선이 쓰이지 않으므로 아래처럼 바꿉니다.
 
 1. `AttendanceRequestSubmitRequest`에서 `approvalLines` 제거 (화면도 결재선 선택 제거, 대신 미리보기 표시)
 2. `ApprovalDocumentCreateRequest`에서 `approvalLines`를 빼고 `attributes` 추가
@@ -286,7 +291,8 @@ restClient.post().uri("/api/v1/documents").body(body).retrieve()...   // 신청�
 ### 결재 화면 (프런트, 일반 기안·출장)
 
 1. 작성 화면에서 양식과 판단 값(출장 `overseas`, 일반 기안 `amount`)이 바뀔 때마다 [미리보기](#기본-결재선-미리보기)를 호출해 결재선을 보여줍니다.
-2. 사용자가 그대로 두면 `approvalLines` 없이 상신합니다. 참조자·열람자를 추가하거나 결재자를 바꿨으면 `approvalLines`에 **전체 결재선**을 담아 보냅니다.
+2. 결재선 없이 상신합니다. 참조자·열람자, 추가 결재자·합의자는 상신 직후 [결재선 변경 API](#상신-후-결재선-변경)로 넣습니다.
+   결재선 화면에서 `required: true`인 결재자는 삭제·순서 변경 버튼을 숨깁니다.
 3. `selfApproval: true`면 "결재 없이 바로 승인됩니다"로 안내합니다.
 4. 상신 버튼 중복 클릭 대비로 화면을 열 때 `requestKey`를 하나 만들어 두면 좋습니다 (선택).
 5. 문서 상세의 **재기안 버튼은 `status`가 `REJECTED`이고 `sourceType`이 `DIRECT`인 문서에만** 보여줍니다. 휴가·근태 문서는 각 신청 화면에서 새로 신청합니다.
@@ -314,19 +320,17 @@ attendance-service는 신청 종류(`AttendanceRequestType`)와 같은 이름을
 
 ## 요청 예시
 
-### 결재 화면에서 일반 기안 (결재선 직접 지정)
+### 결재 화면에서 일반 기안
 
 ```json
 {
   "title": "프로젝트 예산 집행 요청",
   "formType": "GENERAL",
-  "approvalLines": [
-    { "empId": 12, "step": 1, "role": "APPROVER" },
-    { "empId": 30, "step": 2, "role": "APPROVER" },
-    { "empId": 45, "step": 3, "role": "REFERENCE" }
-  ]
+  "attributes": { "amount": 3000000 }
 }
 ```
+
+300만 원이라 본부장 전결 → 결재선은 [팀장, 본부장]. 참조자가 필요하면 상신 후 `POST /api/v1/documents/{documentId}/referrers`.
 
 leave-service, attendance-service 요청 예시는 [서비스별 호출 방법](#서비스별-호출-방법)에 있습니다.
 
@@ -372,23 +376,17 @@ Authorization: Bearer {access token}
 | HTTP | 코드 | 원인 |
 |---|---|---|
 | 400 | `COMMON_001` | 필수 값 누락, 잘못된 enum 값 등 |
-| 400 | `APPROVAL_002` | 결재선에 기안자 본인이 있음 |
-| 400 | `APPROVAL_003` | 결재선에 같은 사원이 중복됨 |
-| 400 | `APPROVAL_004` | 결재 순서(`step`)가 중복됨 |
-| 400 | `APPROVAL_011` | 결재선에 결재자(`APPROVER`)가 없음 |
-| 400 | `APPROVAL_015` | 존재하지 않는 사원 |
-| 400 | `APPROVAL_016` | 재직 중이 아닌 사원 |
+| 400 | `APPROVAL_015` | 기안자가 user-service 에 없는 사원 |
 | 400 | `APPROVAL_018` | `DIRECT`가 아닌데 `sourceId`가 없음, 또는 `DIRECT`인데 `sourceId`가 있음 |
 | 400 | `APPROVAL_019` | 위 표와 다른 양식·출처 조합 (예: 결재 화면에서 `LEAVE` 양식 직접 작성) |
 | 400 | `APPROVAL_020` | `DIRECT`가 아닌데 `requestKey`가 없음 |
 | 409 | `APPROVAL_021` | 같은 `requestKey`로 다른 신청의 문서가 이미 있음 |
-| 409 | `APPROVAL_022` | 결재선을 생략했는데 조직도에서 결재자를 정할 수 없음 (부서장 미지정) |
+| 409 | `APPROVAL_022` | 조직도에서 결재자를 정할 수 없음 (부서장 미지정) |
 | 401 | `AUTH_xxx` | 토큰이 없거나 유효하지 않음 |
 | 503 | `APPROVAL_017` | 사원·조직 정보를 확인할 수 없음 (user-service 장애). 잠시 후 재시도 |
 
 ## 아직 지원하지 않는 것
 
 - 대결(부재 시 대리 결재), 관리자 결재선 변경
-- 직접 기안 문서의 재기안(반려 후 다시 상신)은 아직 결재선을 직접 보내야 함 (출처 문서는 재기안 불가)
 
 다른 양식이나 출처가 필요하면 approval-service 담당자에게 알려 주세요.
