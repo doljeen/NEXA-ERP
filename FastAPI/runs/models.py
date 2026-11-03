@@ -83,3 +83,18 @@ class RunFile(Base):
     uploaded_by: Mapped[str | None] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
+
+class RunFeedback(Base):
+    """AI 추출 결과의 확정 기록 (수정 전/후). MLOps 평가·재학습 데이터로 사용."""
+    __tablename__ = "run_feedback"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("run.id", ondelete="CASCADE"))
+    node_id: Mapped[str] = mapped_column(String(50))
+    doc_type: Mapped[str | None] = mapped_column(String(50))          # 문서 종류 (영수증 등)
+    model_version: Mapped[str | None] = mapped_column(String(100))    # 어느 모델 버전이 추출했는지
+    model_output: Mapped[dict] = mapped_column(JSONB)                 # AI가 낸 값
+    final_output: Mapped[dict] = mapped_column(JSONB)                 # 확정된 값 (= 라벨)
+    edited_fields: Mapped[list] = mapped_column(JSONB)                # 바뀐 필드 목록
+    label_source: Mapped[str] = mapped_column(String(20))             # human: 사람 확정 / llm_agree: 로컬·GMS 일치로 자동 확정
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

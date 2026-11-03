@@ -3,6 +3,7 @@ import dspy
 from pydantic import BaseModel, Field
 
 from ai.dspy_lm import run_with_fallback
+from ai.dspy_lm import get_gms_lm
 
 
 class Receipt(BaseModel):
@@ -38,3 +39,9 @@ def extract_receipt(text: str) -> Receipt:
     """영수증 텍스트 → Receipt. 로컬 LLM 실패 시 GMS로 대체."""
     result = run_with_fallback(_extractor, text=text)
     return result.receipt
+
+
+def extract_receipt_with_gms(text: str) -> Receipt:
+    """검증용: GMS로 독립 추출 (로컬 결과와 비교하기 위함, 대체 실행 없음)."""
+    with dspy.context(lm=get_gms_lm()):
+        return _extractor(text=text).receipt
