@@ -5,6 +5,7 @@ import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceRequestPrevie
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceRequestPreviewResponse;
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceRequestSubmitRequest;
 import com.ssafy.attendanceservice.domain.attendance.dto.AttendanceRequestSummaryResponse;
+import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequestStatus;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequestType;
 
 import java.util.List;
@@ -25,4 +26,14 @@ public interface AttendanceRequestService {
 
     /** 내 신청서 상세. 없거나 본인 신청서가 아니면 BusinessException(ATTENDANCE_REQUEST_NOT_FOUND) */
     AttendanceRequestDetailResponse getMyRequest(Long empId, Long requestId);
+
+    /**
+     * 결재 결과 반영 (결재 결과 이벤트 수신 시 호출).
+     * 결재 대기(PENDING)일 때만 반영하고 이미 처리된 신청은 무시한다 (같은 결과가 두 번 와도 결과가 같다).
+     * 승인이면 신청 내용을 근태에 적용한다.
+     * 신청서가 없으면 BusinessException(ATTENDANCE_REQUEST_NOT_FOUND): 상신 커밋 전에 결과가 먼저 온 경우라 재시도 대상
+     *
+     * @param result APPROVED, REJECTED, CANCELED 중 하나
+     */
+    void applyApprovalResult(Long attReqId, AttendanceRequestStatus result);
 }

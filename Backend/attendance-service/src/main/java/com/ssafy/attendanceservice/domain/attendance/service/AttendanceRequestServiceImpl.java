@@ -29,6 +29,7 @@ import com.ssafy.attendanceservice.global.exception.BusinessException;
 import com.ssafy.attendanceservice.global.exception.ErrorCode;
 import com.ssafy.attendanceservice.global.util.DateTimeUtils;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,6 +45,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AttendanceRequestServiceImpl implements AttendanceRequestService {
@@ -180,6 +182,51 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
                 .filter(d -> !d.getWorkDate().equals(targetDate))
                 .mapToInt(d -> d.getOtExtendedMin() + d.getOtHolidayMin())
                 .sum();
+    }
+
+    @Override
+    @Transactional
+    public void applyApprovalResult(Long attReqId, AttendanceRequestStatus result) {
+        if (result == AttendanceRequestStatus.PENDING) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "결재 결과는 승인·반려·회수 중 하나여야 합니다.");
+        }
+
+        // 1. 같은 신청의 결과가 동시에 와도 하나씩 처리
+        AttendanceRequest request = attendanceRequestRepository.findByIdForUpdate(attReqId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ATTENDANCE_REQUEST_NOT_FOUND));
+
+        // 2. 이미 반영된 신청이면 무시 (같은 결과 중복 수신, 반려 후 승인 등)
+        if (!request.isPending()) {
+            log.info("결재 결과 무시 (이미 처리됨): attReqId={}, 현재={}, 받은 결과={}",
+                    attReqId, request.getStatus(), result);
+            return;
+        }
+
+        // 3. 상태 변경. 승인이면 신청 내용을 근태에 반영 (재계산이 승인 상태를 조회하므로 상태를 먼저 바꾼다)
+        OffsetDateTime now = DateTimeUtils.now();
+        switch (result) {
+            case APPROVED -> {
+                request.approve(now);
+                applyApproved(request);
+            }
+            case REJECTED -> request.reject(now);
+            case CANCELED -> request.cancel(now);
+            case PENDING -> throw new IllegalStateException("위에서 걸러짐");
+        }
+    }
+
+    /** 승인된 신청을 근태에 반영 */
+    private void applyApproved(AttendanceRequest request) {
+        Long empId = request.getEmpId();
+        switch (request.getReqType()) {
+            case TIME_FIX -> processor.applyTimeFix(request);
+            case OVERTIME -> attendanceDailyRepository.findByEmpIdAndWorkDate(empId, request.getTargetDate())
+                    .ifPresent(processor::syncDaily);
+            case HOLIDAY_SUBST -> {
+                processor.resyncHoliday(empId, request.getTargetDate());
+                processor.resyncHoliday(empId, request.getSubstDate());
+            }
+        }
     }
 
     // ===== 휴일대체 =====
