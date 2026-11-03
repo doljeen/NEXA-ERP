@@ -10,29 +10,37 @@ INSERT INTO company (company_id, name, biz_no)
 VALUES (1, 'DEV COMPANY', 1234567890)
 ON CONFLICT (company_id) DO UPDATE SET name = EXCLUDED.name, biz_no = EXCLUDED.biz_no;
 
--- ===== 부서 (본부 > 팀) =====
--- 기존 ID 1~3(인사팀·개발팀·영업팀)은 유지하고 본부 아래로 옮긴다. 본부를 먼저 넣는다
-INSERT INTO department (dept_id, name, sort_order, company_id, parent_dept_id) VALUES
-    (10, '경영지원본부', 1, 1, NULL),
-    (11, '기술본부',     2, 1, NULL),
-    (12, '영업본부',     3, 1, NULL)
+-- ===== 부서 (회사 > 본부 > 팀) =====
+-- dept_type: COMPANY(회사, 부서장=대표이사) / DIVISION(본부, 본부장) / TEAM(팀, 팀장). 결재 전결 단계 기준
+-- 기존 ID 1~3(인사팀·개발팀·영업팀)은 유지하고 본부 아래로 옮긴다. 상위 부서를 먼저 넣는다
+-- 부서장(head_emp_id)은 사원을 넣은 뒤 맨 아래에서 지정한다
+INSERT INTO department (dept_id, name, sort_order, company_id, parent_dept_id, dept_type) VALUES
+    (13, 'DEV COMPANY', 1, 1, NULL, 'COMPANY')
 ON CONFLICT (dept_id) DO UPDATE SET
-    name = EXCLUDED.name, sort_order = EXCLUDED.sort_order,
-    company_id = EXCLUDED.company_id, parent_dept_id = EXCLUDED.parent_dept_id;
+    name = EXCLUDED.name, sort_order = EXCLUDED.sort_order, company_id = EXCLUDED.company_id,
+    parent_dept_id = EXCLUDED.parent_dept_id, dept_type = EXCLUDED.dept_type;
 
-INSERT INTO department (dept_id, name, sort_order, company_id, parent_dept_id) VALUES
-    (1, '인사팀',     1, 1, 10),
-    (4, '재무팀',     2, 1, 10),
-    (5, '총무팀',     3, 1, 10),
-    (2, '개발팀',     1, 1, 11),
-    (6, '인프라팀',   2, 1, 11),
-    (7, 'QA팀',       3, 1, 11),
-    (3, '영업팀',     1, 1, 12),
-    (8, '해외영업팀', 2, 1, 12),
-    (9, '마케팅팀',   3, 1, 12)
+INSERT INTO department (dept_id, name, sort_order, company_id, parent_dept_id, dept_type) VALUES
+    (10, '경영지원본부', 1, 1, 13, 'DIVISION'),
+    (11, '기술본부',     2, 1, 13, 'DIVISION'),
+    (12, '영업본부',     3, 1, 13, 'DIVISION')
 ON CONFLICT (dept_id) DO UPDATE SET
-    name = EXCLUDED.name, sort_order = EXCLUDED.sort_order,
-    company_id = EXCLUDED.company_id, parent_dept_id = EXCLUDED.parent_dept_id;
+    name = EXCLUDED.name, sort_order = EXCLUDED.sort_order, company_id = EXCLUDED.company_id,
+    parent_dept_id = EXCLUDED.parent_dept_id, dept_type = EXCLUDED.dept_type;
+
+INSERT INTO department (dept_id, name, sort_order, company_id, parent_dept_id, dept_type) VALUES
+    (1, '인사팀',     1, 1, 10, 'TEAM'),
+    (4, '재무팀',     2, 1, 10, 'TEAM'),
+    (5, '총무팀',     3, 1, 10, 'TEAM'),
+    (2, '개발팀',     1, 1, 11, 'TEAM'),
+    (6, '인프라팀',   2, 1, 11, 'TEAM'),
+    (7, 'QA팀',       3, 1, 11, 'TEAM'),
+    (3, '영업팀',     1, 1, 12, 'TEAM'),
+    (8, '해외영업팀', 2, 1, 12, 'TEAM'),
+    (9, '마케팅팀',   3, 1, 12, 'TEAM')
+ON CONFLICT (dept_id) DO UPDATE SET
+    name = EXCLUDED.name, sort_order = EXCLUDED.sort_order, company_id = EXCLUDED.company_id,
+    parent_dept_id = EXCLUDED.parent_dept_id, dept_type = EXCLUDED.dept_type;
 
 -- ===== 직위 (rank_order = 서열, 클수록 높음) =====
 -- 기존 ID 1~4(사원·대리·과장·부장)는 유지하고 서열만 다시 매긴다
@@ -120,6 +128,9 @@ ON CONFLICT (login_id) DO NOTHING;
 --   104 강도윤  개발팀 과장 팀원  G3 3호봉(13)
 --   105 윤지호  개발팀 부장 팀장  G5 4호봉(24)
 --   106 한예린  영업팀 과장 팀장  G3 5호봉(15)
+--   107 서동현  경영지원본부 이사 본부장  G6 2호봉(27)
+--   108 임채원  기술본부 상무 본부장      G6 3호봉(28)
+--   109 문태준  DEV COMPANY 대표이사      G6 5호봉(30)
 INSERT INTO employee (emp_id, emp_no, login_id, password_enc, name, dept_id, position_id, grade_id, duty_id,
                       emp_type, hire_type, hire_date, job_family_id, job_kind_id, job_role_id,
                       gender, status, role)
@@ -135,7 +146,13 @@ VALUES
     (105, 'DEV0105', 'user5@local.dev', '$2a$10$FV3KGfhQYQg73nblDCNKaeW8fCyirP10C0TRawzKL6AQZOvVfGR.u',
      '윤지호', 2, 4, 24, 2, 'REGULAR', 'ROLL',           '2011-03-02', 4, 5, 6,  'MALE',   'EMPLOYED', 'USER'),
     (106, 'DEV0106', 'user6@local.dev', '$2a$10$FV3KGfhQYQg73nblDCNKaeW8fCyirP10C0TRawzKL6AQZOvVfGR.u',
-     '한예린', 3, 3, 15, 2, 'REGULAR', 'RECOMMENDATION', '2019-05-13', 7, 8, 9,  'FEMALE', 'EMPLOYED', 'USER')
+     '한예린', 3, 3, 15, 2, 'REGULAR', 'RECOMMENDATION', '2019-05-13', 7, 8, 9,  'FEMALE', 'EMPLOYED', 'USER'),
+    (107, 'DEV0107', 'user7@local.dev', '$2a$10$FV3KGfhQYQg73nblDCNKaeW8fCyirP10C0TRawzKL6AQZOvVfGR.u',
+     '서동현', 10, 7, 27, 3, 'REGULAR', 'ROLL',          '2008-03-03', 1, 2, 3,  'MALE',   'EMPLOYED', 'USER'),
+    (108, 'DEV0108', 'user8@local.dev', '$2a$10$FV3KGfhQYQg73nblDCNKaeW8fCyirP10C0TRawzKL6AQZOvVfGR.u',
+     '임채원', 11, 8, 28, 3, 'REGULAR', 'ROLL',          '2006-07-03', 4, 5, 6,  'FEMALE', 'EMPLOYED', 'USER'),
+    (109, 'DEV0109', 'user9@local.dev', '$2a$10$FV3KGfhQYQg73nblDCNKaeW8fCyirP10C0TRawzKL6AQZOvVfGR.u',
+     '문태준', 13, 10, 30, 4, 'REGULAR', 'ROLL',         '2001-01-02', 1, 15, 16, 'MALE',   'EMPLOYED', 'USER')
 ON CONFLICT (emp_id) DO UPDATE SET
     emp_no = EXCLUDED.emp_no, login_id = EXCLUDED.login_id, password_enc = EXCLUDED.password_enc,
     name = EXCLUDED.name, dept_id = EXCLUDED.dept_id, position_id = EXCLUDED.position_id,
@@ -143,6 +160,21 @@ ON CONFLICT (emp_id) DO UPDATE SET
     hire_type = EXCLUDED.hire_type, hire_date = EXCLUDED.hire_date, job_family_id = EXCLUDED.job_family_id,
     job_kind_id = EXCLUDED.job_kind_id, job_role_id = EXCLUDED.job_role_id, gender = EXCLUDED.gender,
     status = EXCLUDED.status, role = EXCLUDED.role;
+
+-- ===== 부서장 =====
+-- 공석(NULL)도 일부러 둔다: 영업본부(본부장 공석 → 영업팀 결재는 대표이사로 올라감), 팀장 없는 팀 6개
+UPDATE department d
+SET head_emp_id = v.head_emp_id
+FROM (VALUES (13, 109),     -- DEV COMPANY  대표이사 문태준
+             (10, 107),     -- 경영지원본부 본부장 서동현
+             (11, 108),     -- 기술본부     본부장 임채원
+             (12, NULL),    -- 영업본부     공석
+             (1,  102),     -- 인사팀       팀장 최민준
+             (2,  105),     -- 개발팀       팀장 윤지호
+             (3,  106),     -- 영업팀       팀장 한예린
+             (4,  NULL), (5, NULL), (6, NULL), (7, NULL), (8, NULL), (9, NULL)
+     ) AS v(dept_id, head_emp_id)
+WHERE d.dept_id = v.dept_id;
 
 -- 명시적 ID로 넣었으므로 시퀀스를 현재 최댓값 뒤로 맞춘다
 SELECT setval('company_company_id_seq',   (SELECT MAX(company_id)  FROM company));
