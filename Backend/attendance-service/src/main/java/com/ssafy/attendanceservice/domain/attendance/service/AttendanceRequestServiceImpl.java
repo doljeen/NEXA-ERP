@@ -196,12 +196,12 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
         }
 
         // 1. 대상일은 휴일 (공휴일 또는 근무 요일 아님)
-        if (!processor.isHoliday(targetDate, processor.resolveWorkGroup(empId, targetDate))) {
+        if (!processor.isHoliday(empId, targetDate, processor.resolveWorkGroup(empId, targetDate))) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "대상일(targetDate)은 휴일이어야 합니다.");
         }
 
         // 2. 대체일은 근무일
-        if (processor.isHoliday(substDate, processor.resolveWorkGroup(empId, substDate))) {
+        if (processor.isHoliday(empId, substDate, processor.resolveWorkGroup(empId, substDate))) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "대체일(substDate)은 근무일이어야 합니다.");
         }
 
@@ -318,7 +318,7 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
         WorkGroup workGroup = daily.map(AttendanceDaily::getWorkGroup)
                 .orElseGet(() -> processor.resolveWorkGroup(empId, targetDate));
         boolean isHoliday = daily.map(AttendanceDaily::getIsHoliday)
-                .orElseGet(() -> processor.isHoliday(targetDate, workGroup));
+                .orElseGet(() -> processor.isHoliday(empId, targetDate, workGroup));
 
         OffsetDateTime clockOut = after.stream()
                 .filter(log -> WorkStatusCode.CLOCK_OUT.equals(log.statusCode()))

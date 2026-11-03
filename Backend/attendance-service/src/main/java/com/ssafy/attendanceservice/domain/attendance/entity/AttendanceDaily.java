@@ -144,4 +144,9 @@ public class AttendanceDaily {
         this.clockOut = clockOut;
         this.isConfirmed = clockOut != null;
     }
+
+    /** 휴일 여부 변경 (휴일대체 승인 시 재판정) */
+    public void changeHoliday(boolean isHoliday) {
+        this.isHoliday = isHoliday;
+    }
 }

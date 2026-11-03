@@ -10,6 +10,7 @@ import com.ssafy.attendanceservice.domain.attendance.entity.enums.AnomalyType;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequestStatus;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequestType;
 import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceAnomalyRepository;
+import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceDailyRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceRequestRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.EmployeeWorkGroupRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.HolidayRepository;
@@ -41,6 +42,10 @@ public class AttendanceDailyProcessor {
     private final WorkGroupRepository workGroupRepository;
     private final HolidayRepository holidayRepository;
     private final AttendanceRequestRepository attendanceRequestRepository;
+    private final AttendanceDailyRepository attendanceDailyRepository;
+
+    // 휴일 판정에 반영하는 휴일대체 상태 (승인된 것만)
+    private static final List<AttendanceRequestStatus> APPROVED_ONLY = List.of(AttendanceRequestStatus.APPROVED);
 
     /** 해당 날짜에 배정된 근무그룹. 배정이 없으면 기본 그룹 */
     public WorkGroup resolveWorkGroup(Long empId, LocalDate date) {
@@ -49,8 +54,19 @@ public class AttendanceDailyProcessor {
                 .orElseThrow(() -> new BusinessException(ErrorCode.DEFAULT_WORK_GROUP_NOT_FOUND));
     }
 
-    /** 휴일 여부: 공휴일이거나 근무그룹의 근무 요일이 아님 */
-    public boolean isHoliday(LocalDate date, WorkGroup workGroup) {
+    /**
+     * 휴일 여부. 승인된 휴일대체가 우선이다: 근무한 휴일(targetDate)은 근무일, 대신 쉬는 날(substDate)은 휴일.
+     * 그 외에는 공휴일이거나 근무그룹의 근무 요일이 아니면 휴일
+     */
+    public boolean isHoliday(Long empId, LocalDate date, WorkGroup workGroup) {
+        if (attendanceRequestRepository.existsByEmpIdAndReqTypeAndTargetDateAndStatusIn(
+                empId, AttendanceRequestType.HOLIDAY_SUBST, date, APPROVED_ONLY)) {
+            return false;
+        }
+        if (attendanceRequestRepository.existsByEmpIdAndReqTypeAndSubstDateAndStatusIn(
+                empId, AttendanceRequestType.HOLIDAY_SUBST, date, APPROVED_ONLY)) {
+            return true;
+        }
         return holidayRepository.existsById(date) || !workGroup.isWorkDay(date.getDayOfWeek());
     }
 
@@ -162,5 +178,16 @@ public class AttendanceDailyProcessor {
 
         // 5. 조퇴, 소정근로 미달, 미승인 초과근로
         refreshClockOutAnomalies(daily, workTime);
+    }
+
+    /**
+     * 그날 근태 기록의 휴일 여부를 다시 판정하고 근태를 재계산한다 (휴일대체 승인 후).
+     * 기록이 없는 날은 할 일이 없다 (조회 시 isHoliday로 판정)
+     */
+    public void resyncHoliday(Long empId, LocalDate date) {
+        attendanceDailyRepository.findByEmpIdAndWorkDate(empId, date).ifPresent(daily -> {
+            daily.changeHoliday(isHoliday(empId, date, daily.getWorkGroup()));
+            syncDaily(daily);
+        });
     }
 }
