@@ -77,6 +77,57 @@ services:
       - "8083:8083"
     restart: unless-stopped
 
+  # ===== 모니터링 (docker compose --profile monitoring up -d 일 때만 뜬다) =====
+  # 설정 파일은 ./monitoring 아래. 사용법은 monitoring/README.md
+
+  # 메트릭 수집·저장. approval(/actuator/prometheus)과 kafka-exporter 를 15초마다 수집
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: approval-service-prometheus
+    profiles: ["monitoring"]
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - approval-service-prometheus-data:/prometheus
+    extra_hosts:
+      # 호스트에서 띄운 approval(8083)을 수집하기 위해
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "19090:9090"
+
+  # Kafka 메트릭(컨슈머 그룹 LAG, 토픽 오프셋)을 Prometheus 형식으로 내보낸다
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.8.0
+    container_name: approval-service-kafka-exporter
+    profiles: ["monitoring"]
+    command: ["--kafka.server=kafka:9092"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # 대시보드·알림. 대시보드, 데이터 소스(Prometheus, approval DB), 알림 규칙은 파일로 미리 넣어 둔다
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: approval-service-grafana
+    profiles: ["monitoring"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      # 로컬 개발용: 로그인 없이 보기 권한
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/approval-outbox-kafka.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - approval-service-grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "13000:3000"
+
 volumes:
   approval-service-pgdata:
   approval-service-kafka-data:
+  approval-service-prometheus-data:
+  approval-service-grafana-data:
