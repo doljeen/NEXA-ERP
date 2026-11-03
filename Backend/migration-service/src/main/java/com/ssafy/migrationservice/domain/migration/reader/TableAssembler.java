@@ -32,9 +32,11 @@ final class TableAssembler {
     private static final Pattern SUB_TOTAL = Pattern.compile("소계|계|subtotal");
     // '강남점 소계', 'A조 합계' 처럼 이름이 붙은 소계 (총계로 보지 않음)
     private static final Pattern NAMED_SUB_TOTAL = Pattern.compile(".{1,15}(소계|합계|총계)|.{1,15}(sub)?total");
-    // 같은 열의 위쪽 행을 더하는 수식 (=SUM(F4:F25)) — 이름이 없어도 이런 칸이 대부분이면 소계 행
-    private static final Pattern VERTICAL_SUM = Pattern.compile("SUM\\(\\$?([A-Z]{1,3})\\$?(\\d+):\\$?([A-Z]{1,3})\\$?(\\d+)\\)");
+    // 같은 열의 위쪽 행을 모으는 수식 (=SUM(F4:F25), 근무표 아래 =COUNTIF(D5:D24,"N")) — 이름이 없어도 이런 칸이 대부분이면 소계 행
+    private static final Pattern VERTICAL_SUM = Pattern.compile(
+            "(?:SUM|SUMIF|COUNT|COUNTA|COUNTIF|AVERAGE|MAX|MIN)\\(\\$?([A-Z]{1,3})\\$?(\\d+):\\$?([A-Z]{1,3})\\$?(\\d+)(?:,[^()]*)?\\)");
     private static final int TOTAL_LABEL_COLUMNS = 3;
+    private static final int LABEL_ROW_MIN_COLUMNS = 5;
 
     private TableAssembler() {
     }
@@ -60,6 +62,9 @@ final class TableAssembler {
                 totals.add(raw.rowNo());
                 pastGrandTotal |= GRAND_TOTAL.matcher(total).matches();
                 continue;
+            }
+            if (headers.size() >= LABEL_ROW_MIN_COLUMNS && isLabelRow(raw)) {
+                continue;   // '■ 퍼허푸드 (PF)' 같은 구역 제목, '위 금액을 정히 영수함' 같은 맺음말: 데이터가 아님
             }
             if (pastGrandTotal) {
                 afterTotal.add(raw.rowNo());
@@ -180,6 +185,11 @@ final class TableAssembler {
             }
         }
         return sums >= 2 && sums * 2 >= formulas;
+    }
+
+    /** 글자 한 칸만 있고 수식이 없는 행 */
+    private static boolean isLabelRow(RawRow raw) {
+        return raw.nonBlankCount() == 1 && raw.textCount() == 1 && raw.formulas().stream().allMatch(f -> f == null);
     }
 
     static String blankToNull(String v) {

@@ -169,6 +169,36 @@ class TableReaderTest {
     }
 
     @Test
+    void 위쪽_행을_세는_COUNTIF_행과_글자_한_칸뿐인_구역_제목_맺음말_행은_데이터에서_뺀다() throws IOException {
+        byte[] xlsx;
+        try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet s = wb.createSheet("근무표");
+            String[][] data = {{"사번", "성명", "직종", "1", "2"}, {"■ 1병동", "", "", "", ""}, {"001", "김간호", "간호사", "D", "N"},
+                    {"002", "이간호", "간호사", "N", "D"}, {"", "D", "", "", ""}, {"", "N", "", "", ""}, {"", "위 내용이 맞음 (인)", "", "", ""}};
+            for (int i = 0; i < data.length; i++) {
+                Row r = s.createRow(i);
+                for (int c = 0; c < data[i].length; c++) {
+                    if (!data[i][c].isEmpty()) {
+                        r.createCell(c).setCellValue(data[i][c]);
+                    }
+                }
+            }
+            for (int c = 3; c <= 4; c++) {      // 5·6행: 날짜별 근무 인원
+                String col = String.valueOf((char) ('A' + c));
+                s.getRow(4).createCell(c).setCellFormula("COUNTIF(" + col + "3:" + col + "4,\"D\")");
+                s.getRow(5).createCell(c).setCellFormula("COUNTIF(" + col + "3:" + col + "4,\"N\")");
+            }
+            wb.write(out);
+            xlsx = out.toByteArray();
+        }
+
+        ParsedTable t = reader.read("근무표.xlsx", xlsx);
+
+        assertThat(t.rows()).extracting(ParsedTable.Row::rowNo).containsExactly(3, 4);
+        assertThat(t.totalRows()).containsExactly(5, 6);
+    }
+
+    @Test
     void csv_UTF8_BOM을_읽는다() {
         byte[] body = "사번,이름\n00123,홍길동\n".getBytes(StandardCharsets.UTF_8);
         byte[] withBom = new byte[body.length + 3];
