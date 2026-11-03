@@ -53,7 +53,7 @@
 |---|---|---|
 | 토픽 구성 | 토픽 하나 `approval.document.result`, 파티션 3, 메시지 키 `documentId` | 추천 |
 | 보낼 상태 | 최종 결과만: `APPROVED` / `REJECTED` / `CANCEL` | 추천 |
-| 반려 후 재기안 | **출처가 있는 문서(휴가·근태)는 재기안 금지, 반려가 최종.** 다시 하려면 원본에서 새로 신청. 직접 기안은 지금처럼 재기안 허용 | 추천, **leave·attendance 합의 필요** |
+| 반려 후 재기안 | **출처가 있는 문서(휴가·근태)는 재기안 금지, 반려가 최종.** 다시 하려면 원본에서 새로 신청(새 `requestKey`). 직접 기안은 지금처럼 재기안 허용 | ✅ **확정·구현** (`409 APPROVAL_023`) |
 | 수신 측 멱등 처리 | **상태 기반**: 신청이 결재 대기 상태일 때만 반영, 이미 반영됐으면 무시. 처리 이력이 필요할 때만 `eventId` 기록 | 추천, **leave·attendance가 결정** |
 | 이벤트 형식 공유 | 공통 라이브러리 없음. 서비스마다 DTO, 계약은 `DOCS` 문서로 관리, `eventVersion` 포함, 모르는 필드 무시 | 추천 |
 | 재시도·DLQ | 수신 측 `DefaultErrorHandler` 3회 재시도(1s→2s→4s) 후 `approval.document.result.DLT`. DLT는 로그로 남기고 D2 조회 API로 수동 복구 | 추천 |
@@ -124,7 +124,7 @@
 
 ### 남은 논의
 
-- [ ] 출처가 있는 문서의 재기안 금지 (leave·attendance 합의)
+- [x] 출처가 있는 문서의 재기안 금지 → 확정·구현 (2026-11-03). leave·attendance 는 반려를 최종으로 처리하고, 재신청은 새 신청으로
 - [ ] 수신 측 멱등 처리 방식 (leave·attendance 결정)
 - [ ] DLT 메시지를 누가 언제 확인할 것인가
 - [ ] 공용 환경에 브로커를 올리는 일정 (infra)
@@ -255,7 +255,7 @@ GET /api/v1/documents/by-request/{requestKey}
 1. 이 문서 공유 → 각 담당자가 질문에 의견 남기기
 2. 회의로 D1 남은 논의(재기안·멱등 방식), D3, D4 결정 (D2 확인, M1~M3는 메시지로)
 3. 구현
-   - approval: ~~D2 요청 키·조회 API~~ (완료) → ~~브로커(compose) + 아웃박스 + Kafka 발행(D1)~~ (완료) → ~~결재선 자동 결정(D5)~~ (완료) → 출처 문서 재기안 금지 → 취소 API(D3)
+   - approval: ~~D2 요청 키·조회 API~~ (완료) → ~~브로커(compose) + 아웃박스 + Kafka 발행(D1)~~ (완료) → ~~결재선 자동 결정(D5)~~ (완료) → ~~출처 문서 재기안 금지~~ (완료) → 취소 API(D3)
    - leave/attendance: 생성 요청에 `requestKey` 추가, 조회 클라이언트(D2) → 결재선 생략·`attributes` 전달(D5) → Kafka 수신·멱등 처리·DLQ(D1) → 취소 호출(D3)
 
 ## 결정 기록
@@ -267,3 +267,4 @@ GET /api/v1/documents/by-request/{requestKey}
 | 2026-11-02 | D2 | `requestKey` 구현: 출처 문서 필수, 같은 신청 재요청은 200으로 기존 문서, 다른 신청은 409, `GET /by-request/{key}` 조회 | 필드 이름·404 의미는 leave 확인 필요 |
 | 2026-11-02 | D1 | approval 발행 구현: 아웃박스(V7) + 1초 발행기 + 토픽 생성 + compose 브로커 | 수신 가이드 `DOCS/approval-result-event.md` |
 | 2026-11-03 | D5 | 결재선은 approval 이 위임전결 규정과 user-service 조직도(부서 유형·부서장)로 만든다. 판단 값은 생성 요청 `attributes`로 받는다. 급여는 결재 대상 아님 | 조건부 전결까지 구현. `approvalLines`를 보내면 기존처럼 검증만 (하위 호환) |
+| 2026-11-03 | D1 | 출처 문서(휴가·근태)는 재기안 금지, 반려가 최종. 재신청은 원본 서비스의 새 신청(새 `requestKey`). 직접 기안만 재기안 허용 | `409 APPROVAL_023`. 결과 이벤트는 모두 최종 상태 |

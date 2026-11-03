@@ -171,6 +171,12 @@ Authorization: Bearer {access token}
 | `409 APPROVAL_022` | 조직도에 부서장이 없어 결재자를 못 정함. 재시도해도 같음. 관리자에게 부서장 지정 요청 |
 | `503 APPROVAL_017` | user-service 장애. 같은 `requestKey`로 재시도 |
 
+반려 후 다시 신청하기
+
+- 출처 문서는 **반려가 최종**입니다. approval 의 재기안(`POST /api/v1/approvals/{documentId}/resubmit`)은 직접 기안 문서만 되고, 출처 문서는 `409 APPROVAL_023`입니다.
+- `REJECTED` 결과를 받으면 그 신청을 종료(예약한 휴가 일수 반환 등)합니다.
+- 사용자가 다시 신청하면 **새 신청**으로 만들고 새 `requestKey`로 결재 문서를 새로 만듭니다. 화면에 "반려된 신청 복사해서 새로 신청" 기능을 두면 재기안처럼 편하게 쓸 수 있습니다 (선택, 각 서비스 화면).
+
 ### attendance-service
 
 현재 상신 요청 DTO(`AttendanceRequestSubmitRequest`)가 화면에서 결재선을 받아(`approvalLines @NotEmpty`) 그대로 approval에 넘깁니다. 지금 요청도 동작하지만, 전결 규정을 쓰려면 아래처럼 바꿉니다.
@@ -282,6 +288,7 @@ restClient.post().uri("/api/v1/documents").body(body).retrieve()...   // 신청�
 2. 사용자가 그대로 두면 `approvalLines` 없이 상신합니다. 참조자·열람자를 추가하거나 결재자를 바꿨으면 `approvalLines`에 **전체 결재선**을 담아 보냅니다.
 3. `selfApproval: true`면 "결재 없이 바로 승인됩니다"로 안내합니다.
 4. 상신 버튼 중복 클릭 대비로 화면을 열 때 `requestKey`를 하나 만들어 두면 좋습니다 (선택).
+5. 문서 상세의 **재기안 버튼은 `status`가 `REJECTED`이고 `sourceType`이 `DIRECT`인 문서에만** 보여줍니다. 휴가·근태 문서는 각 신청 화면에서 새로 신청합니다.
 
 ```
 GET  /api/v1/documents/approval-line-preview?formType=BUSINESS_TRIP&overseas=true
@@ -381,6 +388,6 @@ Authorization: Bearer {access token}
 ## 아직 지원하지 않는 것
 
 - 대결(부재 시 대리 결재), 관리자 결재선 변경
-- 재기안(반려 후 다시 상신)은 아직 결재선을 직접 보내야 함
+- 직접 기안 문서의 재기안(반려 후 다시 상신)은 아직 결재선을 직접 보내야 함 (출처 문서는 재기안 불가)
 
 다른 양식이나 출처가 필요하면 approval-service 담당자에게 알려 주세요.

@@ -115,6 +115,10 @@ public class ApprovalServiceImplV1 implements ApprovalService {
         approvalLineValidator.validate(request.approvalLines(), employeeId);
         Document document = documentService.getDocumentForUpdate(documentId);
         validateDrafter(document, employeeId);
+        // 출처 문서는 반려가 최종 (결과 이벤트를 이미 받은 원본 서비스와 어긋나지 않게). 다시 하려면 원본에서 새로 신청
+        if (document.isFromSource()) {
+            throw new BusinessException(ErrorCode.SOURCE_DOCUMENT_NOT_RESUBMITTABLE);
+        }
         if (!document.isRejected()) {
             throw new BusinessException(ErrorCode.DOCUMENT_NOT_REJECTED);
         }

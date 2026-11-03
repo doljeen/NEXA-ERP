@@ -47,7 +47,8 @@
 | `requestKey` | 결재 문서를 만들 때 보낸 요청 키 (UUID) |
 | `status` | `APPROVED`(승인·전결) \| `REJECTED`(반려) \| `CANCEL`(기안자 회수) |
 
-> 반려 후 재기안 정책은 논의 중입니다(결정 문서 D1). 추천안은 "출처 문서는 반려가 최종"이며, 확정 전까지는 `REJECTED`를 받은 뒤 같은 문서의 `APPROVED`가 다시 올 수 있습니다.
+> **`APPROVED`·`REJECTED`·`CANCEL` 모두 최종입니다** (결정 문서 D1). 출처 문서(휴가·근태)는 approval 에서 재기안할 수 없으므로(`409 APPROVAL_023`), `REJECTED`를 받은 뒤 같은 문서의 결과가 다시 오지 않습니다.
+> 반려된 신청을 다시 하려면 원본 서비스에서 **새 신청**(새 원본 ID, 새 `requestKey`)으로 결재 문서를 새로 만듭니다.
 
 ## 수신 설정 (Spring Boot 4 / spring-kafka 4 기준 예시)
 

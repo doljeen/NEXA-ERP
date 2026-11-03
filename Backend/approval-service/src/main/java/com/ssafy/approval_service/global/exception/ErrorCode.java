@@ -35,6 +35,7 @@ public enum ErrorCode {
     REQUEST_KEY_REQUIRED(HttpStatus.BAD_REQUEST, "APPROVAL_020", "다른 서비스의 신청으로 만드는 문서는 요청 키(requestKey)가 필요합니다."),
     REQUEST_KEY_CONFLICT(HttpStatus.CONFLICT, "APPROVAL_021", "같은 요청 키로 다른 신청의 문서가 이미 있습니다."),
     APPROVER_NOT_RESOLVED(HttpStatus.CONFLICT, "APPROVAL_022", "조직도에서 결재자를 정할 수 없습니다. 부서장 지정을 확인하세요."),
+    SOURCE_DOCUMENT_NOT_RESUBMITTABLE(HttpStatus.CONFLICT, "APPROVAL_023", "휴가·근태 신청으로 만든 문서는 재기안할 수 없습니다. 원본 서비스에서 새로 신청하세요."),
 
     // 공통
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),

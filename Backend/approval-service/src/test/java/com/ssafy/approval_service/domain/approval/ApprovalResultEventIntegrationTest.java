@@ -28,7 +28,9 @@ import static com.ssafy.approval_service.support.ApprovalTestFixtures.line;
 import static com.ssafy.approval_service.support.ApprovalTestFixtures.path;
 import static com.ssafy.approval_service.support.ApprovalTestFixtures.user;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -159,5 +161,30 @@ class ApprovalResultEventIntegrationTest extends AbstractIntegrationTest {
         mvc.perform(post(path(documentId, "/approve")).with(user(9499L))).andExpect(status().isForbidden());
 
         assertThat(outboxOf(documentId)).isEmpty();
+    }
+
+    @Test
+    void 출처_문서는_반려가_최종이라_재기안할_수_없고_결과가_다시_나가지_않는다() throws Exception {
+        long documentId = createLeaveDocument(9414L, 9415L, 606L);
+        mvc.perform(post(path(documentId, "/reject")).with(user(9415L))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"comment":"날짜 확인 필요"}"""))
+                .andExpect(status().isOk());
+
+        mvc.perform(post(path(documentId, "/resubmit")).with(user(9414L))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"title":"휴가 신청 (재기안)","approvalLines":[%s]}""".formatted(line(9416L, 1, "APPROVER"))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("APPROVAL_023"));
+
+        // 문서는 반려 그대로, 이력도 상신·반려 두 건뿐
+        mvc.perform(get(BASE + "/" + documentId).with(user(9414L)))
+                .andExpect(jsonPath("$.data.status").value("REJECTED"))
+                .andExpect(jsonPath("$.data.title").value("휴가 신청"))
+                .andExpect(jsonPath("$.data.histories.length()").value(2));
+        // 원본 서비스로 가는 결과는 REJECTED 한 건뿐 (같은 문서의 APPROVED 가 뒤따를 일이 없다)
+        List<OutboxEvent> events = outboxOf(documentId);
+        assertThat(events).hasSize(1);
+        assertThat((String) JsonPath.read(events.getFirst().getPayload(), "$.status")).isEqualTo("REJECTED");
     }
 }
