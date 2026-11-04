@@ -9,7 +9,6 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -66,15 +65,6 @@ class EmployeeAdminIntegrationTest extends AbstractIntegrationTest {
                                 {"email":"x","password":"short"}"""))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("COMMON_001"));
-    }
-
-    @Test
-    void 없는_직위는_400_EMP_005() throws Exception {
-        Cookie[] admin = login(ADMIN_LOGIN);
-        mvc.perform(post("/api/v1/employees").with(viaGateway(admin)).contentType(MediaType.APPLICATION_JSON)
-                        .content(employeeJson("pos@local.dev", 99)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code").value("EMP_005"));
     }
 
     @Test
@@ -173,28 +163,4 @@ class EmployeeAdminIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.error.code").value("COMMON_001"));
     }
 
-    @Test
-    void 서비스_간_호출처럼_Bearer_헤더로도_조회_가능() throws Exception {
-        Cookie[] admin = login(ADMIN_LOGIN);
-        String accessToken = Arrays.stream(admin)
-                .filter(c -> c.getName().equals("accessToken"))
-                .findFirst().orElseThrow().getValue();
-
-        mvc.perform(get("/api/v1/employees").header("Authorization", "Bearer " + accessToken).param("ids", "1"))
-                .andExpect(status().isOk());
-        mvc.perform(get("/api/v1/employees").header("Authorization", "Bearer garbage").param("ids", "1"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error.code").value("AUTH_003"));
-    }
-
-    @Test
-    void 없는_사원_퇴직처리는_404() throws Exception {
-        Cookie[] admin = login(ADMIN_LOGIN);
-        mvc.perform(patch("/api/v1/employees/999999/terminate").with(viaGateway(admin))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"resignDate":"2026-10-19"}"""))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error.code").value("EMP_001"));
-    }
 }

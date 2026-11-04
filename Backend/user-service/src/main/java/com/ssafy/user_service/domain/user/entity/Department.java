@@ -59,4 +59,19 @@ public class Department {
         this.deptType = deptType;
         this.headEmpId = headEmpId;
     }
+
+    /** 부서장 지정·교체. 검증(재직·소속)은 서비스가 한다 */
+    public void assignHead(Long empId) {
+        this.headEmpId = empId;
+    }
+
+    /** 부서장 해제 (공석) */
+    public void clearHead() {
+        this.headEmpId = null;
+    }
+
+    /** 부서 유형 변경. 상위·하위 부서와의 순서 검증은 서비스가 한다 */
+    public void changeType(DeptType deptType) {
+        this.deptType = deptType;
+    }
 }
