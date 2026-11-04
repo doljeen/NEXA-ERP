@@ -5,12 +5,16 @@ import com.ssafy.nexa.security.CurrentUser;
 import com.ssafy.payrollservice.domain.payroll.dto.ContractResponse;
 import com.ssafy.payrollservice.domain.payroll.dto.PayslipDetailResponse;
 import com.ssafy.payrollservice.domain.payroll.dto.PayslipListResponse;
+import com.ssafy.payrollservice.domain.payroll.dto.PayslipPdf;
 import com.ssafy.payrollservice.domain.payroll.dto.RetirementEstimateResponse;
 import com.ssafy.payrollservice.domain.payroll.service.PayslipService;
 import com.ssafy.payrollservice.global.dto.ApiResult;
 import com.ssafy.nexa.security.CurrentEmployeeId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -38,6 +42,19 @@ public class PayslipController {
             @CurrentEmployeeId Long empId,
             @PathVariable Long payslipId) {
         return ResponseEntity.ok(ApiResult.success(payslipService.getMyPayslip(empId, payslipId)));
+    }
+
+    // 명세서 PDF 다운로드 API
+    @GetMapping("/payslips/{payslipId}/pdf")
+    public ResponseEntity<byte[]> downloadMyPayslipPdf(
+            @CurrentEmployeeId Long empId,
+            @PathVariable Long payslipId) {
+        PayslipPdf pdf = payslipService.getMyPayslipPdf(empId, payslipId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(pdf.fileName()).build().toString())
+                .body(pdf.content());
     }
 
     // 내 급여 정보 API
