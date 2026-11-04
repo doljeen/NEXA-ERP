@@ -11,12 +11,13 @@ import java.util.Map;
  * @param headerRowNo    헤더로 고른 행 번호
  * @param totalRows      합계·소계로 보고 데이터에서 뺀 행
  * @param rowsAfterTotal 합계 행 아래에 있는 데이터 행 (합계에 빠졌을 수 있음)
+ * @param preamble       헤더 위 제목·안내 행의 글자 (행마다 칸을 공백으로 이음). 근무표 'D 07:00~15:30' 같은 범례가 여기 있다
  */
 public record ParsedTable(List<String> headers, List<Row> rows, String sheetName, int headerRowNo,
-                          List<Integer> totalRows, List<Integer> rowsAfterTotal) {
+                          List<Integer> totalRows, List<Integer> rowsAfterTotal, List<String> preamble) {
 
     public ParsedTable(List<String> headers, List<Row> rows) {
-        this(headers, rows, null, 0, List.of(), List.of());
+        this(headers, rows, null, 0, List.of(), List.of(), List.of());
     }
 
     /** 수식 셀 수 (시트 목록에 보여 줌) */

@@ -32,11 +32,11 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * ⑤ 참조: 직원명부가 아닌 파일(급여·연차·근태 …)의 사번이 같은 작업의 직원명부에 있는지, 이름이 같은지.
+ * ⑤ 참조: 직원명부가 아닌 파일(급여·연차·근태 …)의 사번이 같은 작업의 직원명부에 있는지, 이름이 같은지 (명부에 한글 표기 열이 있으면 그 이름도 같은 사람).
  * 사번·이름 컬럼은 매핑이 있으면 매핑, 없으면(참고 자료) 직원명부 필드의 라벨·동의어로 찾는다.
  * 숫자 셀로 저장돼 앞자리 0이 빠진 사번은 직원명부 사번 자릿수에 맞춰 0을 채워 대조하고, 그렇게 했다고 알린다.
  * 날짜도 대조한다: 입사일 = 직원명부 입사일, 4대보험 취득일 = 입사일, 상실일 = 퇴사일 다음 날,
- * 급여가 지급된 달이 재직 기간(입사 달 ~ 퇴사 달) 안인지.
+ * 급여가 지급된 달이 재직 기간(입사 달 ~ 퇴사 달) 안인지, 직원명부 체류만료일이 지난 달에 급여가 있는지.
  * 직원명부에 사번이 두 번 이상 있으면 어느 날짜가 맞는지 몰라 날짜 대조를 하지 않는다.
  */
 @Component
@@ -49,11 +49,15 @@ public class RosterReferenceChecker {
 
     /** 사번 → 이름들 (직원명부에서 사번이 중복이면 이름이 둘 이상. 그 중복은 직원명부 쪽 차단 오류로 따로 나온다) */
     private record Roster(Map<String, Set<String>> namesByEmpNo, Map<String, List<String>> empNosByName, int width,
-                          Map<String, LocalDate> hireDates, Map<String, LocalDate> resignDates, boolean hasResignColumn) {
+                          Map<String, LocalDate> hireDates, Map<String, LocalDate> resignDates, boolean hasResignColumn,
+                          Map<String, LocalDate> visaExpiry) {
     }
 
     private static final Pattern ACQUISITION = Pattern.compile("취득|^acq");
     private static final Pattern LOSS = Pattern.compile("^(?!.*(사유|reason)).*(상실|^loss)");
+    private static final Pattern VISA_EXPIRY = Pattern.compile("체류(기간)?만료|visaexp");
+    // 외국인 명부의 한글 표기 이름 (성명은 여권 영문): 급여·근태 파일이 한글 표기로 적어도 같은 사람으로 본다
+    private static final Pattern ALT_NAME = Pattern.compile("^한글(표기|이름|성명|명)|^koreanname");
     private static final double DATE_COLUMN_RATIO = 0.8;
 
     public List<ValidationIssue> check(MigrationFile file, List<ParsedTable.Row> rows) {
@@ -108,6 +112,7 @@ public class RosterReferenceChecker {
             if (rosterNames != null) {
                 dateIssues(file, row, key, roster, hireCol, acqCols, lossCol, issues);
                 paidOutsideEmployment(file, row, key, roster, issues);
+                paidAfterVisaExpiry(file, row, key, roster, issues);
             }
         }
         if (padded > 0) {
@@ -186,6 +191,26 @@ public class RosterReferenceChecker {
         }
     }
 
+    /**
+     * 직원명부 체류만료일이 귀속월 전에 지났는데 그 달 급여가 있으면 확인 대상.
+     * 만료 전에 연장을 신청했으면 심사 중에도 일할 수 있어 위반으로 단정하지 않는다
+     */
+    private static void paidAfterVisaExpiry(MigrationFile file, ParsedTable.Row row, String empNo, Roster roster,
+                                            List<ValidationIssue> issues) {
+        LocalDate expiry = roster.visaExpiry().get(empNo);
+        YearMonth month = expiry == null ? null : PayrollRowChecker.payMonth(file, row);
+        if (month == null || !expiry.isBefore(month.atDay(1)) || PayrollRowChecker.paid(file, row).map(v -> v.signum() <= 0).orElse(true)) {
+            return;
+        }
+        issues.add(new ValidationIssue(file.getFileId(), row.rowNo(), null, null, Severity.WARN, IssueCode.VISA_EXPIRED_PAID,
+                "사번 " + empNo + "의 직원명부 체류만료일(" + expiry + ")이 지났는데 " + month + " 급여가 있습니다. "
+                        + "체류기간 연장 허가(또는 만료 전 신청) 기록을 확인해 주세요", month.toString(), null));
+    }
+
+    private static String header(MigrationFile file, Pattern p) {
+        return Arrays.stream(file.getHeaders()).filter(h -> p.matcher(ColumnMappingSuggester.normalize(h)).find()).findFirst().orElse(null);
+    }
+
     private static Optional<LocalDate> date(ParsedTable.Row row, String column) {
         return column == null ? Optional.empty() : FieldValueChecker.parseDate(row.values().get(column));
     }
@@ -220,11 +245,17 @@ public class RosterReferenceChecker {
         Map<String, List<String>> byName = new HashMap<>();
         Map<String, LocalDate> hires = new HashMap<>();
         Map<String, LocalDate> resigns = new HashMap<>();
+        Map<String, LocalDate> visas = new HashMap<>();
+        List<ParsedTable.Row> rosterRows = stagingRowRepository.findByFileId(file.get().getFileId());
+        // 이름으로 찾은 열이라 날짜 비율은 보지 않는다 (만료일만 다른 형식으로 적은 외국인 명부가 있어 읽히는 값만 쓴다)
+        String visaCol = header(file.get(), VISA_EXPIRY);
+        String altNameCol = header(file.get(), ALT_NAME);
         Set<String> seen = new HashSet<>();
         Set<String> duplicated = new HashSet<>();
-        for (ParsedTable.Row r : stagingRowRepository.findByFileId(file.get().getFileId())) {
+        for (ParsedTable.Row r : rosterRows) {
             String emp = r.values().get(empCol);
             String name = nameCol == null ? null : r.values().get(nameCol);
+            String altName = altNameCol == null ? null : r.values().get(altNameCol);
             if (emp == null) {
                 continue;
             }
@@ -233,19 +264,28 @@ public class RosterReferenceChecker {
             }
             date(r, hireCol).ifPresent(d -> hires.put(emp, d));
             date(r, resignCol).ifPresent(d -> resigns.put(emp, d));
+            date(r, visaCol).ifPresent(d -> visas.put(emp, d));
             Set<String> names = namesByEmpNo.computeIfAbsent(emp, k -> new LinkedHashSet<>());
             if (name != null) {
                 names.add(name);
                 byName.computeIfAbsent(name, k -> new ArrayList<>()).add(emp);
             }
+            if (altName != null && !altName.equals(name)) {
+                names.add(altName);
+                byName.computeIfAbsent(altName, k -> new ArrayList<>()).add(emp);
+            }
         }
         int width = namesByEmpNo.keySet().stream().filter(k -> k.matches("\\d+")).mapToInt(String::length).max().orElse(0);
         hires.keySet().removeAll(duplicated);
         resigns.keySet().removeAll(duplicated);
-        return Optional.of(new Roster(namesByEmpNo, byName, width, hires, resigns, resignCol != null));
+        visas.keySet().removeAll(duplicated);
+        return Optional.of(new Roster(namesByEmpNo, byName, width, hires, resigns, resignCol != null, visas));
     }
 
-    /** 매핑이 없는 파일: 직원명부 필드(사번·이름)의 이름·라벨·동의어와 같은 헤더 */
+    /**
+     * 매핑이 없는 파일: 직원명부 필드(사번·이름)의 이름·라벨·동의어와 같은 헤더.
+     * 없으면 두 줄 헤더('사번\nID' → '사번 ID')의 첫 낱말로 한 번 더 찾는다
+     */
     static String findColumn(MigrationFile file, String field) {
         FieldSpec spec = EntitySchemas.of(MigrationEntity.HR_EMPLOYEE).flatMap(s -> s.field(field)).orElseThrow();
         List<String> names = new ArrayList<>(spec.synonyms());
@@ -254,6 +294,11 @@ public class RosterReferenceChecker {
         List<String> wanted = names.stream().map(ColumnMappingSuggester::normalize).toList();
         for (String h : file.getHeaders()) {
             if (wanted.contains(ColumnMappingSuggester.normalize(h))) {
+                return h;
+            }
+        }
+        for (String h : file.getHeaders()) {
+            if (h.contains(" ") && wanted.contains(ColumnMappingSuggester.normalize(h.substring(0, h.indexOf(' '))))) {
                 return h;
             }
         }

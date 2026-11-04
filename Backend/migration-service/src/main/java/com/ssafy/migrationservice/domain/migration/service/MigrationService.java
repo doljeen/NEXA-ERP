@@ -32,6 +32,7 @@ import com.ssafy.migrationservice.domain.migration.reader.TableReader;
 import com.ssafy.migrationservice.domain.migration.repository.MigrationFileRepository;
 import com.ssafy.migrationservice.domain.migration.repository.MigrationJobRepository;
 import com.ssafy.migrationservice.domain.migration.repository.StagingRowRepository;
+import com.ssafy.migrationservice.domain.migration.validation.CrossFileTotalsChecker;
 import com.ssafy.migrationservice.domain.migration.validation.DependentsChecker;
 import com.ssafy.migrationservice.domain.migration.validation.SalaryHistoryChecker;
 import com.ssafy.migrationservice.domain.migration.validation.ValidationService;
@@ -65,6 +66,7 @@ public class MigrationService {
     private final RuleSummaryService ruleSummaryService;
     private final DependentsChecker dependentsChecker;
     private final SalaryHistoryChecker salaryHistoryChecker;
+    private final CrossFileTotalsChecker crossFileTotalsChecker;
 
     @Transactional
     public MigrationCreateResponse create(MigrationCreateRequest r) {
@@ -103,6 +105,7 @@ public class MigrationService {
                 .headerRow(table.headerRowNo())
                 .totalRows(table.totalRows().toArray(Integer[]::new))
                 .rowsAfterTotal(table.rowsAfterTotal().toArray(Integer[]::new))
+                .preamble(table.preamble().isEmpty() ? null : String.join("\n", table.preamble()))
                 .build());
         stagingRowRepository.saveAll(file.getFileId(), table.rows());
         mappingService.suggest(file);
@@ -113,6 +116,8 @@ public class MigrationService {
         dependentsChecker.related(file).forEach(validationService::validate);
         // 급여 시트 ↔ 연봉이력 ↔ 연도 붙은 연봉 열이 있는 파일(4대보험)도 서로 대조한다
         salaryHistoryChecker.related(file).forEach(validationService::validate);
+        // 근무표·출역부 ↔ 급여·신고 집계 대조, 같은 파일 다른 시트의 같은 날 근무
+        crossFileTotalsChecker.related(file).forEach(validationService::validate);
         // 직원명부를 새로 올리면 다른 파일의 사번 대조 결과가 바뀐다
         if (entity == MigrationEntity.HR_EMPLOYEE) {
             fileRepository.findByMigrationIdOrderByFileIdAsc(migrationId).stream()

@@ -10,14 +10,17 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * 원시 행 목록 → 헤더 + 데이터 행. 엑셀·CSV 공통 규칙을 한 곳에 둔다.
  * - 헤더: 위쪽 30행에서 '글자' 칸(숫자·날짜·시각이 아닌 값)이 가장 많은 행의 절반 이상인 첫 행.
- *   제목·작성일·요율·묶음 머리글 행은 글자 칸이 적어서 건너뛴다
+ *   제목·작성일·요율·묶음 머리글 행은 글자 칸이 적어서 건너뛴다. 같은 글자는 두 번까지만 세서
+ *   '○'를 날짜마다 찍은 데이터 행(근로내용확인신고)이 헤더보다 글자 칸이 많아지지 않게 한다
  * - 헤더 바로 위 행의 가로 병합(묶음 머리글)은, 헤더 이름이 겹치는 열에만 앞에 붙인다 (예: 07월 + 연장 → "07월 연장")
  * - 빈 헤더는 "컬럼N", 중복 헤더는 "이름_2" 식으로 바꿈
  * - 완전히 빈 행은 버리고, 합계·소계 행은 데이터에서 뺀다
@@ -84,7 +87,11 @@ final class TableAssembler {
             }
             rows.add(new ParsedTable.Row(raw.rowNo(), values, formulas, errors));
         }
-        return new ParsedTable(headers, rows, sheetName, headerRow.rowNo(), totals, afterTotal);
+        List<String> preamble = rawRows.subList(0, headerIdx).stream()
+                .map(r -> String.join(" ", r.cells().stream().map(TableAssembler::blankToNull).filter(Objects::nonNull).toList()))
+                .filter(s -> !s.isEmpty())
+                .toList();
+        return new ParsedTable(headers, rows, sheetName, headerRow.rowNo(), totals, afterTotal, preamble);
     }
 
     static ParsedTable assemble(List<RawRow> rawRows) {
@@ -95,11 +102,11 @@ final class TableAssembler {
         int scan = Math.min(rawRows.size(), HEADER_SCAN_ROWS);
         long max = 0;
         for (int i = 0; i < scan; i++) {
-            max = Math.max(max, rawRows.get(i).textCount());
+            max = Math.max(max, rawRows.get(i).headerScore());
         }
         // 글자 칸이 가장 많은 행의 절반 이상인 첫 행 (데이터 행이 헤더보다 글자 칸이 조금 많아도 헤더를 고른다)
         for (int i = 0; i < scan && max >= MIN_HEADER_CELLS; i++) {
-            long score = rawRows.get(i).textCount();
+            long score = rawRows.get(i).headerScore();
             if (score >= MIN_HEADER_CELLS && score * 2 >= max) {
                 // 가로 병합된 묶음 머리글 행이면 바로 아래(글자 칸이 더 많은) 행이 진짜 헤더
                 while (i + 1 < rawRows.size() && !rawRows.get(i).groups().isEmpty()
@@ -234,6 +241,14 @@ final class TableAssembler {
             return cells.stream().map(TableAssembler::blankToNull)
                     .filter(v -> v != null && !NOT_TEXT.matcher(v).matches())
                     .count();
+        }
+
+        /** 글자 칸 수. 같은 글자는 두 번까지만 센다 (헤더의 '연장'·'야간' 반복은 세고, 날짜마다 찍은 '○'는 한 번으로) */
+        long headerScore() {
+            return cells.stream().map(TableAssembler::blankToNull)
+                    .filter(v -> v != null && !NOT_TEXT.matcher(v).matches())
+                    .collect(Collectors.groupingBy(v -> v, Collectors.counting()))
+                    .values().stream().mapToLong(n -> Math.min(n, 2)).sum();
         }
     }
 }
