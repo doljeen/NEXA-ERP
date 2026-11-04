@@ -16,22 +16,35 @@ public record AttendanceDaySummaryResponse(
         OffsetDateTime clockIn,         // 출근 시각
         OffsetDateTime clockOut,        // 퇴근 시각
         WorkTimeResponse workTime,      // 근로시간 상세
-        List<AnomalyType> anomalies     // 근태이상
+        List<AnomalyType> anomalies,    // 근태이상
+        List<LeaveResponse> leaves      // 휴가 (오전·오후 반차를 따로 쓰면 두 건)
 ) {
-    public static AttendanceDaySummaryResponse of(AttendanceDaily daily, List<AttendanceAnomaly> anomalies) {
+    public static AttendanceDaySummaryResponse of(AttendanceDaily daily, List<AttendanceAnomaly> anomalies,
+                                                  List<LeaveResponse> leaves) {
         return new AttendanceDaySummaryResponse(
                 daily.getWorkDate(),
                 daily.getIsHoliday(),
                 DateTimeUtils.toSeoul(daily.getClockIn()),
                 DateTimeUtils.toSeoul(daily.getClockOut()),
                 WorkTimeResponse.from(daily),
-                anomalies.stream().map(AttendanceAnomaly::getAnomalyType).toList()
+                anomalies.stream().map(AttendanceAnomaly::getAnomalyType).toList(),
+                leaves
         );
     }
 
     /** 근태 기록이 없는 날 */
-    public static AttendanceDaySummaryResponse empty(LocalDate workDate, boolean isHoliday) {
+    public static AttendanceDaySummaryResponse empty(LocalDate workDate, boolean isHoliday, List<LeaveResponse> leaves) {
         return new AttendanceDaySummaryResponse(
-                workDate, isHoliday, null, null, WorkTimeResponse.empty(), List.of());
+                workDate, isHoliday, null, null, WorkTimeResponse.empty(), List.of(), leaves);
+    }
+
+    /** 그날 휴가 시간(분). 종일 480, 반차 240 */
+    public int leaveMin() {
+        return leaves.stream().mapToInt(leave -> leave.portion().minutes()).sum();
+    }
+
+    /** 그날 무급휴가 시간(분) */
+    public int unpaidLeaveMin() {
+        return leaves.stream().filter(leave -> !leave.isPaid()).mapToInt(leave -> leave.portion().minutes()).sum();
     }
 }

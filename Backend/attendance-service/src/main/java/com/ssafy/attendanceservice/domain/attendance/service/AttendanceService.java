@@ -30,8 +30,11 @@ public interface AttendanceService {
     /** 근무 상태 코드 전체 목록 */
     List<WorkStatusCodeResponse> getStatusCodes();
 
-    /** 기간 내 공휴일 (날짜순). startDate가 endDate보다 늦으면 BusinessException(INVALID_INPUT) */
-    List<HolidayResponse> getHolidays(LocalDate startDate, LocalDate endDate);
+    /**
+     * 기간 내 휴가를 쓸 수 없는 날 (날짜순): 공휴일 + 내 대체휴일 - 휴일대체로 근무일이 된 공휴일.
+     * startDate가 endDate보다 늦으면 BusinessException(INVALID_INPUT)
+     */
+    List<HolidayResponse> getHolidays(Long empId, LocalDate startDate, LocalDate endDate);
 
     /** 일별 근태 타임라인. 기록이 없는 날은 빈 응답 */
     DailyAttendanceResponse getDaily(Long empId, LocalDate date);

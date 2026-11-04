@@ -2,6 +2,7 @@ package com.ssafy.attendanceservice.domain.attendance.dto;
 
 import com.ssafy.attendanceservice.domain.attendance.entity.WorkGroup;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AnomalyType;
+import com.ssafy.attendanceservice.domain.attendance.entity.enums.LeavePortion;
 
 import java.time.YearMonth;
 import java.util.EnumMap;
@@ -15,8 +16,16 @@ public record AttendanceSummaryResponse(
         String workGroupName,               // 근무그룹명
         Days days,                          // 일수
         WorkTime workTime,                  // 근로시간 합계 (분)
+        Leave leave,                        // 휴가 합계
         Map<AnomalyType, Integer> anomalies // 근태이상 유형별 횟수
 ) {
+
+    public record Leave(
+            int leaveDays,          // 근무일 중 종일 휴가일 (근무일 - 출근일 - 종일 휴가일 = 결근일)
+            int leaveMin,           // 휴가 시간 (종일 480, 반차 240)
+            int unpaidLeaveMin      // 그중 무급휴가 시간 (급여 공제)
+    ) {
+    }
 
     public record Days(
             int workDays,           // 근무일 수 (휴일 제외)
@@ -60,6 +69,14 @@ public record AttendanceSummaryResponse(
                 days.stream().mapToInt(d -> d.workTime().unapprovedOtMin()).sum()
         );
 
+        Leave leave = new Leave(
+                (int) days.stream()
+                        .filter(d -> !d.isHoliday() && d.leaveMin() >= LeavePortion.FULL.minutes())
+                        .count(),
+                days.stream().mapToInt(AttendanceDaySummaryResponse::leaveMin).sum(),
+                days.stream().mapToInt(AttendanceDaySummaryResponse::unpaidLeaveMin).sum()
+        );
+
         // 모든 유형을 0으로 채워서 응답 형태를 고정
         Map<AnomalyType, Integer> anomalies = new EnumMap<>(AnomalyType.class);
         for (AnomalyType type : AnomalyType.values()) {
@@ -67,6 +84,6 @@ public record AttendanceSummaryResponse(
         }
         days.forEach(d -> d.anomalies().forEach(type -> anomalies.merge(type, 1, Integer::sum)));
 
-        return new AttendanceSummaryResponse(empId, month, workGroup.getName(), daySummary, workTime, anomalies);
+        return new AttendanceSummaryResponse(empId, month, workGroup.getName(), daySummary, workTime, leave, anomalies);
     }
 }
