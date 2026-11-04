@@ -7,6 +7,7 @@ import com.ssafy.leaveservice.global.auth.EmployeeAccess;
 import com.ssafy.leaveservice.global.exception.BusinessException;
 import com.ssafy.leaveservice.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -15,11 +16,13 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Supplier;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DepartmentLeaveAccessService {
@@ -51,17 +54,18 @@ public class DepartmentLeaveAccessService {
         }
         Long tokenDepartmentId = positiveClaim(jwt.getClaim(properties.jwtClaims().departmentId()));
         Long tokenDutyId = positiveClaim(jwt.getClaim(properties.jwtClaims().dutyId()));
-        Long tokenPositionId = positiveClaim(jwt.getClaim(properties.jwtClaims().positionId()));
 
         // 최신 직원의 소속·직책과 오래된 토큰이 다르면 재인증을 요구
         EmployeeInfo employee = callHr(() -> hrClient.findEmployee(employeeId));
         if (employee == null || !employeeId.equals(employee.employeeId())
                 || !positive(employee.departmentId()) || !positive(employee.dutyId())
-                || (employee.positionId() != null && !positive(employee.positionId()))) {
+                || employee.status() == null) {
             throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
         }
-        if (!tokenDepartmentId.equals(employee.departmentId()) || !tokenDutyId.equals(employee.dutyId())
-                || (employee.positionId() != null && !tokenPositionId.equals(employee.positionId()))) {
+        if (employee.status() != EmploymentStatus.EMPLOYED) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
+        if (!tokenDepartmentId.equals(employee.departmentId()) || !tokenDutyId.equals(employee.dutyId())) {
             throw new BusinessException(ErrorCode.ACCESS_DENIED, "인사 정보가 변경되었습니다. 다시 인증해주세요.");
         }
 
@@ -74,19 +78,24 @@ public class DepartmentLeaveAccessService {
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
         }
 
-        // 부서 ID 대신 인증된 직원 ID로 직접 소속 부서원 전체를 조회
-        MemberBatch batch = callHr(() -> hrClient.findDepartmentMembers(employeeId));
+        // 검증한 최신 부서 ID로 직접 소속 부서원 전체를 조회
+        MemberBatch batch = callHr(() -> hrClient.findDepartmentMembers(employee.departmentId()));
         if (batch == null || !batch.complete() || batch.members() == null) {
             throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
         }
         Set<Long> employeeIds = new HashSet<>();
+        List<Long> includedEmployeeIds = new ArrayList<>();
         for (Member member : batch.members()) {
             if (member == null || !positive(member.employeeId()) || !departmentId.equals(member.departmentId())
-                    || !employeeIds.add(member.employeeId())) {
+                    || member.status() == null || !employeeIds.add(member.employeeId())) {
+                log.warn("HR department membership verification failed: invalid, duplicate, or inconsistent member");
                 throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
             }
+            if (member.status() != EmploymentStatus.TERMINATED) {
+                includedEmployeeIds.add(member.employeeId());
+            }
         }
-        return employeeIds.stream().sorted().toList();
+        return includedEmployeeIds.stream().sorted().toList();
     }
 
     private Long positiveClaim(Object claim) {

@@ -17,8 +17,8 @@ public final class UnavailableHrClient implements HrClient {
     }
 
     @Override
-    public MemberBatch findDepartmentMembers(Long employeeId) {
-        // TODO: HR empId 기반 부서원 조회 URI·전체 페이지 완결성 계약 확정 후 연결한다.
+    public MemberBatch findDepartmentMembers(Long departmentId) {
+        // TODO: User Service deptId 기반 부서원 조회를 활성화할 때 설정과 인증을 확인한다.
         throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
     }
 

@@ -12,7 +12,6 @@ leave:
     jwt-claims:
       department-id: ${LEAVE_HR_JWT_DEPARTMENT_ID_CLAIM:}
       duty-id: ${LEAVE_HR_JWT_DUTY_ID_CLAIM:}
-      position-id: ${LEAVE_HR_JWT_POSITION_ID_CLAIM:}
   approval:
     results:
       enabled: ${LEAVE_APPROVAL_RESULTS_ENABLED:false}

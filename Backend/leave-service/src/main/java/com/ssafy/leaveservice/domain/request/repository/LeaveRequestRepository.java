@@ -15,7 +15,8 @@ import java.util.Optional;
 public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long> {
 
     @Query("""
-            select request.requestId as requestId, date.leaveDate as leaveDate, date.portion as portion,
+            select request.requestId as requestId, request.employeeId as employeeId,
+                   date.leaveDate as leaveDate, date.portion as portion,
                    leaveType.name as leaveTypeName, leaveType.paid as paid
             from LeaveRequest request
             left join request.leaveType leaveType
@@ -26,6 +27,8 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long
     List<RequestDateRow> findRequestDates(@Param("requestId") Long requestId);
 
     interface RequestDateRow {
+        Long getEmployeeId();
+
         OffsetDateTime getLeaveDate();
 
         LeaveRequestPortion getPortion();

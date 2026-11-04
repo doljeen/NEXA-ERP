@@ -43,6 +43,6 @@ public class LeaveRequestDatesService {
             LocalDate leaveDate = dateRow.getLeaveDate().atZoneSameInstant(PreviewGrantAllocator.SEOUL).toLocalDate();
             dates.add(new LeaveDateItem(leaveDate, dateRow.getPortion()));
         }
-        return new LeaveRequestDatesResponse(requestId, leaveTypeName, paid, dates);
+        return new LeaveRequestDatesResponse(requestId, firstRow.getEmployeeId(), leaveTypeName, paid, dates);
     }
 }
