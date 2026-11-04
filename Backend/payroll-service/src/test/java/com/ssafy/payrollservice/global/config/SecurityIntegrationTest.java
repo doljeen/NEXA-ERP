@@ -1,12 +1,16 @@
 package com.ssafy.payrollservice.global.config;
 
+import com.ssafy.payrollservice.domain.payroll.dto.PayslipPdf;
 import com.ssafy.payrollservice.domain.payroll.service.AdminPayslipService;
 import com.ssafy.payrollservice.domain.payroll.service.PayslipService;
+import com.ssafy.payrollservice.global.exception.BusinessException;
+import com.ssafy.payrollservice.global.exception.ErrorCode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -17,10 +21,15 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.nio.charset.StandardCharsets;
+
+import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -68,6 +77,29 @@ class SecurityIntegrationTest {
                 .andExpect(status().isOk());
 
         verify(payslipService).getMyPayslips(7L, 2026);
+    }
+
+    @Test
+    void 명세서_PDF는_파일로_내려감() throws Exception {
+        given(payslipService.getMyPayslipPdf(7L, 1L))
+                .willReturn(new PayslipPdf("payslip-2026-10.pdf", "%PDF-test".getBytes(StandardCharsets.US_ASCII)));
+
+        mvc.perform(get("/api/v1/pay/me/payslips/1/pdf").with(user(7)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"payslip-2026-10.pdf\""))
+                .andExpect(content().bytes("%PDF-test".getBytes(StandardCharsets.US_ASCII)));
+    }
+
+    @Test
+    void 다른_사람_명세서_PDF는_404_PAY_005() throws Exception {
+        given(payslipService.getMyPayslipPdf(7L, 2L))
+                .willThrow(new BusinessException(ErrorCode.PAYSLIP_NOT_FOUND));
+
+        mvc.perform(get("/api/v1/pay/me/payslips/2/pdf").with(user(7)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("PAY_005"));
     }
 
     @Test
