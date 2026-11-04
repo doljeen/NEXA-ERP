@@ -34,6 +34,24 @@ class EarningCalculatorTest {
     }
 
     @Test
+    @DisplayName("무급휴가 8시간: 시급 × 8시간을 지급에서 차감")
+    void unpaidLeave() {
+        EarningResult r = EarningCalculator.calculate(BASE, 0, 0, 0, 480);
+
+        assertEquals(-133_968, r.unpaidLeaveDeduction());   // 8h × 16,746
+        assertEquals(BASE, r.basePay());
+        assertEquals(3_366_032, r.total());
+    }
+
+    @Test
+    @DisplayName("무급휴가가 없으면 차감 0")
+    void noUnpaidLeave() {
+        EarningResult r = EarningCalculator.calculate(BASE, 0, 0, 0);
+
+        assertEquals(0, r.unpaidLeaveDeduction());
+    }
+
+    @Test
     @DisplayName("원 미만 버림: 연장 1분 = 418.65원 → 418원")
     void truncate() {
         EarningResult r = EarningCalculator.calculate(BASE, 1, 0, 0);

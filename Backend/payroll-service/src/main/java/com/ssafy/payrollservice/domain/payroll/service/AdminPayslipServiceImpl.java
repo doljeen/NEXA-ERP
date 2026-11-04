@@ -60,9 +60,10 @@ public class AdminPayslipServiceImpl implements AdminPayslipService {
         AttendanceSummary attendance = attendanceClient.getSummary(request.empId(), month);
         AttendanceSummary.WorkTime workTime = attendance.workTime();
 
-        // 4. 지급 → 공제 계산 (승인 여부와 관계없이 실제 일한 시간 기준)
+        // 4. 지급 → 공제 계산 (승인 여부와 관계없이 실제 일한 시간 기준, 무급휴가는 지급에서 차감)
         EarningResult earning = EarningCalculator.calculate(grade.getBaseAmount(),
-                workTime.otExtendedMin(), attendance.nightTotalMin(), workTime.otHolidayMin());
+                workTime.otExtendedMin(), attendance.nightTotalMin(), workTime.otHolidayMin(),
+                attendance.unpaidLeaveMin());
         DeductionResult deduction = DeductionCalculator.calculate(earning.total());
 
         // 5. 명세서 저장 (사원 정보, 근태 집계 스냅샷)
@@ -81,13 +82,13 @@ public class AdminPayslipServiceImpl implements AdminPayslipService {
                 .otExtendedMin(workTime.otExtendedMin())
                 .otNightMin(attendance.nightTotalMin())
                 .otHolidayMin(workTime.otHolidayMin())
-                .leaveMin(0)    // TODO: 휴가 서비스 연동 후 휴가시간
+                .leaveMin(attendance.leaveMin())
                 .totalPay(earning.total())
                 .totalDeduction(deduction.total())
                 .netPay(earning.total() - deduction.total())
                 .build());
 
-        // 6. 항목 13개 저장 (0원 항목 포함)
+        // 6. 항목 14개 저장 (0원 항목 포함)
         Map<String, PayItem> payItems = payItemRepository.findAll().stream()
                 .collect(Collectors.toMap(PayItem::getItemCode, Function.identity()));
 
@@ -114,6 +115,7 @@ public class AdminPayslipServiceImpl implements AdminPayslipService {
                 Map.entry("ANNUAL_LEAVE_PAY", earning.annualLeavePay()),
                 Map.entry("BONUS", earning.bonus()),
                 Map.entry("HOLIDAY_BONUS", earning.holidayBonus()),
+                Map.entry("UNPAID_LEAVE_DEDUCTION", earning.unpaidLeaveDeduction()),
                 // 공제
                 Map.entry("INCOME_TAX", deduction.incomeTax()),
                 Map.entry("LOCAL_INCOME_TAX", deduction.localIncomeTax()),
