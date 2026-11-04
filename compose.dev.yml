@@ -12,3 +12,6 @@ include:
 
   - path: ./infra/compose/ai.yml
     project_directory: .
+
+  - path: ./infra/compose/monitoring.yml
+    project_directory: .
