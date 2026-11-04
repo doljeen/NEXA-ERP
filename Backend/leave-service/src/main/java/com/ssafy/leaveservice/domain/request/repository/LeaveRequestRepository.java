@@ -1,6 +1,7 @@
 package com.ssafy.leaveservice.domain.request.repository;
 
 import com.ssafy.leaveservice.domain.request.entity.LeaveRequest;
+import com.ssafy.leaveservice.domain.request.entity.LeaveRequestPortion;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.Lock;
@@ -12,6 +13,28 @@ import java.util.List;
 import java.util.Optional;
 
 public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long> {
+
+    @Query("""
+            select request.requestId as requestId, date.leaveDate as leaveDate, date.portion as portion,
+                   leaveType.name as leaveTypeName, leaveType.paid as paid
+            from LeaveRequest request
+            left join request.leaveType leaveType
+            left join request.dates date
+            where request.requestId = :requestId
+            order by date.leaveDate, date.requestDateId
+            """)
+    List<RequestDateRow> findRequestDates(@Param("requestId") Long requestId);
+
+    interface RequestDateRow {
+        OffsetDateTime getLeaveDate();
+
+        LeaveRequestPortion getPortion();
+
+        String getLeaveTypeName();
+
+        Boolean getPaid();
+    }
+
 
     @Query("select request.employeeId from LeaveRequest request where request.requestId = :requestId")
     Optional<Long> findEmployeeIdByRequestId(@Param("requestId") Long requestId);

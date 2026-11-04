@@ -19,6 +19,8 @@ public class SecurityConfig {
     SecurityFilterChain filterChain(HttpSecurity http, NexaSecurityConfigurer nexa) throws Exception {
         return nexa.apply(http)
                 .authorizeHttpRequests(auth -> auth
+                        // TODO Attendance 서비스 인증 계약 확정 후 전용 호출 권한 적용
+                        .requestMatchers("/api/v1/leaves/internal/**").denyAll()
                         .requestMatchers("/api/v1/leaves/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .build();
