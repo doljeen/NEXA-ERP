@@ -12,13 +12,20 @@ public final class EarningCalculator {
     private EarningCalculator() {
     }
 
-    /**
-     * @param baseAmount    월 기본급
-     * @param otExtendedMin 연장 근로시간(분)
-     * @param nightMin      야간 근로시간 전체(분) = 소정 중 야간 + 초과 야간
-     * @param otHolidayMin  휴일 근로시간(분)
-     */
+    /** 무급휴가 없이 계산 */
     public static EarningResult calculate(int baseAmount, int otExtendedMin, int nightMin, int otHolidayMin) {
+        return calculate(baseAmount, otExtendedMin, nightMin, otHolidayMin, 0);
+    }
+
+    /**
+     * @param baseAmount     월 기본급
+     * @param otExtendedMin  연장 근로시간(분)
+     * @param nightMin       야간 근로시간 전체(분) = 소정 중 야간 + 초과 야간
+     * @param otHolidayMin   휴일 근로시간(분)
+     * @param unpaidLeaveMin 무급휴가 시간(분). 시급 × 시간만큼 지급에서 뺀다
+     */
+    public static EarningResult calculate(int baseAmount, int otExtendedMin, int nightMin, int otHolidayMin,
+                                          int unpaidLeaveMin) {
         int hourlyWage = baseAmount / MONTHLY_STD_HOURS;
 
         return new EarningResult(
@@ -29,7 +36,8 @@ public final class EarningCalculator {
                 pay(otHolidayMin, hourlyWage, 3, 2),    // 1.5배
                 0,  // TODO: 휴가 서비스 연동 후 연차수당
                 0,
-                0);
+                0,
+                -pay(unpaidLeaveMin, hourlyWage, 1, 1)); // 1배를 뺀다
     }
 
     /** 분 × 시급 × (분자/분모) ÷ 60, 원 미만 버림 */

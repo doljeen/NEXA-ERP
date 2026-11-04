@@ -9,11 +9,12 @@ public record EarningResult(
         int otHolidayPay,       // 휴일근로수당
         int annualLeavePay,     // 연차수당
         int bonus,              // 상여금
-        int holidayBonus        // 명절·휴가수당
+        int holidayBonus,       // 명절·휴가수당
+        int unpaidLeaveDeduction // 무급휴가 차감 (0 이하, 명세서에 음수로 표시)
 ) {
-    /** 지급합계 */
+    /** 지급합계 (무급휴가 차감 반영) */
     public int total() {
         return basePay + otExtendedPay + otNightPay + otHolidayPay
-                + annualLeavePay + bonus + holidayBonus;
+                + annualLeavePay + bonus + holidayBonus + unpaidLeaveDeduction;
     }
 }

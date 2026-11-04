@@ -64,6 +64,31 @@ class AttendanceClientTest {
     }
 
     @Test
+    void 휴가_합계를_받음() {
+        server.expect(requestTo(SUMMARY_URL))
+                .andRespond(withSuccess("""
+                        {"success":true,"data":{
+                          "days":{"workDays":21,"attendedDays":19,"holidayWorkedDays":0,"unconfirmedDays":0},
+                          "workTime":{"totalMin":9120,"regularMin":9120,"nightMin":0,"otExtendedMin":0,"otNightMin":0,"otHolidayMin":0},
+                          "leave":{"leaveDays":1,"leaveMin":720,"unpaidLeaveMin":240}}}""", MediaType.APPLICATION_JSON));
+
+        AttendanceSummary summary = client.getSummary(7L, YearMonth.of(2026, 10));
+
+        assertThat(summary.leaveMin()).isEqualTo(720);
+        assertThat(summary.unpaidLeaveMin()).isEqualTo(240);
+    }
+
+    @Test
+    void 휴가_합계가_없으면_0() {
+        server.expect(requestTo(SUMMARY_URL)).andRespond(withSuccess(SUMMARY_RESPONSE, MediaType.APPLICATION_JSON));
+
+        AttendanceSummary summary = client.getSummary(7L, YearMonth.of(2026, 10));
+
+        assertThat(summary.leaveMin()).isZero();
+        assertThat(summary.unpaidLeaveMin()).isZero();
+    }
+
+    @Test
     void 인증_정보가_없으면_Authorization_헤더를_붙이지_않음() {
         server.expect(requestTo(SUMMARY_URL))
                 .andExpect(headerDoesNotExist(HttpHeaders.AUTHORIZATION))
