@@ -6,17 +6,9 @@
 from langgraph.types import interrupt
 
 from events.approval_results import get_result
-from nodes.base import BaseNode, NodeContext, NodeResult
+from nodes.base import BaseNode, NodeContext, NodeResult, latest_output
 
 BRANCHES = {"APPROVED": "승인", "REJECTED": "반려", "CANCEL": "회수"}
-
-
-def _latest(outputs: dict, key: str):
-    """앞 노드 출력 중 가장 최근의 key 값"""
-    for out in reversed(list(outputs.values())):
-        if isinstance(out, dict) and out.get(key) is not None:
-            return out[key]
-    return None
 
 
 class WaitApprovalNode(BaseNode):
@@ -24,7 +16,9 @@ class WaitApprovalNode(BaseNode):
     name = "결재 대기"
     category = "human"
     description = "상신한 결재 문서가 승인·반려·회수될 때까지 기다림 (반려·회수는 최종)"
-    config_fields = []
+    config_fields = [
+        {"key": "draft", "label": "결재 상신 노드 (예: {{n6}})", "type": "ref", "required": False},
+    ]
     branches = list(BRANCHES.values())
     output_vars = [
         {"key": "approval_status", "label": "결재 결과", "type": "text"},
@@ -33,9 +27,11 @@ class WaitApprovalNode(BaseNode):
     ]
 
     def run(self, ctx: NodeContext) -> NodeResult:
-        request_key = _latest(ctx.outputs, "request_key")
-        if not request_key:
+        # 바인딩된 상신 노드 출력이 있으면 그것, 없으면 가장 최근 상신 결과
+        draft = ctx.config.get("draft") or latest_output(ctx.outputs, "request_key")
+        if not isinstance(draft, dict) or not draft.get("request_key"):
             raise ValueError("기다릴 결재 문서가 없습니다 (앞에 결재 상신 노드가 필요합니다)")
+        request_key = draft["request_key"]
 
         # 이미 도착한 결과가 있으면 기다리지 않음
         # (결재선이 본인뿐이라 즉시 승인된 경우, 재개되어 이 노드가 다시 실행되는 경우 모두)
@@ -46,16 +42,16 @@ class WaitApprovalNode(BaseNode):
                 "type": "approval_wait",
                 "message": "결재 결과를 기다리는 중입니다",
                 "request_key": request_key,
-                "document_id": _latest(ctx.outputs, "document_id"),
-                "doc_no": _latest(ctx.outputs, "doc_no"),
+                "document_id": draft.get("document_id"),
+                "doc_no": draft.get("doc_no"),
             })
 
         status = result["status"]
         return NodeResult(
             output={
                 "approval_status": status,
-                "document_id": result.get("document_id"),
-                "doc_no": result.get("doc_no"),
+                "document_id": draft.get("document_id") or result.get("document_id"),
+                "doc_no": draft.get("doc_no") or result.get("doc_no"),
             },
             branch=BRANCHES[status],
         )

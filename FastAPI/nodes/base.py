@@ -39,4 +39,10 @@ class BaseNode:
             "outputs": self.output_vars,
         }
 
-    
+
+def latest_output(outputs: dict, key: str) -> dict | None:
+    """앞 노드 출력 중 key 값을 가진 가장 최근 출력 전체 (바인딩을 안 했을 때의 기본 동작)"""
+    for out in reversed(list(outputs.values())):
+        if isinstance(out, dict) and out.get(key) is not None:
+            return out
+    return None

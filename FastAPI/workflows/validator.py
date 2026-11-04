@@ -1,6 +1,7 @@
 from collections import deque
 
 from nodes.registry import catalog
+from engine.binding import find_refs
 
 NODE_DEFS = {n["node_type"]: n for n in catalog()}
 
@@ -75,5 +76,37 @@ def validate_graph(graph: dict) -> list[dict]:
                 queue.append(e["target"])
     if visited < len(node_ids):
         issues.append({"message": "순환 연결이 있습니다."})
+
+    # 입력 바인딩 검사 : {{노드id.키}}가 앞쪽(상류)에 연결된 노드의 실제 출력을 가리키는지
+    parents: dict[str, set[str]] = {nid: set() for nid in node_ids}
+    for e in edges:
+        if e["source"] in node_ids and e["target"] in node_ids:
+            parents[e["target"]].add(e["source"])
+
+    def ancestors(nid: str) -> set[str]:
+        """nid보다 앞에 있는(거슬러 올라가면 닿는) 모든 노드"""
+        seen, stack = set(), list(parents[nid])
+        while stack:
+            p = stack.pop()
+            if p not in seen:
+                seen.add(p)
+                stack.extend(parents[p])
+        return seen
+
+    types = {n["id"]: n["type"] for n in nodes}
+    for n in nodes:
+        upstream = ancestors(n["id"])
+        for ref_id, path in find_refs(n.get("config", {})):
+            if ref_id not in node_ids:
+                issues.append({"node_id": n["id"], "message": f"없는 노드를 참조합니다: {ref_id}"})
+            elif ref_id not in upstream:
+                issues.append({"node_id": n["id"], "message": f"앞에 연결된 노드만 참조할 수 있습니다: {ref_id}"})
+            elif path:
+                outputs = {o["key"] for o in NODE_DEFS.get(types[ref_id], {}).get("outputs", [])}
+                if path[0] not in outputs:
+                    issues.append({
+                        "node_id": n["id"],
+                        "message": f"{ref_id} 노드에는 '{path[0]}' 출력이 없습니다 (가능: {', '.join(sorted(outputs))})",   
+                    })
 
     return issues

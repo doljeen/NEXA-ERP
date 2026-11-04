@@ -5,6 +5,7 @@ from langgraph.graph import END, START, StateGraph
 
 from nodes.base import NodeContext
 from nodes.registry import get_node_impl
+from engine.binding import resolve
 
 
 def merge_dict(left: dict, right: dict) -> dict:
@@ -42,7 +43,7 @@ def _make_node_fn(node_id: str, node_type: str, config: dict, recorder: StepReco
         ctx = NodeContext(
             run_id=state["run_id"],
             node_id=node_id,
-            config=config,
+            config=resolve(config, state["outputs"]),  # {{n1.text}} 같은 참조를 지금까지의 결과로 치환
             inputs=state["inputs"],
             outputs=state["outputs"],
         )
