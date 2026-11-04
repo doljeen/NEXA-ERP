@@ -5,8 +5,10 @@ import com.ssafy.payrollservice.domain.payroll.calculator.RetirementResult;
 import com.ssafy.payrollservice.domain.payroll.dto.ContractResponse;
 import com.ssafy.payrollservice.domain.payroll.dto.PayslipDetailResponse;
 import com.ssafy.payrollservice.domain.payroll.dto.PayslipListResponse;
+import com.ssafy.payrollservice.domain.payroll.dto.PayslipPdf;
 import com.ssafy.payrollservice.domain.payroll.dto.RetirementEstimateResponse;
 import com.ssafy.payrollservice.domain.payroll.entity.Payslip;
+import com.ssafy.payrollservice.domain.payroll.pdf.PayslipPdfRenderer;
 import com.ssafy.payrollservice.domain.payroll.repository.PayGradeRepository;
 import com.ssafy.payrollservice.domain.payroll.repository.PayslipItemRepository;
 import com.ssafy.payrollservice.domain.payroll.repository.PayslipRepository;
@@ -28,6 +30,7 @@ public class PayslipServiceImpl implements PayslipService {
     private final PayslipRepository payslipRepository;
     private final PayslipItemRepository payslipItemRepository;
     private final PayGradeRepository payGradeRepository;
+    private final PayslipPdfRenderer payslipPdfRenderer;
 
     @Override
     @Transactional(readOnly = true)
@@ -45,6 +48,14 @@ public class PayslipServiceImpl implements PayslipService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYSLIP_NOT_FOUND));
 
         return PayslipDetailResponse.of(payslip, payslipItemRepository.findWithPayItemByPayslipId(payslipId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PayslipPdf getMyPayslipPdf(Long empId, Long payslipId) {
+        // 상세 조회와 같은 권한 확인 후 그 내용을 그대로 PDF로
+        PayslipDetailResponse payslip = getMyPayslip(empId, payslipId);
+        return PayslipPdf.of(payslip, payslipPdfRenderer.render(payslip));
     }
 
     @Override
