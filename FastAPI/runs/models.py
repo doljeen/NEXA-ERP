@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import Boolean, ForeignKey, String, Text, func
+from sqlalchemy import BigInteger, Boolean, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -98,3 +98,18 @@ class RunFeedback(Base):
     edited_fields: Mapped[list] = mapped_column(JSONB)                # 바뀐 필드 목록
     label_source: Mapped[str] = mapped_column(String(20))             # human: 사람 확정 / llm_agree: 로컬·GMS 일치로 자동 확정
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class ApprovalResult(Base):
+    """결재 결과 보관함 (Kafka approval.document.result 중 AUTOMATION). requestKey당 1건.
+
+    이벤트가 대기 노드보다 먼저 도착해도 잃지 않도록 여기에 먼저 저장한다.
+    """
+    __tablename__ = "approval_result"
+
+    request_key: Mapped[str] = mapped_column(String(36), primary_key=True)
+    status: Mapped[str] = mapped_column(String(20))                  # APPROVED / REJECTED / CANCEL
+    document_id: Mapped[int | None] = mapped_column(BigInteger)      # 결재 서비스 문서 ID (Long)
+    doc_no: Mapped[str | None] = mapped_column(String(50))
+    event_id: Mapped[str | None] = mapped_column(String(36))         # 추적용
+    received_at: Mapped[datetime] = mapped_column(server_default=func.now())

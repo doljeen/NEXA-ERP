@@ -117,5 +117,8 @@ def resume(
     # 재개한 사람의 토큰으로 결재가 상신되므로 요청자 본인만 재개 가능 (관리자도 불가: 기안자가 바뀜)
     if run.requested_by != str(user.employee_id):
         raise BusinessException(ErrorCode.RUN_FORBIDDEN)
+    # 결재 대기는 Kafka 결과로만 재개 (사용자가 직접 재개하면 결재를 건너뛰게 됨)
+    if service.get_waiting_payload(db, run.id).get("type") == "approval_wait":
+        raise BusinessException(ErrorCode.RUN_WAITING_APPROVAL)
     background_tasks.add_task(resume_run, run.id, req.model_dump(), user.token)
     return ok({"run_id": run.id, "status": run.status})
