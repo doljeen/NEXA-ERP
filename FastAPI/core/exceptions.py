@@ -36,6 +36,7 @@ class ErrorCode(Enum):
     RUN_MISSING_INPUT = (400, "RUN_003", "필수 입력값이 비어 있습니다.")
     RUN_NOT_WAITING = (409, "RUN_004", "확인 대기 중인 실행이 아닙니다.")
     RUN_FORBIDDEN = (403, "RUN_005", "본인이 요청한 실행만 처리할 수 있습니다.")
+    RUN_WAITING_APPROVAL = (409, "RUN_006", "결재 결과를 기다리는 중이라 직접 재개할 수 없습니다.")
 
     # 첨부 파일
     FILE_NOT_FOUND = (404, "FILE_001", "존재하지 않는 파일입니다")

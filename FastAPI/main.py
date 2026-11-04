@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 import py_eureka_client.eureka_client as eureka_client
@@ -10,10 +11,15 @@ from core.config import settings
 from core.database import Base, engine
 from engine.checkpointer import close_checkpointer, init_checkpointer
 from core.exceptions import register_exception_handlers
+from events import approval_consumer
 from nodes.routers import router as nodes_router
 from runs.routers import router as runs_router
 from workflows.routers import router as workflows_router
 from ai.routers import router as ai_router
+
+# 우리 코드의 INFO 로그가 보이게 (httpx 요청 로그는 너무 많아서 경고 이상만)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 API_PREFIX = "/api/v1/ai"
 SERVICE_NAME = "ai-service"
@@ -24,6 +30,7 @@ async def lifespan(app: FastAPI):
     # 서버 켤 때
     Base.metadata.create_all(engine)
     init_checkpointer()
+    approval_consumer.start()          # 결재 결과 구독 시작 (KAFKA_BOOTSTRAP_SERVERS 없으면 건너뜀)
     if settings.eureka_server_url:
         options = {}
         if settings.instance_host:
@@ -35,7 +42,8 @@ async def lifespan(app: FastAPI):
             **options,
         )
     yield
-    # 서버 끌 때
+    # 서버 끌 때: 구독을 먼저 멈춰야 재개 처리 중에 DB 연결이 끊기지 않음
+    approval_consumer.stop()
     close_checkpointer()
     if settings.eureka_server_url:
         await eureka_client.stop_async()
@@ -54,6 +62,7 @@ app.include_router(runs_router, prefix=API_PREFIX, dependencies=AUTH)
 # 개발용 LLM 테스트 API는 설정으로 켰을 때만 등록
 if settings.llm_test_api_enabled:
     app.include_router(ai_router, prefix=API_PREFIX, dependencies=AUTH)
+
 
 @app.get("/health")
 def health():

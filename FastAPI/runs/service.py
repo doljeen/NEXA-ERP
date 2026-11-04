@@ -148,6 +148,14 @@ def get_waiting_run(db: Session, run_id: int) -> Run:
     return run
 
 
+def get_waiting_payload(db: Session, run_id: int) -> dict:
+    """멈춘 단계가 무엇을 기다리는지 (waiting_for). 없으면 빈 dict"""
+    step = db.scalars(
+        select(RunStep).where(RunStep.run_id == run_id, RunStep.status == RunStatus.WAITING)
+    ).first()
+    return ((step.output or {}).get("waiting_for") or {}) if step else {}
+
+
 # 내 확인 대기 목록
 def list_my_pending(db: Session, user_id: str | None) -> list[Run]:
     stmt = (

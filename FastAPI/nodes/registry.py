@@ -8,6 +8,7 @@ from nodes.impl.rag_search import RagSearchNode
 from nodes.impl.structured_extract import StructuredExtractNode
 from nodes.impl.approval_draft import ApprovalDraftNode
 from nodes.impl.employee_lookup import EmployeeLookupNode
+from nodes.impl.wait_approval import WaitApprovalNode
 
 
 CATEGORIES = [
@@ -30,6 +31,7 @@ _NODE_CLASSES: list[type[BaseNode]] = [
     HumanConfirmNode,        # 사람 확인 (interrupt)
     ApprovalNode,
     ApprovalDraftNode,       # 결재 상신 (approval-service)
+    WaitApprovalNode,        # 결재 대기 (Kafka 결과 이벤트)
 ]
 
 

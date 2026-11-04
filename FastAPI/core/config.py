@@ -42,8 +42,13 @@ class Settings(BaseSettings):
     user_service_url: str = "http://localhost:8081"
     approval_service_url: str = "http://localhost:8083"
     service_timeout: float = 10.0
+
     # 결재 문서 출처: ai-service 업무 자동화 (결재 서비스 V10부터 지원)
     approval_source_type: str = "AUTOMATION"
+
+    # Kafka (결재 결과 이벤트 구독). 비어 있으면 구독 안 함
+    kafka_bootstrap_servers: str = ""
+    kafka_group_id: str = "ai-service"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
