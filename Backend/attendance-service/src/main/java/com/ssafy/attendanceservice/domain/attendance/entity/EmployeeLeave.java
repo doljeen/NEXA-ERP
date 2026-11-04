@@ -1,6 +1,7 @@
 package com.ssafy.attendanceservice.domain.attendance.entity;
 
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.LeavePortion;
+import com.ssafy.attendanceservice.global.util.DateTimeUtils;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -16,6 +17,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 
 /** 승인된 휴가 (휴가 서비스 신청의 날짜별 한 줄) */
@@ -44,23 +46,36 @@ public class EmployeeLeave {
     private LeavePortion portion;           // 휴가 구분
 
     @Column(name = "start_at")
-    private OffsetDateTime startAt;         // 반차·시간차 시작 (종일이면 null)
+    private OffsetDateTime startAt;         // 반차 시작 (종일이면 null)
 
     @Column(name = "end_at")
-    private OffsetDateTime endAt;           // 반차·시간차 종료 (종일이면 null)
+    private OffsetDateTime endAt;           // 반차 종료 (종일이면 null)
+
+    @Column(name = "leave_type_name", nullable = false, length = 50)
+    private String leaveTypeName;           // 휴가 유형명 (연차, 병가 등)
+
+    @Column(name = "is_paid", nullable = false)
+    private Boolean isPaid;                 // 유급 여부
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;       // 생성 날짜
 
+    /** 반차 시각은 구분별 고정값으로 채운다 */
     @Builder
     private EmployeeLeave(Long leaveReqId, Long empId, LocalDate leaveDate, LeavePortion portion,
-                          OffsetDateTime startAt, OffsetDateTime endAt) {
+                          String leaveTypeName, Boolean isPaid) {
         this.leaveReqId = leaveReqId;
         this.empId = empId;
         this.leaveDate = leaveDate;
         this.portion = portion;
-        this.startAt = startAt;
-        this.endAt = endAt;
+        this.startAt = atSeoul(leaveDate, portion.startTime());
+        this.endAt = atSeoul(leaveDate, portion.endTime());
+        this.leaveTypeName = leaveTypeName;
+        this.isPaid = isPaid;
+    }
+
+    private static OffsetDateTime atSeoul(LocalDate date, LocalTime time) {
+        return time == null ? null : date.atTime(time).atZone(DateTimeUtils.ZONE).toOffsetDateTime();
     }
 }

@@ -9,10 +9,12 @@ import com.ssafy.attendanceservice.domain.attendance.entity.*;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AnomalyType;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequestStatus;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequestType;
+import com.ssafy.attendanceservice.domain.attendance.entity.enums.LeavePortion;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.WorkStatusSource;
 import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceAnomalyRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceDailyRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceRequestRepository;
+import com.ssafy.attendanceservice.domain.attendance.repository.EmployeeLeaveRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.EmployeeWorkGroupRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.HolidayRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.WorkGroupRepository;
@@ -26,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -46,6 +49,7 @@ public class AttendanceDailyProcessor {
     private final HolidayRepository holidayRepository;
     private final AttendanceRequestRepository attendanceRequestRepository;
     private final AttendanceDailyRepository attendanceDailyRepository;
+    private final EmployeeLeaveRepository employeeLeaveRepository;
 
     // 휴일 판정에 반영하는 휴일대체 상태 (승인된 것만)
     private static final List<AttendanceRequestStatus> APPROVED_ONLY = List.of(AttendanceRequestStatus.APPROVED);
@@ -125,12 +129,12 @@ public class AttendanceDailyProcessor {
         if (!daily.isClockedOut()) {
             return;
         }
-        WorkGroup workGroup = daily.getWorkGroup();
+        DaySchedule schedule = scheduleOf(daily.getEmpId(), daily.getWorkDate(), daily.getWorkGroup());
         saveAnomalies(daily, AnomalyJudge.onClockOut(
                 daily.getWorkDate(),
                 daily.getClockOut(),
-                workGroup.getEndTime(),
-                workGroup.getDailyStdMinutes(),
+                schedule.endTime(),
+                schedule.requiredMin(),
                 daily.getIsHoliday(),
                 workTime));
     }
@@ -166,12 +170,12 @@ public class AttendanceDailyProcessor {
         // 2. 근로시간
         WorkTimeResult workTime = recalculate(daily);
 
-        // 3. 지각: 기존 판정을 지우고 출근 시각으로 다시 판정
-        WorkGroup workGroup = daily.getWorkGroup();
+        // 3. 지각: 기존 판정을 지우고 출근 시각으로 다시 판정 (오전 반차면 반차 후 출근 기준)
         attendanceAnomalyRepository.deleteByAttendanceDailyAndAnomalyTypeIn(daily, List.of(AnomalyType.LATE));
         if (clockIn != null) {
+            DaySchedule schedule = scheduleOf(daily.getEmpId(), daily.getWorkDate(), daily.getWorkGroup());
             saveAnomalies(daily, AnomalyJudge.onClockIn(
-                    daily.getWorkDate(), clockIn, workGroup.getStartTime(), daily.getIsHoliday()));
+                    daily.getWorkDate(), clockIn, schedule.startTime(), daily.getIsHoliday()));
         }
 
         // 4. 출퇴근 누락: 퇴근이 생겼으면 해소
@@ -192,6 +196,49 @@ public class AttendanceDailyProcessor {
             daily.changeHoliday(isHoliday(empId, date, daily.getWorkGroup()));
             syncDaily(daily);
         });
+    }
+
+    /** 그날 근태 기록이 있으면 다시 판정한다 (휴가 저장·취소 후). 기록이 없는 날은 할 일이 없다 */
+    public void resyncDay(Long empId, LocalDate date) {
+        attendanceDailyRepository.findByEmpIdAndWorkDate(empId, date).ifPresent(this::syncDaily);
+    }
+
+    // ===== 휴가 =====
+
+    // 오전 반차(09~13) 뒤 점심(13~14)을 지나 출근하는 시각, 오후 반차(14~18) 전 점심 전에 퇴근하는 시각
+    private static final LocalTime AM_HALF_WORK_START = LocalTime.of(14, 0);
+    private static final LocalTime PM_HALF_WORK_END = LocalTime.of(13, 0);
+
+    /**
+     * 그날 근태이상 판정 기준.
+     * 반차면 출근·퇴근 기준을 반차에 맞춰 옮기고, 소정근로 미달은 판정하지 않는다
+     * (반차 날 4시간 근무는 휴게 30분이 빠져 3시간 30분으로 계산되므로)
+     *
+     * @param requiredMin 소정근로 미달 기준(분). 0이면 판정하지 않음
+     */
+    public record DaySchedule(LocalTime startTime, LocalTime endTime, int requiredMin) {
+    }
+
+    public DaySchedule scheduleOf(Long empId, LocalDate date, WorkGroup workGroup) {
+        List<LeavePortion> portions = leavePortions(empId, date);
+        return new DaySchedule(
+                portions.contains(LeavePortion.AM_HALF) ? AM_HALF_WORK_START : workGroup.getStartTime(),
+                portions.contains(LeavePortion.PM_HALF) ? PM_HALF_WORK_END : workGroup.getEndTime(),
+                portions.isEmpty() ? workGroup.getDailyStdMinutes() : 0);
+    }
+
+    /** 그날 휴가 구분. 휴가가 없으면 빈 목록 */
+    public List<LeavePortion> leavePortions(Long empId, LocalDate date) {
+        return employeeLeaveRepository.findByEmpIdAndLeaveDate(empId, date).stream()
+                .map(EmployeeLeave::getPortion)
+                .toList();
+    }
+
+    /** 종일 휴가인가 (오전·오후 반차를 따로 쓴 날도 종일) */
+    public boolean isFullDayLeave(Long empId, LocalDate date) {
+        List<LeavePortion> portions = leavePortions(empId, date);
+        return portions.contains(LeavePortion.FULL)
+                || (portions.contains(LeavePortion.AM_HALF) && portions.contains(LeavePortion.PM_HALF));
     }
 
     /**
