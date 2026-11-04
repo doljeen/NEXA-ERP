@@ -34,6 +34,7 @@ public enum ErrorCode {
     REQUEST_NOT_PENDING(HttpStatus.CONFLICT, "ATTN_017", "결재 대기 중인 신청서만 회수할 수 있습니다."),
     LEAVE_DAY_CLOCK_IN(HttpStatus.CONFLICT, "ATTN_018", "휴가일에는 출근할 수 없습니다."),
     LEAVE_DAY_REQUEST(HttpStatus.CONFLICT, "ATTN_019", "휴가일에는 신청할 수 없습니다."),
+    LEAVE_CALL_FAILED(HttpStatus.BAD_GATEWAY, "ATTN_020", "휴가 서비스 호출에 실패했습니다."),
 
     // 공통 (user-service와 동일)
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),
