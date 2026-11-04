@@ -1,0 +1,3 @@
+# MLOps scripts only (not needed by the service image)
+pillow
+mlflow

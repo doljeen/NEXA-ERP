@@ -13,7 +13,7 @@ class Position(CamelModel):
 
 class GraphNode(CamelModel):
     id: str  # 캔버스 안에서의 고유 id (예 : "n1")
-    type: str  # 노드 종류 (예: "rag_search")
+    type: str  # 노드 종류 (예: "ocr_extract")
     position: Position  # 캔버스 좌표
     config: dict = {}  # 설정 칸에 채운 값
 
