@@ -2,21 +2,13 @@
 from ai.llm import gms_status
 from ai.modules.receipt import extract_receipt_with_gms
 from core.database import SessionLocal
-from nodes.base import BaseNode, NodeContext, NodeResult
+from nodes.base import BaseNode, NodeContext, NodeResult, latest_output
 from runs.models import RunFeedback
 
 # 문서 종류 → GMS 검증용 추출 함수
 GMS_EXTRACTORS = {
     "영수증": extract_receipt_with_gms,
 }
-
-
-def _latest(outputs: dict, key: str) -> dict | None:
-    """앞 노드 출력 중 key를 가진 가장 최근 출력."""
-    for out in reversed(list(outputs.values())):
-        if isinstance(out, dict) and key in out:
-            return out
-    return None
 
 
 def _norm(value):
@@ -33,18 +25,26 @@ class LlmVerifyNode(BaseNode):
         {"key": "use_gms", "label": "GMS 교차 검증", "type": "select",
          "options": ["사용", "사용 안 함"], "required": False},
         {"key": "min_confidence", "label": "최소 OCR 신뢰도", "type": "number", "required": False},
+        {"key": "extraction", "label": "검증할 추출 결과 노드 (예: {{n2}})", "type": "ref", "required": False},
+        {"key": "ocr", "label": "OCR 노드 (예: {{n1}})", "type": "ref", "required": False},
     ]
     branches = ["자동 확정", "사람 확인"]
     output_vars = [
         {"key": "fields", "label": "추출 결과", "type": "object"},
+        {"key": "doc_type", "label": "문서 종류", "type": "text"},
+        {"key": "problems", "label": "규칙 위반 항목", "type": "list"},
+        {"key": "model_version", "label": "모델 버전", "type": "text"},
         {"key": "reasons", "label": "사람 확인 사유", "type": "list"},
         {"key": "gms_fields", "label": "GMS 추출 결과", "type": "object"},
     ]
 
     def run(self, ctx: NodeContext) -> NodeResult:
-        extraction = _latest(ctx.outputs, "fields")
-        if extraction is None:
+        # 바인딩된 노드 출력이 있으면 그것, 없으면 가장 최근 것
+        extraction = ctx.config.get("extraction") or latest_output(ctx.outputs, "fields")
+        if not isinstance(extraction, dict) or "fields" not in extraction:
             raise ValueError("검증할 추출 결과가 없습니다 (앞에 추출 노드가 필요합니다)")
+        ocr = ctx.config.get("ocr") or latest_output(ctx.outputs, "confidence")
+
         fields = extraction["fields"]
         doc_type = extraction.get("doc_type")
         reasons = []
@@ -54,9 +54,8 @@ class LlmVerifyNode(BaseNode):
             reasons.append(f"규칙 위반: {name}")
 
         # ② OCR 신뢰도
-        ocr = _latest(ctx.outputs, "confidence")
         threshold = float(ctx.config.get("min_confidence") or 0.9)
-        if ocr is not None and ocr["confidence"] < threshold:
+        if ocr is not None and ocr.get("confidence") is not None and ocr["confidence"] < threshold:
             reasons.append(f"OCR 신뢰도 낮음: {ocr['confidence']}")
 
         # ③ GMS 독립 추출과 비교 (규칙에서 이미 걸렸으면 GMS 호출 생략 → 비용 절약)
@@ -67,7 +66,7 @@ class LlmVerifyNode(BaseNode):
                 reasons.append("GMS 검증 불가")
             else:
                 try:
-                    gms_fields = GMS_EXTRACTORS[doc_type](ocr["text"] if ocr else "").model_dump()
+                    gms_fields = GMS_EXTRACTORS[doc_type]((ocr or {}).get("text", "")).model_dump()
                     diff = [k for k in fields if _norm(fields[k]) != _norm(gms_fields.get(k))]
                     reasons += [f"GMS와 불일치: {k}" for k in diff]
                 except Exception as e:

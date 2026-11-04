@@ -2,7 +2,7 @@
 from datetime import date
 
 from ai.modules.receipt import extract_receipt
-from nodes.base import BaseNode, NodeContext, NodeResult
+from nodes.base import BaseNode, NodeContext, NodeResult, latest_output
 
 # 문서 종류 -> (추출 함수, 모델 버전)
 # 새 문서 종류는 DSPy 모듈을 만들고 여기에 한 줄 추가
@@ -10,14 +10,6 @@ from nodes.base import BaseNode, NodeContext, NodeResult
 EXTRACTORS = {
     "영수증": (extract_receipt, "receipt@base"),
 }
-
-
-def _find_text(outputs: dict) -> str | None:
-    """앞 노드들의 출력 중 가장 최근의 text를 찾는다 (outputs는 실행 순서대로 쌓임)."""
-    for out in reversed(list(outputs.values())):
-        if isinstance(out, dict) and out.get("text"):
-            return out["text"]
-    return None
 
 
 def _validate(doc_type: str, fields: dict) -> list[str]:
@@ -29,7 +21,7 @@ def _validate(doc_type: str, fields: dict) -> list[str]:
         if not isinstance(fields.get("total"), int) or fields["total"] <= 0:
             problems.append("total")
         try:
-            date.fromisoformat(fields.get("date") or "") # YYYY-MM-DD 형식인지
+            date.fromisoformat(fields.get("date") or "")  # YYYY-MM-DD 형식인지
         except ValueError:
             problems.append("date")
     return problems
@@ -43,6 +35,8 @@ class StructuredExtractNode(BaseNode):
     config_fields = [
         {"key": "doc_type", "label": "문서 종류", "type": "select",
          "options": list(EXTRACTORS.keys()), "required": True},
+        {"key": "text", "label": "입력 텍스트 (예: {{n1.text}}, 비우면 가장 최근 텍스트)", "type": "ref",
+         "required": False},
     ]
     branches = ["성공", "확인 필요"]
     output_vars = [
@@ -57,12 +51,13 @@ class StructuredExtractNode(BaseNode):
         if doc_type not in EXTRACTORS:
             raise ValueError(f"지원하지 않는 문서 종류입니다: {doc_type}")
 
-        text = _find_text(ctx.outputs)
+        # 바인딩된 텍스트가 있으면 그것, 없으면 앞 노드 중 가장 최근 text
+        text = ctx.config.get("text") or (latest_output(ctx.outputs, "text") or {}).get("text")
         if not text:
             raise ValueError("추출할 텍스트가 없습니다 (앞에 OCR 노드가 필요합니다)")
 
         extract, model_version = EXTRACTORS[doc_type]
-        fields = extract(text).model_dump()  #pydantic 객체 → dict (JSON 저장 가능하게)
+        fields = extract(text).model_dump()  # pydantic 객체 → dict (JSON 저장 가능하게)
 
         problems = _validate(doc_type, fields)
         branch = "확인 필요" if problems else "성공"

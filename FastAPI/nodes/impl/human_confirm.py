@@ -2,16 +2,8 @@
 from langgraph.types import interrupt
 
 from core.database import SessionLocal
-from nodes.base import BaseNode, NodeContext, NodeResult
+from nodes.base import BaseNode, NodeContext, NodeResult, latest_output
 from runs.models import RunFeedback
-
-
-def _find_extraction(outputs: dict) -> dict | None:
-    """앞 노드 출력 중 가장 최근의 추출·검증 결과(fields가 있는 출력)."""
-    for out in reversed(list(outputs.values())):
-        if isinstance(out, dict) and "fields" in out:
-            return out
-    return None
 
 
 class HumanConfirmNode(BaseNode):
@@ -21,6 +13,7 @@ class HumanConfirmNode(BaseNode):
     description = "AI가 추출한 값을 사람이 확인하고 필요하면 수정"
     config_fields = [
         {"key": "message", "label": "안내 문구", "type": "text", "required": False},
+        {"key": "extraction", "label": "확인할 결과 노드 (예: {{n3}})", "type": "ref", "required": False},
     ]
     branches = ["확인", "반려"]
     output_vars = [
@@ -30,8 +23,9 @@ class HumanConfirmNode(BaseNode):
     ]
 
     def run(self, ctx: NodeContext) -> NodeResult:
-        extraction = _find_extraction(ctx.outputs)
-        if extraction is None:
+        # 바인딩된 노드 출력이 있으면 그것, 없으면 가장 최근의 추출·검증 결과
+        extraction = ctx.config.get("extraction") or latest_output(ctx.outputs, "fields")
+        if not isinstance(extraction, dict) or "fields" not in extraction:
             raise ValueError("확인할 추출 결과가 없습니다 (앞에 추출 노드가 필요합니다)")
         model_fields = extraction["fields"]
 
