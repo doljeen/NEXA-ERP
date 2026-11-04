@@ -59,9 +59,12 @@ public class MigrationFile {
     @Column(name = "rows_after_total", nullable = false, columnDefinition = "integer[]")
     private Integer[] rowsAfterTotal;       // 합계 행 아래에 있는 데이터 행
 
+    @Column(name = "preamble", columnDefinition = "text")
+    private String preamble;                // 헤더 위 제목·안내 행 (줄바꿈으로 구분). 근무 코드 범례 등
+
     @Builder
     private MigrationFile(Long migrationId, MigrationEntity entity, String fileName, String[] headers, int rowCount,
-                          String sheetName, Integer headerRow, Integer[] totalRows, Integer[] rowsAfterTotal) {
+                          String sheetName, Integer headerRow, Integer[] totalRows, Integer[] rowsAfterTotal, String preamble) {
         this.migrationId = migrationId;
         this.entity = entity;
         this.fileName = fileName;
@@ -71,6 +74,7 @@ public class MigrationFile {
         this.headerRow = headerRow;
         this.totalRows = totalRows == null ? new Integer[0] : totalRows;
         this.rowsAfterTotal = rowsAfterTotal == null ? new Integer[0] : rowsAfterTotal;
+        this.preamble = preamble;
         this.uploadedAt = LocalDateTime.now();
     }
 }

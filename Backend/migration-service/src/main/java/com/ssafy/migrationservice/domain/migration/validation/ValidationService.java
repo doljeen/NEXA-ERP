@@ -35,7 +35,7 @@ import java.util.stream.Collectors;
 
 /**
  * 파일 하나를 단계별로 검증하고 결과를 validation_issue에 덮어쓴다.
- * ⓪ 엑셀 구조(합계 행·수식 오류·수식 규칙에서 벗어난 칸·합계 열 검산)·급여 법정 기준·⑤ 직원명부 참조·부양가족(공제가족수)·연봉이력(급여 기본급·연봉) 파일 사이 대조 (모든 entity) → ① 파일 구조 → ② 형식·③ 필수값 → ④ 파일 안 중복 → ⑥ 업무 규칙
+ * ⓪ 엑셀 구조(합계 행·수식 오류·수식 규칙에서 벗어난 칸·합계 열 검산)·급여 법정 기준·⑤ 직원명부 참조·부양가족(공제가족수)·연봉이력(급여 기본급·연봉)·집계(근무표·출역부 ↔ 급여·신고) 파일 사이 대조·근무표 (모든 entity) → ① 파일 구조 → ② 형식·③ 필수값 → ④ 파일 안 중복 → ⑥ 업무 규칙
  * 앞 단계에서 형식이 틀린 값은 업무 규칙에서 쓰지 않는다 (오류가 번지지 않게).
  */
 @Service
@@ -50,6 +50,7 @@ public class ValidationService {
     private final EnumValueSuggester enumValueSuggester;
     private final DependentsChecker dependentsChecker;
     private final SalaryHistoryChecker salaryHistoryChecker;
+    private final CrossFileTotalsChecker crossFileTotalsChecker;
 
     @Transactional
     public void validate(MigrationFile file) {
@@ -62,6 +63,8 @@ public class ValidationService {
         issues.addAll(PayrollRowChecker.check(file, rows));
         issues.addAll(dependentsChecker.check(file, rows));
         issues.addAll(salaryHistoryChecker.check(file, rows));
+        issues.addAll(crossFileTotalsChecker.check(file, rows));
+        issues.addAll(DutyRosterChecker.check(file, rows));
         Optional<EntitySchema> schemaOpt = EntitySchemas.of(file.getEntity());
         if (schemaOpt.isEmpty()) {
             if (file.getEntity() != MigrationEntity.REFERENCE) {

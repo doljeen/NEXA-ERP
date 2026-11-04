@@ -25,7 +25,7 @@ public final class EntitySchemas {
 
     static {
         SCHEMAS.put(MigrationEntity.HR_EMPLOYEE, new EntitySchema(MigrationEntity.HR_EMPLOYEE, List.of(
-                FieldSpec.of("empNo", "사번", STRING).key().maxLength(50).synonyms("사원번호", "직원번호", "사번코드", "empno").build(),
+                FieldSpec.of("empNo", "사번", STRING).key().maxLength(50).synonyms("사원번호", "직원번호", "사번코드", "사원코드", "empno").build(),
                 FieldSpec.of("name", "이름", STRING).required().synonyms("성명", "사원명", "직원명", "name", "empname").build(),
                 FieldSpec.of("engName", "영문이름", STRING).synonyms("영문명", "영문성명", "englishname").build(),
                 FieldSpec.of("email", "이메일", EMAIL).required().synonyms("메일", "이메일주소", "로그인id", "email").build(),

@@ -47,6 +47,15 @@ public enum IssueCode {
     FAMILY_COUNT_MISMATCH,
     SALARY_PAYROLL_MISMATCH,
     SALARY_HISTORY_MISMATCH,
+    VISA_EXPIRED_PAID,
+    // 파일 사이 집계 대조 (근무표·출역부 ↔ 급여·신고)
+    CROSS_FILE_MISMATCH,
+    MISSING_IN_COPY,
+    SAME_DAY_TWO_SHEETS,
+    // 근무표
+    SHIFT_OVERLAP,
+    REST_INTERVAL_SHORT,
+    CONSECUTIVE_WORK_DAYS,
     // 업무 규칙
     NEGATIVE_NET_PAY,
     PAY_MONTH_GAP,

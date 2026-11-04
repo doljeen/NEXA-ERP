@@ -36,6 +36,7 @@ import static com.ssafy.migrationservice.domain.migration.validation.payroll.Pay
  * - 수식 열: 대표 수식이 같은 행 칸의 덧셈·뺄셈·SUM이면 그 수식으로 다시 계산한다 (숫자로 바꿔 넣은 칸이 맞는지, 금액 차이)
  * - 수식이 없는 파일(CSV·값만 붙여 넣은 엑셀): 열 이름으로 지급계·공제계·실지급을 찾아 항목 합으로 추정해 다시 계산한다
  * - 지급계·공제계 수식 범위에 들어가지 않은 지급·공제 항목 열을 찾는다 (SUM 범위 누락)
+ * - 같은 행을 세는 COUNTIF(근무표 코드별 횟수)는 범위를 다시 세어 저장값과 비교한다
  * ROUND·VLOOKUP처럼 다른 계산이 섞인 수식은 다시 계산하지 않는다.
  */
 public final class RecalcChecker {
@@ -62,6 +63,20 @@ public final class RecalcChecker {
             String formula = FormulaPattern.readable(rule.pattern(), headers);
             for (Mismatch m : mismatches(headers, rows, target, terms)) {
                 issues.add(rowIssue(fileId, m, rule.column(), "이 열의 수식 규칙 " + formula));
+            }
+        }
+
+        // 같은 행을 세는 COUNTIF: 범위를 다시 센 값과 저장값이 다르면 공백 등이 붙어 세지 않은 칸이 있다
+        for (ParsedTable.Row row : rows) {
+            for (String h : headers) {
+                Optional<BigDecimal> recount = Countif.recount(headers, row, h);
+                Optional<BigDecimal> stored = number(row.values().get(h));
+                if (recount.isPresent() && stored.isPresent() && recount.get().compareTo(stored.get()) != 0) {
+                    issues.add(new ValidationIssue(fileId, row.rowNo(), null, h, Severity.WARN, IssueCode.RECALC_MISMATCH,
+                            "'" + h + "' 값 " + plain(stored.get()) + " ≠ 범위를 다시 센 값 " + plain(recount.get())
+                                    + ". 세는 칸 중에 앞뒤 공백이나 보이지 않는 글자가 붙어 COUNTIF가 세지 못한 칸이 있을 수 있습니다",
+                            plain(stored.get()), recount.get().toPlainString()));
+                }
             }
         }
 

@@ -32,10 +32,16 @@ public final class PayrollColumns {
         return header.toLowerCase(Locale.ROOT).replaceAll("[\\s_]+", "");
     }
 
-    /** 이름이 패턴과 통째로 맞는 첫 열, 없으면 -1 */
+    /** 이름이 패턴과 통째로 맞는 첫 열. 없으면 두 줄 헤더('지급계\nGross' → '지급계 Gross')의 첫 낱말로, 그래도 없으면 -1 */
     public static int find(List<String> headers, Pattern p) {
         for (int c = 0; c < headers.size(); c++) {
             if (p.matcher(normalize(headers.get(c))).matches()) {
+                return c;
+            }
+        }
+        for (int c = 0; c < headers.size(); c++) {
+            String h = headers.get(c).strip();
+            if (h.contains(" ") && p.matcher(normalize(h.substring(0, h.indexOf(' ')))).matches()) {
                 return c;
             }
         }
