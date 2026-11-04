@@ -60,6 +60,15 @@ ACCIDENT_CODES = {
     "DIV_ZERO_ERROR": {"FORMULA_ERROR"}, "CAP_EXCEEDED": {"HARDCODED_VALUE"}, "NIGHT_PREMIUM_MISSING": {"HARDCODED_VALUE"},
     "ORDINARY_WAGE_ITEM_MISSING": {"FORMULA_INCONSISTENT"}, "NONTAX_OVER_LIMIT": {"FORMULA_INCONSISTENT"},
     "SENIORITY_NOT_CARRIED": {"FORMULA_INCONSISTENT"}, "STALE_TAX_THRESHOLD": {"FORMULA_DIFFERS_ACROSS_SHEETS"},
+    # 파일 사이 집계 대조·같은 날 두 시트
+    "HOURS_MISMATCH_CROSS_FILE": {"CROSS_FILE_MISMATCH"}, "DAYS_MISMATCH_CROSS_FILE": {"CROSS_FILE_MISMATCH"},
+    "AMOUNT_MISMATCH_CROSS_FILE": {"CROSS_FILE_MISMATCH"}, "CARRIED_FROM_SOURCE": {"CROSS_FILE_MISMATCH"},
+    "REPORT_MISSING": {"MISSING_IN_COPY"}, "SAME_DAY_TWO_SITES": {"SAME_DAY_TWO_SHEETS"}, "CROSS_SHEET_DUPLICATE": {"SAME_DAY_TWO_SHEETS"},
+    "KIND_TYPO": {"RECALC_MISMATCH"},  # 근무 코드에 붙은 공백 → COUNTIF 저장값 ≠ 다시 센 값
+    # 근무표·체류기간
+    "SHIFT_OVERLAP": {"SHIFT_OVERLAP"}, "REST_INTERVAL_SHORT": {"REST_INTERVAL_SHORT"}, "NO_WEEKLY_REST": {"CONSECUTIVE_WORK_DAYS"},
+    "VISA_EXPIRED_STILL_PAID": {"VISA_EXPIRED_PAID"},
+    "PROBATION_REDUCTION_ILLEGAL": {"BELOW_MINIMUM_WAGE"},  # 단순노무 수습 감액 = 최저임금 미달
 }
 # 정답지 legalDeviations 규칙 → 이 편차를 잡았다고 볼 서비스 이슈 코드 (시트 단위)
 LEGAL_CODES = {
@@ -76,6 +85,9 @@ EMP_SCOPED = {"FAMILY_COUNT_MISMATCH": {"FAMILY_COUNT_MISMATCH"}, "AMOUNT_HARDCO
 EXPLAINS = {"DEDUCTION_AGE_RULE": {"FAMILY_COUNT_MISMATCH"}, "PERCENT_AS_NUMBER": {"SALARY_PAYROLL_MISMATCH"}}
 # 이 사고 때문에 다른 파일의 같은 직원 행에 생기는 경고 (연봉이력이 틀리면 4대보험 연봉(2026)과도 달라진다)
 CROSS_EXPLAINS = {t: {"SALARY_HISTORY_MISMATCH"} for t in ("SALARY_NOT_UPDATED", "AMOUNT_HARDCODED", "PERCENT_AS_NUMBER")}
+# 두 파일 다 값만 있으면 집계 대조 경고가 상대 파일의 같은 직원 행에도 나온다
+CROSS_EXPLAINS |= {t: {"CROSS_FILE_MISMATCH"} for t in ("HOURS_MISMATCH_CROSS_FILE", "DAYS_MISMATCH_CROSS_FILE",
+                                                         "AMOUNT_MISMATCH_CROSS_FILE", "CARRIED_FROM_SOURCE")}
 SKIP_ROLES = {"settings", "lookupTable"}  # 설정·세액표 시트는 데이터가 아니라서 올리지 않음
 
 
@@ -149,7 +161,10 @@ def evaluate_company(base, cdir):
     cross = {(code, _emp_key(a.get("empNo"))) for hk in key.get("hrFiles", {}).values() for a in hk["accidents"]
              for code in CROSS_EXPLAINS.get(a["type"], set())}
     side = {loc for fname, hk in key.get("hrFiles", {}).items() for a in hk["accidents"] for loc in _side_effects(fname, a)}
-    result["hrFiles"] = [evaluate_hr_file(base, mid, cdir, fname, hk, cross, side) for fname, hk in key.get("hrFiles", {}).items()]
+    # 파일 사이 대조는 나중에 올린 파일이 앞 파일을 다시 검증하므로, 다 올린 뒤에 이슈를 본다
+    uploads = {fname: upload_hr_file(base, mid, cdir, fname, hk) for fname, hk in key.get("hrFiles", {}).items()}
+    result["hrFiles"] = [evaluate_hr_file(base, mid, cdir, fname, hk, *uploads[fname], cross, side)
+                         for fname, hk in key.get("hrFiles", {}).items()]
     result["reference"] = reference_check(cdir, key, [i for f in result["hrFiles"] for i in f.pop("refIssues")])
     return result
 
@@ -196,14 +211,13 @@ def read_roster(cdir, key):
     return {i + 1: (r[ei].strip(), r[ni].strip()) for i, r in enumerate(rows) if i > h and len(r) > max(ei, ni) and r[ei]}
 
 
-def evaluate_hr_file(base, mid, cdir, fname, hk, cross=frozenset(), side=frozenset()):
-    """데이터 시트마다 올려 읽기 결과와 사고 검출을 본다. 업로드가 거절돼도 다른 평가는 계속"""
+def upload_hr_file(base, mid, cdir, fname, hk):
+    """데이터 시트마다 올리고 읽기 결과를 본다. 업로드가 거절돼도 다른 평가는 계속"""
     entity = hk["closestEntity"] or "REFERENCE"
     res = {"file": fname, "entity": entity, "sheets": [], "accidents": [], "unexpected": Counter(),
            "legalDeviations": len(hk.get("legalDeviations", [])),
            "needs": dict(Counter(n for a in hk["accidents"] for n in a["needs"]))}
-    issues_by_sheet, uploaded = {}, []
-    res["refIssues"] = []
+    uploaded = []
     for name, meta in hk["sheets"].items():
         if meta.get("role") in SKIP_ROLES:
             continue
@@ -215,7 +229,13 @@ def evaluate_hr_file(base, mid, cdir, fname, hk, cross=frozenset(), side=frozens
         except Exception as e:  # noqa: BLE001 - 업로드 거절도 결과로 남긴다
             sr["error"] = str(e)
         res["sheets"].append(sr)
-    # 같은 파일의 시트를 다 올린 뒤에 이슈를 본다 (서비스가 시트끼리 수식을 비교하므로)
+    return res, uploaded
+
+
+def evaluate_hr_file(base, mid, cdir, fname, hk, res, uploaded, cross=frozenset(), side=frozenset()):
+    """올린 시트들의 이슈로 사고 검출·정답지 밖 경고를 본다"""
+    issues_by_sheet = {}
+    res["refIssues"] = []
     for sr, file_id in uploaded:
         issues = all_issues(base, mid, file_id)
         issues_by_sheet[sr["sheet"]] = issues
