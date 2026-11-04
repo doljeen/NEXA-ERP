@@ -462,7 +462,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (topic) (kafka_topic_partition_current_offset{topic=~\"approval\\.document\\.result.*\"})",
+          "expr": "sum by (topic) (kafka_topic_partition_current_offset{topic=~\"approval[.]document[.]result.*\"})",
           "legendFormat": "{{topic}}"
         }
       ],
