@@ -1,6 +1,11 @@
 package com.ssafy.leaveservice.global.config;
 
 import com.ssafy.nexa.security.NexaSecurityConfigurer;
+import com.ssafy.leaveservice.global.auth.EmployeeAccess;
+import com.ssafy.leaveservice.global.auth.LeaveAdministratorAccess;
+import com.ssafy.leaveservice.global.auth.LeaveAdministratorFilter;
+import org.springframework.security.web.access.ExceptionTranslationFilter;
+import tools.jackson.databind.json.JsonMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -16,12 +21,20 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http, NexaSecurityConfigurer nexa) throws Exception {
+    SecurityFilterChain filterChain(
+            HttpSecurity http,
+            NexaSecurityConfigurer nexa,
+            LeaveAdministratorAccess administratorAccess,
+            EmployeeAccess employeeAccess,
+            JsonMapper jsonMapper
+    ) throws Exception {
         return nexa.apply(http)
+                .addFilterAfter(new LeaveAdministratorFilter(administratorAccess, employeeAccess, jsonMapper),
+                        ExceptionTranslationFilter.class)
                 .authorizeHttpRequests(auth -> auth
                         // TODO Attendance 서비스 인증 계약 확정 후 전용 호출 권한 적용
                         .requestMatchers("/api/v1/leaves/internal/**").denyAll()
-                        .requestMatchers("/api/v1/leaves/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/leaves/admin/**").authenticated()
                         .anyRequest().authenticated())
                 .build();
     }

@@ -31,6 +31,7 @@ public class MyLeaveLedgerService {
     }
 
     @Transactional(readOnly = true)
+    @com.ssafy.leaveservice.global.auth.LeaveAdministratorOnly
     public List<MyLeaveLedgerResponse> getEmployeeLedger(Long employeeId) {
         // 관리자 권한 확인
         Long adminEmployeeId = employeeAccess.currentEmployeeId();

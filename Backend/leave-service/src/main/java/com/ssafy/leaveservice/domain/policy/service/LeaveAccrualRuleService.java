@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+@com.ssafy.leaveservice.global.auth.LeaveAdministratorOnly
 @Service
 @RequiredArgsConstructor
 public class LeaveAccrualRuleService {

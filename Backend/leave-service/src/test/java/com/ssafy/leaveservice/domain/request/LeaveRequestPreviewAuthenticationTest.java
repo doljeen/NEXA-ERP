@@ -23,7 +23,7 @@ class LeaveRequestPreviewAuthenticationTest {
     private final Clock clock=Clock.fixed(Instant.parse("2030-01-01T00:00:00Z"),ZoneOffset.UTC);
     private final LeaveRequestPreviewRequest request=new LeaveRequestPreviewRequest(1L,null,List.of(
             new LeaveRequestPreviewRequest.DateRequest(LocalDate.of(2030,1,7),LeaveRequestPortion.FULL)));
-    private final EmployeeAccess tokenAccess=new TokenEmployeeAccess();
+    private final EmployeeAccess tokenAccess=new TokenEmployeeAccess(org.mockito.Mockito.mock(com.ssafy.leaveservice.global.auth.LeaveAdministratorAccess.class));
 
     @AfterAll
     static void closeFactory() { FACTORY.close(); }

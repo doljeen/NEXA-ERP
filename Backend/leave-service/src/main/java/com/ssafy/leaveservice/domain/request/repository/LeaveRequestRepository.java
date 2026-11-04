@@ -104,9 +104,10 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long
     boolean existsByApprovalDocIdAndRequestIdNot(Long documentId, Long requestId);
 
     @Query("""
-            select leaveRequest from LeaveRequest leaveRequest
-            join fetch leaveRequest.leaveType
+            select distinct leaveRequest from LeaveRequest leaveRequest
+            left join fetch leaveRequest.dates
             where leaveRequest.employeeId in :employeeIds
+                and leaveRequest.status = com.ssafy.leaveservice.domain.request.entity.LeaveRequestStatus.APPROVED
             order by leaveRequest.createdAt desc, leaveRequest.requestId desc
             """)
     List<LeaveRequest> findAllWithLeaveTypeByEmployeeIdIn(@Param("employeeIds") List<Long> employeeIds);

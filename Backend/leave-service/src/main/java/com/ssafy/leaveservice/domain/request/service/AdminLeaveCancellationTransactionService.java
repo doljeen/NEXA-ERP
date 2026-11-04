@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
+@com.ssafy.leaveservice.global.auth.LeaveAdministratorOnly
 @Service
 @RequiredArgsConstructor
 @Transactional(isolation = Isolation.READ_COMMITTED, propagation = Propagation.REQUIRES_NEW)

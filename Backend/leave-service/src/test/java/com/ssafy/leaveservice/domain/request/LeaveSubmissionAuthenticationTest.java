@@ -20,7 +20,7 @@ class LeaveSubmissionAuthenticationTest {
     private static final ValidatorFactory FACTORY=Validation.buildDefaultValidatorFactory();
     private final HolidayClient holidays=mock(HolidayClient.class);
     private final LeaveSubmissionTransactionService transaction=mock(LeaveSubmissionTransactionService.class);
-    private final EmployeeAccess tokenAccess=new TokenEmployeeAccess();
+    private final EmployeeAccess tokenAccess=new TokenEmployeeAccess(org.mockito.Mockito.mock(com.ssafy.leaveservice.global.auth.LeaveAdministratorAccess.class));
     private final LeaveRequestPreviewRequest input=new LeaveRequestPreviewRequest(1L,null,List.of(
             new LeaveRequestPreviewRequest.DateRequest(LocalDate.of(2035,1,1),LeaveRequestPortion.FULL)));
 

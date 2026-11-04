@@ -7,7 +7,6 @@ import com.ssafy.leaveservice.global.auth.EmployeeAccess;
 import com.ssafy.leaveservice.global.exception.BusinessException;
 import com.ssafy.leaveservice.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -22,7 +21,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Supplier;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DepartmentLeaveAccessService {
@@ -31,71 +29,122 @@ public class DepartmentLeaveAccessService {
     private final HrClient hrClient;
 
     @Transactional(propagation = Propagation.NEVER)
+    public List<Long> getScheduleEmployeeIds(Long departmentId) {
+        // 일정은 현재 같은 부서의 재직 직원에게 공개한다.
+        requireDepartmentId(departmentId);
+        EmployeeInfo employee = requireCurrentEmployee();
+        if (!departmentId.equals(employee.departmentId())) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
+        return findMembers(departmentId);
+    }
+
+    @Transactional(propagation = Propagation.NEVER)
     public List<Long> getAuthorizedEmployeeIds(Long departmentId) {
-        // 검증된 JWT와 기존 EmployeeAccess의 본인 식별 정보를 대조
+        if (!properties.hasConfiguredEndpoints() || !properties.hasConfiguredClaims()) {
+            throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
+        }
+        requireDepartmentId(departmentId);
+        EmployeeInfo employee = requireCurrentEmployee();
+
+        // 잔액 조회는 최신 직책과 실제 부서 책임자 정보를 함께 검증한다.
+        Jwt jwt = ((JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication()).getToken();
+        if (properties.jwtClaims().dutyId() == null || properties.jwtClaims().dutyId().isBlank()) {
+            throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
+        }
+        Long tokenDutyId = positiveClaim(jwt.getClaim(properties.jwtClaims().dutyId()));
+        if (employee.dutyId() == null || employee.dutyId() <= 0) {
+            throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
+        }
+        if (!tokenDutyId.equals(employee.dutyId())) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
+        DutyInfo duty = callHr(() -> hrClient.findDuty(employee.dutyId()));
+        if (duty == null || !employee.dutyId().equals(duty.dutyId()) || duty.name() == null || duty.name().isBlank()) {
+            throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
+        }
+        if (!Set.of("팀장", "본부장", "대표이사").contains(duty.name())) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
+        OrganizationChain organization = callHr(() -> hrClient.findOrganizationChain(employee.employeeId()));
+        if (organization == null || !employee.employeeId().equals(organization.employeeId())
+                || !employee.departmentId().equals(organization.deptId()) || organization.chain() == null
+                || organization.chain().isEmpty() || organization.chain().getFirst() == null
+                || !employee.departmentId().equals(organization.chain().getFirst().deptId())) {
+            throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
+        }
+        Set<Long> departments = new HashSet<>();
+        OrganizationUnit target = null;
+        for (OrganizationUnit unit : organization.chain()) {
+            if (unit == null || !positive(unit.deptId()) || !departments.add(unit.deptId())
+                    || (unit.headEmpId() != null && !positive(unit.headEmpId()))) {
+                throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
+            }
+            if (departmentId.equals(unit.deptId())) {
+                target = unit;
+            }
+        }
+        if (target == null || !employee.employeeId().equals(target.headEmpId())) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
+        return findMembers(departmentId);
+    }
+
+    private EmployeeInfo requireCurrentEmployee() {
+        // JWT 본인 식별과 최신 재직·소속 정보를 대조한다.
         if (!(SecurityContextHolder.getContext().getAuthentication() instanceof JwtAuthenticationToken authentication)
                 || !authentication.isAuthenticated()) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
         Jwt jwt = authentication.getToken();
-        Long subjectId = positiveClaim(jwt.getSubject());
-        Long employeeId = employeeAccess.currentEmployeeId();
-        if (!subjectId.equals(employeeId)) {
+        Long employeeId = positiveClaim(jwt.getSubject());
+        if (!employeeId.equals(employeeAccess.currentEmployeeId())) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
-        if (departmentId == null || departmentId <= 0) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        if (!properties.enabled() || properties.employeeInfoUri() == null || properties.employeeInfoUri().isBlank()
+                || properties.jwtClaims() == null || properties.jwtClaims().departmentId() == null
+                || properties.jwtClaims().departmentId().isBlank() || !callHr(hrClient::isAvailable)) {
+            throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
         }
-
-        // 미확정 조직 Claim·URI·Client는 Leave 조회 전에 차단
-        if (!properties.enabled() || !properties.hasConfiguredEndpoints() || !properties.hasConfiguredClaims()
-                || !callHr(hrClient::isAvailable)) {
+        if (Set.of("sub", "role", "type", "iss", "aud", "iat", "exp", "nbf", "jti")
+                .contains(properties.jwtClaims().departmentId())) {
             throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
         }
         Long tokenDepartmentId = positiveClaim(jwt.getClaim(properties.jwtClaims().departmentId()));
-        Long tokenDutyId = positiveClaim(jwt.getClaim(properties.jwtClaims().dutyId()));
-
-        // 최신 직원의 소속·직책과 오래된 토큰이 다르면 재인증을 요구
         EmployeeInfo employee = callHr(() -> hrClient.findEmployee(employeeId));
-        if (employee == null || !employeeId.equals(employee.employeeId())
-                || !positive(employee.departmentId()) || !positive(employee.dutyId())
+        if (employee == null || !employeeId.equals(employee.employeeId()) || !positive(employee.departmentId())
                 || employee.status() == null) {
             throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
         }
-        if (employee.status() != EmploymentStatus.EMPLOYED) {
+        if (employee.status() != EmploymentStatus.EMPLOYED || !tokenDepartmentId.equals(employee.departmentId())) {
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
         }
-        if (!tokenDepartmentId.equals(employee.departmentId()) || !tokenDutyId.equals(employee.dutyId())) {
-            throw new BusinessException(ErrorCode.ACCESS_DENIED, "인사 정보가 변경되었습니다. 다시 인증해주세요.");
-        }
+        return employee;
+    }
 
-        // 직급·시스템 ADMIN과 무관하게 확인된 직책명만 사용
-        DutyInfo duty = callHr(() -> hrClient.findDuty(employee.dutyId()));
-        if (duty == null || !employee.dutyId().equals(duty.dutyId()) || duty.name() == null || duty.name().isBlank()) {
-            throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
-        }
-        if (!"휴가 관리자".equals(duty.name()) || !departmentId.equals(employee.departmentId())) {
-            throw new BusinessException(ErrorCode.ACCESS_DENIED);
-        }
-
-        // 검증한 최신 부서 ID로 직접 소속 부서원 전체를 조회
-        MemberBatch batch = callHr(() -> hrClient.findDepartmentMembers(employee.departmentId()));
+    private List<Long> findMembers(Long departmentId) {
+        MemberBatch batch = callHr(() -> hrClient.findDepartmentMembers(departmentId));
         if (batch == null || !batch.complete() || batch.members() == null) {
             throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
         }
         Set<Long> employeeIds = new HashSet<>();
-        List<Long> includedEmployeeIds = new ArrayList<>();
+        List<Long> included = new ArrayList<>();
         for (Member member : batch.members()) {
             if (member == null || !positive(member.employeeId()) || !departmentId.equals(member.departmentId())
                     || member.status() == null || !employeeIds.add(member.employeeId())) {
-                log.warn("HR department membership verification failed: invalid, duplicate, or inconsistent member");
                 throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
             }
             if (member.status() != EmploymentStatus.TERMINATED) {
-                includedEmployeeIds.add(member.employeeId());
+                included.add(member.employeeId());
             }
         }
-        return includedEmployeeIds.stream().sorted().toList();
+        return included.stream().sorted().toList();
+    }
+
+    private void requireDepartmentId(Long departmentId) {
+        if (!positive(departmentId)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
     }
 
     private Long positiveClaim(Object claim) {
@@ -126,8 +175,7 @@ public class DepartmentLeaveAccessService {
     private <T> T callHr(Supplier<T> operation) {
         try {
             return operation.get();
-        } catch (RuntimeException exception) {
-            // 원격 인증·Timeout·5xx와 응답 오류를 권한 없음이나 빈 목록으로 바꾸지 않는다.
+        } catch (RuntimeException failure) {
             throw new BusinessException(ErrorCode.HR_VERIFICATION_UNAVAILABLE);
         }
     }

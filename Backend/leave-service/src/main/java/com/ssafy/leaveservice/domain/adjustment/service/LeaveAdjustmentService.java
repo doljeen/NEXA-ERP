@@ -29,6 +29,7 @@ import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Optional;
 
+@com.ssafy.leaveservice.global.auth.LeaveAdministratorOnly
 @Service
 @RequiredArgsConstructor
 public class LeaveAdjustmentService {

@@ -53,9 +53,15 @@ class UserHrDepartmentFlowIntegrationTest {
     private static final AtomicReference<UserHrDepartmentFlowIntegrationTest> CURRENT = new AtomicReference<>();
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
+    @Autowired org.springframework.context.ApplicationContext applicationContext;
+    @Autowired com.ssafy.leaveservice.domain.policy.service.LeavePolicyGroupService policyGroups;
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     private String requesterStatus = "EMPLOYED";
-    private String dutyName = "휴가 관리자";
+    private boolean requesterDutyMissing;
+    private String dutyName = "팀장";
+    private Long headEmployeeId = 10L;
+    private boolean badOrganization;
     private String errorPath;
     private int remoteStatus = 503;
     private boolean delayEmployee;
@@ -88,6 +94,7 @@ class UserHrDepartmentFlowIntegrationTest {
             jdbc.update("delete from " + table);
         }
         jdbc.update("insert into leave_policy_group(policy_id,name) values(1,'정책')");
+        jdbc.execute("select setval(pg_get_serial_sequence('leave_policy_group','policy_id'),100)");
         jdbc.update("""
                 insert into leave_policy_version(policy_version_id,policy_id,version_no,base_type)
                 values(1,1,1,'HIRE_DATE')
@@ -120,10 +127,9 @@ class UserHrDepartmentFlowIntegrationTest {
     void realHttpAndJwtPermitCurrentDirectDepartmentAndPreserveLedger() throws Exception {
         List<Map<String,Object>> before = jdbc.queryForList("select *,xmin::text from leave_ledger order by entry_id");
         request("requests", 3L, 3L, 7L).andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.length()").value(2))
-                .andExpect(jsonPath("$.data[0].employeeId").value(11))
-                .andExpect(jsonPath("$.data[1].employeeId").value(10));
-        assertThat(calls).hasValue(3);
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].employeeId").value(10));
+        assertThat(calls).hasValue(2);
 
         request("balances", 3L, 3L, 7L).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.departmentId").value(3))
@@ -192,13 +198,124 @@ class UserHrDepartmentFlowIntegrationTest {
     @ValueSource(strings = {"/api/v1/duties/7", "/api/v1/employees"})
     void failedDutyOrMembershipLookupCannotGrantAccess(String path) throws Exception {
         errorPath = path;
-        request("requests", 3L, 3L, 7L).andExpect(status().isServiceUnavailable());
+        request("balances", 3L, 3L, 7L).andExpect(status().isServiceUnavailable());
     }
 
     @Test
     void readTimeoutFailsClosed() throws Exception {
         delayEmployee = true;
         request("balances", 3L, 3L, 7L).andExpect(status().isServiceUnavailable());
+    }
+
+
+    @ParameterizedTest
+    @ValueSource(strings = {"USER", "ADMIN"})
+    void latestDutyAloneAuthorizesAdminPolicyCreationBeforeItsWriteTransaction(String role) throws Exception {
+        dutyName = "휴가관리자";
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/leaves/admin/policies")
+                .with(jwt().jwt(token -> token.subject("10").claim("type","access").claim("role",role)
+                        .claim("dutyId",7L)).authorities(new SimpleGrantedAuthority("ROLE_" + role)))
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("{\"name\":\"새 정책\"}"))
+                .andExpect(status().isCreated());
+        assertThat(calls).hasValue(2);
+        assertThat(jdbc.queryForObject("select count(*) from leave_policy_group where name='새 정책'", Integer.class)).isEqualTo(1);
+
+        dutyName = "팀장";
+        mvc.perform(get("/api/v1/leaves/admin/policies")
+                .with(jwt().jwt(token -> token.subject("10").claim("role",role).claim("dutyId",7L))
+                        .authorities(new SimpleGrantedAuthority("ROLE_" + role))))
+                .andExpect(status().isForbidden());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"휴가 관리자", "팀장", "본부장", "대표이사", "팀원"})
+    void systemAdminCannotReplaceExactLeaveAdministratorDuty(String duty) throws Exception {
+        dutyName = duty;
+        mvc.perform(get("/api/v1/leaves/admin/types")
+                .with(jwt().jwt(token -> token.subject("10").claim("role","ADMIN").claim("dutyId",7L))
+                        .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void scheduleDoesNotRequireDutyClaimOrDutyAssignment() throws Exception {
+        requesterDutyMissing = true;
+        mvc.perform(get("/api/v1/leaves/departments/3/requests")
+                .with(jwt().jwt(token -> token.subject("10").claim("deptId",3L).claim("role","USER"))
+                        .authorities(new SimpleGrantedAuthority("ROLE_USER"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].policyVersionId").doesNotExist())
+                .andExpect(jsonPath("$.data[0].reason").doesNotExist())
+                .andExpect(jsonPath("$.data[0].totalDeductMinutes").doesNotExist())
+                .andExpect(jsonPath("$.data[0].dates").isArray());
+        assertThat(calls).hasValue(2);
+    }
+
+
+    @ParameterizedTest
+    @ValueSource(strings = {"USER", "ADMIN"})
+    void everyAdminEndpointRejectsNonAdministratorDutyBeforeMvcValidation(String role) throws Exception {
+        dutyName = "팀장";
+        org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping mappings =
+                applicationContext.getBean("requestMappingHandlerMapping",
+                        org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping.class);
+        int verified = 0;
+        for (var entry : mappings.getHandlerMethods().entrySet()) {
+            for (String path : entry.getKey().getPatternValues()) {
+                if (!path.startsWith("/api/v1/leaves/admin/")) { continue; }
+                for (var method : entry.getKey().getMethodsCondition().getMethods()) {
+                    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request(
+                                    org.springframework.http.HttpMethod.valueOf(method.name()), path.replaceAll("\\{[^}]+\\}", "1"))
+                            .with(jwt().jwt(token -> token.subject("10").claim("role",role).claim("dutyId",7L))
+                                    .authorities(new SimpleGrantedAuthority("ROLE_" + role))))
+                            .andExpect(status().isForbidden());
+                    verified++;
+                }
+            }
+        }
+        assertThat(verified).isEqualTo(26);
+    }
+
+    @Test
+    void directServiceCallIsProtectedAndDoesNotLeakAuthorization() {
+        org.springframework.security.oauth2.jwt.Jwt token = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("direct")
+                .header("alg","RS256").subject("10").claim("dutyId",7L).claim("role","USER").build();
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(token,List.of()));
+        try {
+            dutyName = "휴가관리자";
+            policyGroups.createPolicyGroup(new com.ssafy.leaveservice.domain.policy.dto.LeavePolicyGroupCreateRequest("직접 생성"));
+            assertThat(calls).hasValue(2);
+            org.springframework.transaction.support.TransactionTemplate transaction =
+                    new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> transaction.execute(status -> policyGroups.getAllPolicies()))
+                    .isInstanceOf(com.ssafy.leaveservice.global.exception.BusinessException.class);
+            assertThat(calls).hasValue(2);
+            dutyName = "팀원";
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> policyGroups.getAllPolicies())
+                    .isInstanceOf(com.ssafy.leaveservice.global.exception.BusinessException.class);
+            assertThat(calls).hasValue(4);
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
+    }
+
+
+    @ParameterizedTest
+    @ValueSource(strings = {"팀장", "본부장", "대표이사"})
+    void permittedDutyStillNeedsActualHeadAssignment(String name) throws Exception {
+        dutyName = name;
+        request("balances",3L,3L,7L).andExpect(status().isOk());
+        headEmployeeId = 11L;
+        request("balances",3L,3L,7L).andExpect(status().isForbidden());
+        headEmployeeId = null;
+        request("balances",3L,3L,7L).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void inconsistentOrganizationCannotGrantAccess() throws Exception {
+        badOrganization = true;
+        request("balances",3L,3L,7L).andExpect(status().isServiceUnavailable());
     }
 
     private org.springframework.test.web.servlet.ResultActions request(String endpoint, long department, long tokenDept, long tokenDuty)
@@ -224,6 +341,11 @@ class UserHrDepartmentFlowIntegrationTest {
             String data;
             if (path.equals("/api/v1/employees/10")) {
                 data = employee(10,3,requesterStatus);
+                if (requesterDutyMissing) { data = data.replace("\"dutyId\":7", "\"dutyId\":null"); }
+            } else if (path.equals("/api/v1/employees/10/org-chain")) {
+                data = "{\"employeeId\":" + (badOrganization ? 99 : 10)
+                        + ",\"deptId\":3,\"chain\":[{\"deptId\":3,\"deptType\":\"TEAM\",\"headEmpId\":"
+                        + headEmployeeId + "}]}";
             } else if (path.equals("/api/v1/duties/7")) {
                 data = "{\"dutyId\":7,\"name\":\"" + dutyName + "\"}";
             } else {

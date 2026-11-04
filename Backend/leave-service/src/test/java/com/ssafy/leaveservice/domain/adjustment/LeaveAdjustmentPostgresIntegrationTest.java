@@ -60,6 +60,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(properties = {
         "leave.test.database-owner=LeaveAdjustmentPostgresIntegrationTest",
+        "leave.hr.enabled=true","leave.hr.jwt-claims.duty-id=dutyId",
         "spring.cloud.config.enabled=false", "eureka.client.enabled=false",
         "eureka.client.service-url.defaultZone=http://localhost:8761/eureka/", "spring.jpa.open-in-view=false",
         "spring.jpa.hibernate.ddl-auto=validate"})
@@ -78,9 +79,20 @@ class LeaveAdjustmentPostgresIntegrationTest {
     @Autowired LeaveApprovalResultService approvalResults;
     @Autowired Flyway flyway;
     @MockitoBean HolidayClient holidays;
+    @MockitoBean com.ssafy.leaveservice.client.hr.HrClient hrClient;
 
     @BeforeEach
     void setUp() {
+        when(hrClient.isAvailable()).thenReturn(true);
+        when(hrClient.findEmployee(any())).thenAnswer(call -> {
+            Long id = call.getArgument(0);
+            org.assertj.core.api.Assertions.assertThat(
+                    org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            return new com.ssafy.leaveservice.client.hr.HrClient.EmployeeInfo(id,1L,id,null,null,
+                    com.ssafy.leaveservice.client.hr.HrClient.EmploymentStatus.EMPLOYED);
+        });
+        when(hrClient.findDuty(any())).thenAnswer(call ->
+                new com.ssafy.leaveservice.client.hr.HrClient.DutyInfo(call.getArgument(0),"휴가관리자"));
         TestTokens.authenticate(10, "ADMIN");
         jdbc.update("update leave_policy_group set active_policy_version_id=null");
         for (String table : List.of("leave_ledger", "leave_request_allocation", "leave_request_date", "leave_request",
@@ -322,11 +334,12 @@ class LeaveAdjustmentPostgresIntegrationTest {
     @Test
     void userAndAnonymousAreDeniedAndRetryStillNeedsAdmin() throws Exception {
         adjust("auth", 1);
+        when(hrClient.findDuty(10L)).thenReturn(new com.ssafy.leaveservice.client.hr.HrClient.DutyInfo(10L,"팀원"));
         TestTokens.clear();
         mvc.perform(post(URL).with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.anonymous())
                         .contentType("application/json").content(body(1)).header("Idempotency-Key", "auth"))
                 .andExpect(status().isUnauthorized());
-        mvc.perform(post(URL).with(jwt().jwt(j -> j.subject("10").claim("role", "USER").claim("type", "access"))
+        mvc.perform(post(URL).with(jwt().jwt(j -> j.subject("10").claim("role", "USER").claim("type", "access").claim("dutyId",10L))
                         .authorities(new SimpleGrantedAuthority("ROLE_USER")))
                         .contentType("application/json").content(body(1)).header("Idempotency-Key", "auth"))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.error.code").value("AUTH_009"));
@@ -530,7 +543,7 @@ class LeaveAdjustmentPostgresIntegrationTest {
     }
 
     private static RequestPostProcessor admin(long employeeId) {
-        return jwt().jwt(j -> j.subject(String.valueOf(employeeId)).claim("role", "ADMIN").claim("type", "access"))
+        return jwt().jwt(j -> j.subject(String.valueOf(employeeId)).claim("role", "ADMIN").claim("type", "access").claim("dutyId",employeeId))
                 .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 

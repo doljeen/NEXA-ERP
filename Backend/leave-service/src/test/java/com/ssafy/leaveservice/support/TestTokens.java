@@ -15,8 +15,8 @@ public final class TestTokens {
 
     public static void authenticate(long employeeId, String role) {
         Jwt jwt = Jwt.withTokenValue("test-token").header("alg", "RS256")
-                .subject(String.valueOf(employeeId)).claim("type", "access").claim("role", role).build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+                .subject(String.valueOf(employeeId)).claim("type", "access").claim("role", role).claim("dutyId", employeeId).build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt, java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_" + role))));
     }
 
     public static void clear() {

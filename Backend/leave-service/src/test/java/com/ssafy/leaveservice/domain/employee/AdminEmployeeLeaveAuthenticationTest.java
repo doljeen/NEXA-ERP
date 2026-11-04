@@ -23,7 +23,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class AdminEmployeeLeaveAuthenticationTest {
 
-    private final EmployeeAccess tokenAccess = new TokenEmployeeAccess();
+    private final com.ssafy.leaveservice.global.auth.LeaveAdministratorAccess administratorAccess =
+            mock(com.ssafy.leaveservice.global.auth.LeaveAdministratorAccess.class);
+    private final EmployeeAccess tokenAccess = new TokenEmployeeAccess(administratorAccess);
     private final LeaveAccountRepository accountRepository = mock(LeaveAccountRepository.class);
     private final LeaveGrantRepository grantRepository = mock(LeaveGrantRepository.class);
     private final LeaveLedgerRepository ledgerRepository = mock(LeaveLedgerRepository.class);
@@ -46,7 +48,8 @@ class AdminEmployeeLeaveAuthenticationTest {
     @ParameterizedTest
     @ValueSource(strings = {"balances", "grants", "ledger"})
     void adminTokenQueriesPathTargetInsteadOfTokenEmployee(String endpoint) throws Exception {
-        TestTokens.authenticate(1L, "ADMIN");
+        TestTokens.authenticate(1L, "USER");
+        when(administratorAccess.isAdministrator(1L)).thenReturn(true);
         endpoint(tokenAccess).perform(get("/api/v1/leaves/admin/employees/42/" + endpoint))
                 .andExpect(status().isOk()).andExpect(content().json("{\"success\":true,\"error\":null,\"data\":[]}"));
         switch (endpoint) {
