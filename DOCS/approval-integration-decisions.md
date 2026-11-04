@@ -225,6 +225,7 @@ GET /api/v1/documents/by-request/{requestKey}
 | 판단 값 전달 | 원본 서비스가 생성 요청의 `attributes`로 보낸다. approval 은 leave·attendance 를 호출하지 않는다 (순환 의존 방지) |
 | 조직 데이터 | user-service `department.dept_type`(COMPANY/DIVISION/TEAM), `head_emp_id`(부서장). approval 은 상신 시점에 `GET /api/v1/employees/{id}/org-chain` 동기 조회 |
 | 조직 데이터 채우기 | 이미 있던 부서는 user-service `V4` 마이그레이션이 한 번 채운다 (유형 = 트리 깊이, 부서장 = 유형에 맞는 직책의 재직자가 한 명일 때만, 이미 값이 있으면 그대로). **V4 이후에 들어오는 부서(이관 등)는 넣는 쪽이 두 값을 채워야 한다.** 비어 있으면 결재선 자동 결정이 `409 APPROVAL_022` |
+| 조직 데이터 관리 | 관리자 API (user-service, `ROLE_ADMIN`): `GET /api/v1/admin/departments`(부서 목록), `PUT`·`DELETE /api/v1/admin/departments/{deptId}/head`(부서장 지정 `{ "empId": 105 }`·해제), `PUT /api/v1/admin/departments/{deptId}/type`(`{ "deptType": "TEAM" }`). 부서장은 재직 중이고 그 부서나 하위 부서 소속(겸직)만, 유형은 최상위만 `COMPANY`이고 하위 부서가 상위보다 높은 단계일 수 없음(같은 단계는 허용). 오류 `404 DEPT_001`(부서 없음), `409 DEPT_002`(재직 아님), `400 DEPT_003`(소속 아님), `409 DEPT_004`(유형 계층). 바꾼 값은 그 뒤 상신·재기안하는 문서부터 적용 |
 | 예외 | 팀장 기안 → 한 단계 위, 대표이사 기안 → 자가결재(즉시 승인), 공석·휴직 부서장 → 위 단계, 겸직 → 한 번만 |
 | 결재선 지정 | **받지 않는다** (2026-11-03 변경). 상신·재기안 모두 규정으로 만들고, 요청의 `approvalLines`는 무시. 참조·열람·추가 결재자는 상신 후 결재선 API |
 | 규정 강제 | 규정으로 정한 결재자는 `required`. 기안자가 빼거나(`409 APPROVAL_024`) 서로 순서를 바꾸거나(`024`) 전결로 건너뛸 수 없다(`409 APPROVAL_025`). 추가한 결재자는 자유 |

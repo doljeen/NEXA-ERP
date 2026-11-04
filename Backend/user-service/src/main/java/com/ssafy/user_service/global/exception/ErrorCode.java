@@ -30,6 +30,12 @@ public enum ErrorCode {
     JOB_CODE_NOT_FOUND(HttpStatus.BAD_REQUEST, "EMP_007", "존재하지 않거나 종류가 맞지 않는 직군/직종/직무 코드입니다."),
     EMPLOYEE_ALREADY_TERMINATED(HttpStatus.CONFLICT, "EMP_008", "이미 퇴직 처리된 사원입니다."),
 
+    // 부서 관리
+    DEPT_NOT_FOUND(HttpStatus.NOT_FOUND, "DEPT_001", "존재하지 않는 부서입니다."),
+    DEPT_HEAD_NOT_EMPLOYED(HttpStatus.CONFLICT, "DEPT_002", "재직 중인 사원만 부서장으로 지정할 수 있습니다."),
+    DEPT_HEAD_NOT_MEMBER(HttpStatus.BAD_REQUEST, "DEPT_003", "부서장은 그 부서나 하위 부서 소속이어야 합니다."),
+    DEPT_TYPE_HIERARCHY(HttpStatus.CONFLICT, "DEPT_004", "부서 유형이 상위·하위 부서와 맞지 않습니다."),
+
     // 공통
     INVALID_INPUT(HttpStatus.BAD_REQUEST, "COMMON_001", "요청 값이 올바르지 않습니다."),
     DATA_INTEGRITY_VIOLATION(HttpStatus.CONFLICT, "COMMON_002", "데이터 제약 조건에 위배됩니다."),
