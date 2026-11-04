@@ -26,6 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest(properties = {
         "leave.test.database-owner=SecurityIntegrationTest",
+        "leave.hr.enabled=true", "leave.hr.jwt-claims.duty-id=dutyId",
         "spring.cloud.config.enabled=false",
         "eureka.client.enabled=false",
         "eureka.client.service-url.defaultZone=http://localhost:8761/eureka/",
@@ -42,6 +43,23 @@ class SecurityIntegrationTest {
 
     @MockitoBean
     LeaveAccountRepository accountRepository;
+
+    @MockitoBean
+    com.ssafy.leaveservice.client.hr.HrClient hrClient;
+
+    @org.junit.jupiter.api.BeforeEach
+    void hrAuthorization() {
+        org.mockito.Mockito.when(hrClient.isAvailable()).thenReturn(true);
+        org.mockito.Mockito.when(hrClient.findEmployee(org.mockito.ArgumentMatchers.any())).thenAnswer(call -> {
+            Long id = call.getArgument(0);
+            return new com.ssafy.leaveservice.client.hr.HrClient.EmployeeInfo(id,1L,id,null,null,
+                    com.ssafy.leaveservice.client.hr.HrClient.EmploymentStatus.EMPLOYED);
+        });
+        org.mockito.Mockito.when(hrClient.findDuty(org.mockito.ArgumentMatchers.any())).thenAnswer(call -> {
+            Long id = call.getArgument(0);
+            return new com.ssafy.leaveservice.client.hr.HrClient.DutyInfo(id,id == 1L ? "휴가관리자" : "팀원");
+        });
+    }
 
     @Test
     void 토큰이_없으면_401_AUTH_001() throws Exception {
@@ -98,12 +116,12 @@ class SecurityIntegrationTest {
     }
 
     private static RequestPostProcessor user(long empId) {
-        return jwt().jwt(j -> j.subject(String.valueOf(empId)).claim("type", "access").claim("role", "USER"))
+        return jwt().jwt(j -> j.subject(String.valueOf(empId)).claim("type", "access").claim("dutyId", empId).claim("role", "USER"))
                 .authorities(new SimpleGrantedAuthority("ROLE_USER"));
     }
 
     private static RequestPostProcessor admin(long empId) {
-        return jwt().jwt(j -> j.subject(String.valueOf(empId)).claim("type", "access").claim("role", "ADMIN"))
+        return jwt().jwt(j -> j.subject(String.valueOf(empId)).claim("type", "access").claim("dutyId", empId).claim("role", "ADMIN"))
                 .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 }

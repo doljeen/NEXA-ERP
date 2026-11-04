@@ -6,7 +6,7 @@ import com.ssafy.leaveservice.domain.account.repository.projection.DepartmentAcc
 import com.ssafy.leaveservice.domain.account.service.LeaveBalanceAmounts;
 import com.ssafy.leaveservice.domain.department.dto.DepartmentLeaveBalancesResponse;
 import com.ssafy.leaveservice.domain.department.dto.DepartmentLeaveBalancesResponse.EmployeeBalances;
-import com.ssafy.leaveservice.domain.request.dto.AdminLeaveRequestListResponse;
+import com.ssafy.leaveservice.domain.department.dto.DepartmentLeaveScheduleResponse;
 import com.ssafy.leaveservice.domain.request.repository.LeaveRequestRepository;
 import com.ssafy.leaveservice.global.exception.BusinessException;
 import com.ssafy.leaveservice.global.exception.ErrorCode;
@@ -28,13 +28,13 @@ public class DepartmentLeaveQueryService {
     private final LeaveRequestRepository leaveRequestRepository;
     private final LeaveAccountRepository leaveAccountRepository;
 
-    public List<AdminLeaveRequestListResponse> findRequests(List<Long> employeeIds) {
+    public List<DepartmentLeaveScheduleResponse> findRequests(List<Long> employeeIds) {
         // 신뢰된 빈 집합은 전체 조회로 확장하지 않음
         if (employeeIds.isEmpty()) {
             return List.of();
         }
         return leaveRequestRepository.findAllWithLeaveTypeByEmployeeIdIn(employeeIds).stream()
-                .map(AdminLeaveRequestListResponse::from)
+                .map(DepartmentLeaveScheduleResponse::from)
                 .toList();
     }
 

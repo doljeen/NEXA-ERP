@@ -12,6 +12,14 @@ public interface HrClient {
 
     DutyInfo findDuty(Long dutyId);
 
+    default OrganizationChain findOrganizationChain(Long employeeId) {
+        throw new com.ssafy.leaveservice.global.exception.BusinessException(
+                com.ssafy.leaveservice.global.exception.ErrorCode.HR_VERIFICATION_UNAVAILABLE);
+    }
+
+    record OrganizationChain(Long employeeId, Long deptId, List<OrganizationUnit> chain) {}
+    record OrganizationUnit(Long deptId, String deptName, String deptType, Long headEmpId) {}
+
     record EmployeeInfo(Long employeeId, Long departmentId, Long dutyId, Long positionId,
                         Long gradeId, EmploymentStatus status) {}
     enum EmploymentStatus { EMPLOYED, ON_LEAVE, TERMINATED }

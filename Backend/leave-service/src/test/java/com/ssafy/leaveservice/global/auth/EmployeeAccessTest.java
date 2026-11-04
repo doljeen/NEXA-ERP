@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.*;
 
 class EmployeeAccessTest {
-    private final EmployeeAccess access = new TokenEmployeeAccess();
+    private final EmployeeAccess access = new TokenEmployeeAccess(org.mockito.Mockito.mock(com.ssafy.leaveservice.global.auth.LeaveAdministratorAccess.class));
 
     @AfterEach
     void clearToken() {
@@ -22,9 +22,9 @@ class EmployeeAccessTest {
     }
 
     @Test
-    void adminRoleIsAdminOnlyForTokenEmployee() {
+    void adminRoleAloneDoesNotGrantLeaveAdministratorAccess() {
         TestTokens.authenticate(1L, "ADMIN");
-        assertThat(access.isAdmin(1L)).isTrue();
+        assertThat(access.isAdmin(1L)).isFalse();
         assertThat(access.isAdmin(2L)).isFalse();
         assertThat(access.isAdmin(null)).isFalse();
     }

@@ -60,6 +60,11 @@ public final class UserServiceHrClient implements HrClient {
         return get(properties.dutyInfoUri(), dutyId, DUTY);
     }
 
+    @Override
+    public OrganizationChain findOrganizationChain(Long employeeId) {
+        return get("/api/v1/employees/{employeeId}/org-chain", employeeId, new ParameterizedTypeReference<Envelope<OrganizationChain>>() {});
+    }
+
     private <T> T get(String uri, Long id, ParameterizedTypeReference<Envelope<T>> type) {
         if (!isAvailable() || id == null || id <= 0) {
             throw unavailable();

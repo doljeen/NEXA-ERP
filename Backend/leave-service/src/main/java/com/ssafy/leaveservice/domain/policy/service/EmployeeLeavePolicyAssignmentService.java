@@ -21,6 +21,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 
+@com.ssafy.leaveservice.global.auth.LeaveAdministratorOnly
 @Service
 @RequiredArgsConstructor
 public class EmployeeLeavePolicyAssignmentService {

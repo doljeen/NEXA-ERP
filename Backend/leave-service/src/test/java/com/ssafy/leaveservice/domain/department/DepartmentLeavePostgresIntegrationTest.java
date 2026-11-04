@@ -85,9 +85,11 @@ class DepartmentLeavePostgresIntegrationTest {
             assertThat(SqlCapture.statements.get()).isEmpty();
             return new EmployeeInfo(10L,3L,7L,99L, null, EmploymentStatus.EMPLOYED);
         });
+        when(hrClient.findOrganizationChain(10L)).thenReturn(new OrganizationChain(10L,3L,
+                List.of(new OrganizationUnit(3L,"개발팀","TEAM",10L))));
         when(hrClient.findDuty(7L)).thenAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-            return new DutyInfo(7L,"휴가 관리자");
+            return new DutyInfo(7L,"팀장");
         });
         when(hrClient.findDepartmentMembers(3L)).thenAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
@@ -130,13 +132,11 @@ class DepartmentLeavePostgresIntegrationTest {
         mvc.perform(get(url("requests")).with(user("USER")))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.data.length()").value(3))
-                .andExpect(jsonPath("$.data[0].requestId").value(4))
-                .andExpect(jsonPath("$.data[1].requestId").value(2))
-                .andExpect(jsonPath("$.data[2].requestId").value(1))
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].requestId").value(1))
                 .andExpect(jsonPath("$.data[0].employeeId").value(10));
         verify(hrClient).findEmployee(10L);
-        verify(hrClient).findDuty(7L);
+        verify(hrClient,never()).findDuty(any());
         verify(hrClient).findDepartmentMembers(3L);
         assertSingleRead();
         assertThat(SqlCapture.statements.get().getFirst()).contains("emp_id in");
@@ -165,10 +165,10 @@ class DepartmentLeavePostgresIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings={"팀장","부장","사원","일반 관리자"," 휴가 관리자","휴가 관리자 "})
+    @ValueSource(strings={"팀원","부장","사원","일반 관리자"," 휴가 관리자","휴가 관리자 "})
     void highPositionAndSystemAdminCannotReplaceExactDuty(String dutyName) throws Exception {
         when(hrClient.findDuty(7L)).thenReturn(new DutyInfo(7L,dutyName));
-        mvc.perform(get(url("requests")).with(user("ADMIN")))
+        mvc.perform(get(url("balances")).with(user("ADMIN")))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.error.code").value("AUTH_009"));
         verify(hrClient,never()).findDepartmentMembers(any());
         assertThat(SqlCapture.statements.get()).isEmpty();
@@ -224,7 +224,7 @@ class DepartmentLeavePostgresIntegrationTest {
             case "WRONG_EMPLOYEE" -> when(hrClient.findEmployee(10L)).thenReturn(new EmployeeInfo(99L,3L,7L,99L, null, EmploymentStatus.EMPLOYED));
             case "NULL_DEPT" -> when(hrClient.findEmployee(10L)).thenReturn(new EmployeeInfo(10L,null,7L,99L, null, EmploymentStatus.EMPLOYED));
             case "NULL_DUTY" -> when(hrClient.findEmployee(10L)).thenReturn(new EmployeeInfo(10L,3L,null,99L, null, EmploymentStatus.EMPLOYED));
-            case "WRONG_DUTY_RESPONSE" -> when(hrClient.findDuty(7L)).thenReturn(new DutyInfo(9L,"휴가 관리자"));
+            case "WRONG_DUTY_RESPONSE" -> when(hrClient.findDuty(7L)).thenReturn(new DutyInfo(9L,"팀장"));
             default -> when(hrClient.findDuty(7L)).thenReturn(new DutyInfo(7L," "));
         }
         unavailable("balances");
@@ -262,7 +262,9 @@ class DepartmentLeavePostgresIntegrationTest {
                                 .claim("test_position",99L).claims(claims -> claims.remove(key))))
                         .param("deptId","3").param("dutyId","7"))
                 .andExpect(status().isUnauthorized());
-        verify(hrClient,never()).findEmployee(any());
+        if (!key.equals("test_duty")) {
+            verify(hrClient,never()).findEmployee(any());
+        }
         assertThat(SqlCapture.statements.get()).isEmpty();
     }
 
@@ -337,7 +339,7 @@ class DepartmentLeavePostgresIntegrationTest {
             jdbcTemplate.update("update leave_request set status=? where leave_req_id=1",state);
         }
         mvc.perform(get(url("requests")).with(user("USER"))).andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[2].status").value(state));
+                .andExpect(jsonPath("$.data.length()").value(state.equals("APPROVED") ? 1 : 0));
         assertSingleRead();
     }
 

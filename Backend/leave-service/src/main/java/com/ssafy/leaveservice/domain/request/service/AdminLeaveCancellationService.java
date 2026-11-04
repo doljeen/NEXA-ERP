@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Objects;
 
 @Slf4j
+@com.ssafy.leaveservice.global.auth.LeaveAdministratorOnly
 @Service
 @RequiredArgsConstructor
 public class AdminLeaveCancellationService {

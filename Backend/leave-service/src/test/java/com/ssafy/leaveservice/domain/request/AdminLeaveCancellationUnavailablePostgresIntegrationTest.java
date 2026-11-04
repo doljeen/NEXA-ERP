@@ -22,6 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(properties = {"leave.test.database-owner=AdminLeaveCancellationUnavailablePostgresIntegrationTest",
+        "leave.hr.enabled=true","leave.hr.jwt-claims.duty-id=dutyId",
         "spring.cloud.config.enabled=false", "eureka.client.enabled=false",
         "eureka.client.service-url.defaultZone=http://localhost:8761/eureka/", "spring.jpa.open-in-view=false"})
 @Import(PostgresTestConfiguration.class)
@@ -33,12 +34,21 @@ class AdminLeaveCancellationUnavailablePostgresIntegrationTest {
     @Autowired ApprovalWithdrawalClient client;
     @Autowired ApprovalWithdrawalProperties properties;
 
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.ssafy.leaveservice.client.hr.HrClient hrClient;
+
     @Test
     void productionDefaultBlocksBeforeRequestLookupOrAnyInsert() throws Exception {
+        org.mockito.Mockito.when(hrClient.isAvailable()).thenReturn(true);
+        org.mockito.Mockito.when(hrClient.findEmployee(10L)).thenReturn(
+                new com.ssafy.leaveservice.client.hr.HrClient.EmployeeInfo(10L,1L,10L,null,null,
+                        com.ssafy.leaveservice.client.hr.HrClient.EmploymentStatus.EMPLOYED));
+        org.mockito.Mockito.when(hrClient.findDuty(10L)).thenReturn(
+                new com.ssafy.leaveservice.client.hr.HrClient.DutyInfo(10L,"휴가관리자"));
         assertThat(properties.enabled()).isFalse();
         assertThat(client).isInstanceOf(UnavailableApprovalWithdrawalClient.class);
         mvc.perform(post("/api/v1/leaves/admin/requests/999/cancel")
-                        .with(jwt().jwt(j -> j.subject("10").claim("role", "ADMIN").claim("type", "access"))
+                        .with(jwt().jwt(j -> j.subject("10").claim("role", "ADMIN").claim("type", "access").claim("dutyId",10L))
                                 .authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                         .contentType("application/json").content("{\"reason\":\"관리자 취소\"}"))
                 .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.error.code").value("LEAVE_020"));

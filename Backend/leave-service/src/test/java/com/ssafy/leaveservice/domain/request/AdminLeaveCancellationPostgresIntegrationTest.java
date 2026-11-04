@@ -60,6 +60,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(properties = {"leave.test.database-owner=AdminLeaveCancellationPostgresIntegrationTest",
+        "leave.hr.enabled=true","leave.hr.jwt-claims.duty-id=dutyId",
         "leave.approval.withdrawal.enabled=true", "spring.cloud.config.enabled=false", "eureka.client.enabled=false",
         "eureka.client.service-url.defaultZone=http://localhost:8761/eureka/", "spring.jpa.open-in-view=false",
         "spring.jpa.hibernate.ddl-auto=validate"})
@@ -79,8 +80,21 @@ class AdminLeaveCancellationPostgresIntegrationTest {
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired FakeApprovalWithdrawalClientConfiguration.FakeApprovalWithdrawalClient client;
 
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.ssafy.leaveservice.client.hr.HrClient hrClient;
+
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.when(hrClient.isAvailable()).thenReturn(true);
+        org.mockito.Mockito.when(hrClient.findEmployee(org.mockito.ArgumentMatchers.any())).thenAnswer(call -> {
+            Long id = call.getArgument(0);
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            return new com.ssafy.leaveservice.client.hr.HrClient.EmployeeInfo(id,1L,id,null,null,
+                    com.ssafy.leaveservice.client.hr.HrClient.EmploymentStatus.EMPLOYED);
+        });
+        org.mockito.Mockito.when(hrClient.findDuty(org.mockito.ArgumentMatchers.any())).thenAnswer(call ->
+                new com.ssafy.leaveservice.client.hr.HrClient.DutyInfo(call.getArgument(0),"휴가관리자"));
+
         TestTokens.authenticate(10, "ADMIN");
         client.reset();
         jdbc.update("update leave_policy_group set active_policy_version_id=null");
@@ -245,10 +259,14 @@ class AdminLeaveCancellationPostgresIntegrationTest {
     void roleAdminIsRequiredAndActorCannotComeFromHeaders() throws Exception {
         mvc.perform(post(URL).with(anonymous()).contentType("application/json").content(body(REASON)))
                 .andExpect(status().isUnauthorized());
-        mvc.perform(post(URL).with(jwt().jwt(j -> j.subject("10").claim("role", "USER").claim("type", "access"))
+        org.mockito.Mockito.when(hrClient.findDuty(10L)).thenReturn(
+                new com.ssafy.leaveservice.client.hr.HrClient.DutyInfo(10L,"팀원"));
+        mvc.perform(post(URL).with(jwt().jwt(j -> j.subject("10").claim("role", "USER").claim("type", "access").claim("dutyId",10L))
                         .authorities(new SimpleGrantedAuthority("ROLE_USER")))
                         .contentType("application/json").content(body(REASON)))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.error.code").value("AUTH_009"));
+        org.mockito.Mockito.when(hrClient.findDuty(10L)).thenReturn(
+                new com.ssafy.leaveservice.client.hr.HrClient.DutyInfo(10L,"휴가관리자"));
         mvc.perform(post(URL).with(admin(10)).header("X-Employee-Id", "999").contentType("application/json").content(body(REASON)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.cancelledBy").value(10));
     }
@@ -548,7 +566,7 @@ class AdminLeaveCancellationPostgresIntegrationTest {
     @Test
     void orchestrationRejectsOuterTransaction() {
         assertThatThrownBy(() -> new TransactionTemplate(transactionManager).execute(status -> cancel()))
-                .isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);
+                .isInstanceOf(com.ssafy.leaveservice.global.exception.BusinessException.class);
         assertThat(client.calls).hasValue(0);
     }
 
@@ -642,7 +660,7 @@ class AdminLeaveCancellationPostgresIntegrationTest {
     }
 
     private static RequestPostProcessor admin(long id) {
-        return jwt().jwt(j -> j.subject(String.valueOf(id)).claim("role", "ADMIN").claim("type", "access"))
+        return jwt().jwt(j -> j.subject(String.valueOf(id)).claim("role", "ADMIN").claim("type", "access").claim("dutyId",id))
                 .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 

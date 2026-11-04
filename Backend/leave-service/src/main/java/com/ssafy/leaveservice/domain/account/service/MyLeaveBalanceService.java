@@ -37,6 +37,7 @@ public class MyLeaveBalanceService {
     }
 
     @Transactional(readOnly = true)
+    @com.ssafy.leaveservice.global.auth.LeaveAdministratorOnly
     public List<MyLeaveBalanceResponse> getEmployeeBalances(Long employeeId) {
         // 관리자 권한 확인
         Long adminEmployeeId = employeeAccess.currentEmployeeId();

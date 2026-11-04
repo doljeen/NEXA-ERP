@@ -19,7 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class MyLeaveGrantAuthenticationTest {
 
-    private final EmployeeAccess tokenAccess = new TokenEmployeeAccess();
+    private final EmployeeAccess tokenAccess = new TokenEmployeeAccess(org.mockito.Mockito.mock(com.ssafy.leaveservice.global.auth.LeaveAdministratorAccess.class));
 
     @AfterEach
     void clearToken() {

@@ -27,7 +27,7 @@ public class LeaveHrConfiguration {
             ObjectProvider<BearerTokenRelayInterceptor> bearerTokenRelay
     ) {
         if (!properties.enabled() || properties.baseUrl() == null || properties.baseUrl().isBlank()
-                || !properties.hasConfiguredEndpoints() || !properties.hasConfiguredClaims()) {
+                || properties.employeeInfoUri() == null || properties.employeeInfoUri().isBlank()) {
             return new UnavailableHrClient();
         }
 
@@ -37,7 +37,8 @@ public class LeaveHrConfiguration {
                 || baseUri.getRawUserInfo() != null || baseUri.getRawQuery() != null || baseUri.getRawFragment() != null) {
             throw new IllegalArgumentException("HR requires a valid internal User Service URL");
         }
-        for (String endpoint : List.of(properties.employeeInfoUri(), properties.departmentMembersUri(), properties.dutyInfoUri())) {
+        for (String endpoint : new String[] { properties.employeeInfoUri(), properties.departmentMembersUri(), properties.dutyInfoUri() }) {
+            if (endpoint == null || endpoint.isBlank()) { continue; }
             if (!endpoint.startsWith("/") || endpoint.startsWith("//") || endpoint.contains("://")) {
                 throw new IllegalArgumentException("HR endpoints must be relative API paths");
             }

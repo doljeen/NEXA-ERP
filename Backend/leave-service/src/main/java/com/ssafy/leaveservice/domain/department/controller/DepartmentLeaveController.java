@@ -2,7 +2,7 @@ package com.ssafy.leaveservice.domain.department.controller;
 
 import com.ssafy.leaveservice.domain.department.dto.DepartmentLeaveBalancesResponse;
 import com.ssafy.leaveservice.domain.department.service.DepartmentLeaveService;
-import com.ssafy.leaveservice.domain.request.dto.AdminLeaveRequestListResponse;
+import com.ssafy.leaveservice.domain.department.dto.DepartmentLeaveScheduleResponse;
 import com.ssafy.leaveservice.global.dto.ApiResult;
 import com.ssafy.leaveservice.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +19,7 @@ public class DepartmentLeaveController {
 
     // 부서 소속 직원의 휴가 신청 목록 조회
     @GetMapping("/requests")
-    public ResponseEntity<ApiResult<List<AdminLeaveRequestListResponse>>> getRequests(@PathVariable Long departmentId) {
+    public ResponseEntity<ApiResult<List<DepartmentLeaveScheduleResponse>>> getRequests(@PathVariable Long departmentId) {
         return ResponseEntity.ok(ApiResult.success(departmentLeaveService.getRequests(departmentId)));
     }
 

@@ -22,7 +22,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class AdminLeaveRequestAuthenticationTest {
 
-    private final EmployeeAccess tokenAccess = new TokenEmployeeAccess();
+    private final com.ssafy.leaveservice.global.auth.LeaveAdministratorAccess administratorAccess =
+            mock(com.ssafy.leaveservice.global.auth.LeaveAdministratorAccess.class);
+    private final EmployeeAccess tokenAccess = new TokenEmployeeAccess(administratorAccess);
 
     @AfterEach
     void clearToken() {
@@ -45,7 +47,8 @@ class AdminLeaveRequestAuthenticationTest {
     @ParameterizedTest
     @ValueSource(strings = {"", "/50"})
     void adminTokenIsNotRestrictedToOwnRequests(String endpoint) throws Exception {
-        TestTokens.authenticate(1L, "ADMIN");
+        TestTokens.authenticate(1L, "USER");
+        when(administratorAccess.isAdministrator(1L)).thenReturn(true);
         LeaveRequestRepository repository = mock(LeaveRequestRepository.class);
         LeaveRequest request = mock(LeaveRequest.class, RETURNS_DEEP_STUBS);
         when(request.getRequestId()).thenReturn(50L);

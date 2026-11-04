@@ -6,8 +6,10 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.stereotype.Component;
 
 /** 요청한 사원. nexa-security 가 검증한 access 토큰의 sub(사원 ID)와 role 에서 꺼낸다 */
+@lombok.RequiredArgsConstructor
 @Component
 public class TokenEmployeeAccess implements EmployeeAccess {
+    private final LeaveAdministratorAccess administratorAccess;
 
     @Override
     public Long currentEmployeeId() {
@@ -18,7 +20,7 @@ public class TokenEmployeeAccess implements EmployeeAccess {
     @Override
     public boolean isAdmin(Long employeeId) {
         AuthUser user = currentUser();
-        return user != null && user.isAdmin() && user.employeeId().equals(employeeId);
+        return user != null && user.employeeId().equals(employeeId) && administratorAccess.isAdministrator(employeeId);
     }
 
     private static AuthUser currentUser() {

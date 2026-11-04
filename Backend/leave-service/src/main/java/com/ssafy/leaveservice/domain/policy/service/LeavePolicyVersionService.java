@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
+@com.ssafy.leaveservice.global.auth.LeaveAdministratorOnly
 @Service
 @RequiredArgsConstructor
 public class LeavePolicyVersionService {
