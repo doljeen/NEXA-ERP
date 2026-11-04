@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     kafka_bootstrap_servers: str = ""
     kafka_group_id: str = "ai-service"
 
+    # MLflow 추적 서버 (GPU 서버, Tailscale 경유). MLOps 스크립트에서만 사용
+    mlflow_tracking_uri: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

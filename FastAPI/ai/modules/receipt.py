@@ -9,7 +9,7 @@ from ai.dspy_lm import get_gms_lm
 class Receipt(BaseModel):
     """영수증에서 추출할 항목."""
     store: str = Field(description="상호명 (지점명 포함)")
-    total: int = Field(description="합계 금액, 원 단위 숫자만")
+    total: int = Field(description="실제로 결제된 최종 금액 (할인·포인트 차감 후), 원 단위 숫자만")
     date: str = Field(description="거래 날짜, YYYY-MM-DD 형식")
 
 
