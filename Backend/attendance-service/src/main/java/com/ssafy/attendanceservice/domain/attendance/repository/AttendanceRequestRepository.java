@@ -33,6 +33,14 @@ public interface AttendanceRequestRepository extends JpaRepository<AttendanceReq
     List<AttendanceRequest> findByEmpIdAndTargetDateAndReqTypeAndStatus(
             Long empId, LocalDate targetDate, AttendanceRequestType reqType, AttendanceRequestStatus status);
 
+    // 대상일이 기간 안인 특정 종류·상태 신청 (휴가 못 쓰는 날: 승인된 휴일대체로 근무한 휴일)
+    List<AttendanceRequest> findByEmpIdAndReqTypeAndStatusAndTargetDateBetween(
+            Long empId, AttendanceRequestType reqType, AttendanceRequestStatus status, LocalDate from, LocalDate to);
+
+    // 대체일이 기간 안인 특정 종류·상태 신청 (휴가 못 쓰는 날: 승인된 휴일대체의 대체휴일)
+    List<AttendanceRequest> findByEmpIdAndReqTypeAndStatusAndSubstDateBetween(
+            Long empId, AttendanceRequestType reqType, AttendanceRequestStatus status, LocalDate from, LocalDate to);
+
     // 상신 일시 기간 내 내 신청 (최신순, 전체 유형)
     List<AttendanceRequest> findByEmpIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
             Long empId, OffsetDateTime from, OffsetDateTime to);

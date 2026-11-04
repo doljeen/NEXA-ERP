@@ -70,6 +70,12 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
             throw new BusinessException(ErrorCode.DUPLICATE_PENDING_REQUEST);
         }
 
+        // 종일 휴가 날은 근무시간 수정·초과근무 신청 불가 (휴일대체는 대체일에서 따로 확인)
+        if (request.reqType() != AttendanceRequestType.HOLIDAY_SUBST
+                && processor.isFullDayLeave(empId, request.targetDate())) {
+            throw new BusinessException(ErrorCode.LEAVE_DAY_REQUEST);
+        }
+
         return switch (request.reqType()) {
             case TIME_FIX -> previewTimeFix(empId, request);
             case OVERTIME -> previewOvertime(empId, request);
@@ -273,7 +279,12 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "대체일(substDate)은 근무일이어야 합니다.");
         }
 
-        // 3. 같은 휴일이나 같은 대체일로 진행 중/승인된 휴일대체가 있으면 불가
+        // 3. 대체일에 이미 휴가(반차 포함)가 있으면 불가
+        if (!processor.leavePortions(empId, substDate).isEmpty()) {
+            throw new BusinessException(ErrorCode.LEAVE_DAY_REQUEST, "대체일(substDate)에 이미 휴가가 있습니다.");
+        }
+
+        // 4. 같은 휴일이나 같은 대체일로 진행 중/승인된 휴일대체가 있으면 불가
         if (attendanceRequestRepository.existsByEmpIdAndReqTypeAndTargetDateAndStatusIn(
                 empId, AttendanceRequestType.HOLIDAY_SUBST, targetDate, ACTIVE_STATUSES)
                 || attendanceRequestRepository.existsByEmpIdAndReqTypeAndSubstDateAndStatusIn(
@@ -428,7 +439,8 @@ public class AttendanceRequestServiceImpl implements AttendanceRequestService {
 
     /** 신청 항목 검증 후 시뮬레이션 로그로 변환 (추가/수정용) */
     private SimulatedLog toSimulated(AttendanceRequestPreviewRequest.Item item, LocalDate workDate) {
-        if (item.statusCode() == null || WorkStatusCode.CLOCK_OUT_CANCEL.equals(item.statusCode())) {
+        if (item.statusCode() == null || WorkStatusCode.CLOCK_OUT_CANCEL.equals(item.statusCode())
+                || WorkStatusCode.LEAVE.equals(item.statusCode())) {  // 휴가는 휴가 결재로만
             throw new BusinessException(ErrorCode.INVALID_INPUT, "등록할 수 없는 근무 상태입니다.");
         }
         WorkStatusCode statusCode = workStatusCodeRepository.findById(item.statusCode())
