@@ -1,25 +1,37 @@
 package com.ssafy.attendanceservice.domain.attendance.event;
 
+import com.ssafy.attendanceservice.domain.attendance.client.LeaveClient;
+import com.ssafy.attendanceservice.domain.attendance.client.LeaveRequestDates;
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AttendanceRequestStatus;
+import com.ssafy.attendanceservice.domain.attendance.entity.enums.LeavePortion;
 import com.ssafy.attendanceservice.domain.attendance.service.AttendanceRequestService;
+import com.ssafy.attendanceservice.domain.attendance.service.LeaveService;
 import com.ssafy.attendanceservice.global.exception.BusinessException;
 import com.ssafy.attendanceservice.global.exception.ErrorCode;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.LocalDate;
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
-/** 결재 결과 이벤트 → 근태 신청 반영 호출 (Kafka·스프링 없이) */
+/** 결재 결과 이벤트 → 근태 신청·휴가 반영 호출 (Kafka·스프링 없이) */
 class ApprovalResultListenerTest {
 
     private final AttendanceRequestService service = mock(AttendanceRequestService.class);
-    private final ApprovalResultListener listener = new ApprovalResultListener(JsonMapper.builder().build(), service);
+    private final LeaveClient leaveClient = mock(LeaveClient.class);
+    private final LeaveService leaveService = mock(LeaveService.class);
+    private final ApprovalResultListener listener =
+            new ApprovalResultListener(JsonMapper.builder().build(), service, leaveClient, leaveService);
 
     private static String event(String sourceType, long sourceId, String status) {
         return """
@@ -51,10 +63,46 @@ class ApprovalResultListenerTest {
     }
 
     @Test
-    void 휴가_문서는_무시() {
+    void 휴가_문서_승인은_휴가_서비스에서_날짜를_받아_저장() {
+        LeaveRequestDates dates = new LeaveRequestDates(42L, 7L, "연차", true,
+                List.of(new LeaveRequestDates.LeaveDate(LocalDate.of(2026, 11, 9), LeavePortion.FULL)));
+        given(leaveClient.getRequestDates(42L)).willReturn(dates);
+
         listener.onApprovalResult(event("LEAVE", 42, "APPROVED"));
 
+        verify(leaveService).applyApprovedLeave(dates.toApprovedLeave());
         verify(service, never()).applyApprovalResult(anyLong(), any());
+    }
+
+    @Test
+    void 휴가_문서_회수는_저장한_휴가를_지움() {
+        listener.onApprovalResult(event("LEAVE", 42, "CANCEL"));
+
+        verify(leaveService).cancelLeave(42L);
+        verifyNoInteractions(leaveClient);
+    }
+
+    @Test
+    void 휴가_문서_반려는_할_일_없음() {
+        listener.onApprovalResult(event("LEAVE", 42, "REJECTED"));
+
+        verifyNoInteractions(leaveClient, leaveService, service);
+    }
+
+    @Test
+    void 휴가_서비스_호출이_실패하면_예외를_그대로_던져_재시도되게() {
+        given(leaveClient.getRequestDates(42L)).willThrow(new BusinessException(ErrorCode.LEAVE_CALL_FAILED));
+
+        assertThatThrownBy(() -> listener.onApprovalResult(event("LEAVE", 42, "APPROVED")))
+                .isInstanceOf(BusinessException.class);
+        verifyNoInteractions(leaveService);
+    }
+
+    @Test
+    void 다른_출처_문서는_무시() {
+        listener.onApprovalResult(event("AUTOMATION", 42, "APPROVED"));
+
+        verifyNoInteractions(leaveClient, leaveService, service);
     }
 
     @Test
