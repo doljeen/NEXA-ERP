@@ -19,6 +19,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -162,7 +163,8 @@ public class DeptHeadChecker {
             }
             // 재직상태를 알아볼 수 없으면(Y/N, 0/1 …) 퇴사일만 본다
             String status = value(r, f2c.get("status"));
-            boolean notEmployed = status != null && statusCodes.containsKey(status) && !statusCodes.get(status).equals("EMPLOYED");
+            String statusCode = status == null ? null : statusCodes.getOrDefault(status, status.toUpperCase(Locale.ROOT));
+            boolean notEmployed = statusCode != null && statusCodes.containsValue(statusCode) && !statusCode.equals("EMPLOYED");
             boolean resigned = FieldValueChecker.parseDate(value(r, f2c.get("resignDate"))).map(d -> !d.isAfter(today)).orElse(false);
             Member m = new Member(value(r, f2c.get("name")), value(r, f2c.get("dept")), !notEmployed && !resigned, false);
             out.merge(emp, m, (a, b) -> new Member(a.name(), a.dept(), a.employed(), true));

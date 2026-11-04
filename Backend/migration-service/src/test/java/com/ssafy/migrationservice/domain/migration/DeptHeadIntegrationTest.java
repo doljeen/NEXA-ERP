@@ -39,7 +39,7 @@ class DeptHeadIntegrationTest extends AbstractIntegrationTest {
             E001,대표,테스트(주),재직,
             E002,본부장,개발1팀,재직,
             E003,김영업,영업팀,재직,
-            E004,퇴사자,영업팀,퇴직,2026-01-31
+            E004,퇴사자,영업팀,TERMINATED,
             """;
 
     @Autowired
