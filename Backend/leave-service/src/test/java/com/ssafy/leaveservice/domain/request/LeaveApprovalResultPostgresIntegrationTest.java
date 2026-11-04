@@ -903,6 +903,70 @@ class LeaveApprovalResultPostgresIntegrationTest {
         assertThat(rows()).isEqualTo(after);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"SUBMITTING", "SUBMITTED", "APPROVED", "REJECTED", "WITHDRAWN", "CANCELLED"})
+    void internalDatesUseStoredRowsRegardlessOfRequestState(String state) throws Exception {
+        LeaveSubmissionResult initial = submissionService.submit("dates", input(1, null,
+                date(day.plusDays(2), LeaveRequestPortion.PM_HALF),
+                date(day, LeaveRequestPortion.FULL),
+                date(day.plusDays(1), LeaveRequestPortion.AM_HALF)));
+        submissionService.submit("other", input(1, null, date(day.plusDays(3), LeaveRequestPortion.FULL)));
+        if (!state.equals("SUBMITTING")) {
+            approvalResultService.startCall(initial.requestId(), initial.approvalRequestId());
+            approvalResultService.linkCreatedDocument(initial.requestId(), initial.approvalRequestId(), 501L);
+            jdbcTemplate.update("update leave_request set status=? where leave_req_id=?", state, initial.requestId());
+        }
+        Map<String, List<Map<String, Object>>> before = rows();
+
+        // 내부 응답 계약은 실제 MVC와 DB로 확인하고 운영 보안 필터는 별도 테스트에서 검증한다.
+        MockMvcBuilders.webAppContextSetup(context).build().perform(
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                        "/api/v1/leaves/internal/requests/{requestId}/dates", initial.requestId()
+                )
+        ).andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.requestId").value(initial.requestId()))
+                .andExpect(jsonPath("$.data.leaveTypeName").value("연차"))
+                .andExpect(jsonPath("$.data.isPaid").value(true))
+                .andExpect(jsonPath("$.data.dates.length()").value(3))
+                .andExpect(jsonPath("$.data.dates[0].leaveDate").value(day.toString()))
+                .andExpect(jsonPath("$.data.dates[0].portion").value("FULL"))
+                .andExpect(jsonPath("$.data.dates[1].portion").value("AM_HALF"))
+                .andExpect(jsonPath("$.data.dates[2].portion").value("PM_HALF"));
+        assertThat(rows()).isEqualTo(before);
+    }
+
+    @Test
+    void internalDatesReturnCurrentNameAndActualPayStatus() throws Exception {
+        jdbcTemplate.update("update leave_type set is_paid=false where leave_type_id=2");
+        LeaveSubmissionResult unpaid = submissionService.submit(
+                "unpaid", input(2, null, date(day, LeaveRequestPortion.FULL))
+        );
+        submissionService.submit("paid", input(1, null, date(day.plusDays(1), LeaveRequestPortion.FULL)));
+        jdbcTemplate.update("update leave_type set name='무급 특별휴가' where leave_type_id=2");
+
+        MockMvcBuilders.webAppContextSetup(context).build().perform(
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                        "/api/v1/leaves/internal/requests/{requestId}/dates", unpaid.requestId()
+                )
+        ).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.leaveTypeName").value("무급 특별휴가"))
+                .andExpect(jsonPath("$.data.isPaid").value(false))
+                .andExpect(jsonPath("$.data.dates.length()").value(1));
+    }
+
+    @Test
+    void internalDatesDistinguishMissingRequestAndMissingStoredDates() {
+        LeaveSubmissionResult initial = pending();
+        LeaveRequestDatesService datesService = context.getBean(LeaveRequestDatesService.class);
+        assertBusiness(() -> datesService.getDates(Long.MAX_VALUE), ErrorCode.NOT_FOUND);
+        assertBusiness(() -> datesService.getDates(0L), ErrorCode.INVALID_INPUT);
+        jdbcTemplate.update("delete from leave_ledger where leave_req_id=?", initial.requestId());
+        jdbcTemplate.update("delete from leave_request_allocation where leave_req_id=?", initial.requestId());
+        jdbcTemplate.update("delete from leave_request_date where leave_req_id=?", initial.requestId());
+        assertBusiness(() -> datesService.getDates(initial.requestId()), ErrorCode.DATA_INTEGRITY_VIOLATION);
+    }
+
     private LeaveSubmissionResult pending() {
         return submissionService.submit("key",input(1,null,date(day,LeaveRequestPortion.FULL)));
     }

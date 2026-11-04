@@ -86,6 +86,17 @@ class SecurityIntegrationTest {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    void internalDatesRejectUnauthenticatedAndAllCurrentUserRoles() throws Exception {
+        String path = "/api/v1/leaves/internal/requests/42/dates";
+        mvc.perform(get(path).header("X-Service-Name", "attendance-service"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get(path).with(user(7)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get(path).with(admin(1)))
+                .andExpect(status().isForbidden());
+    }
+
     private static RequestPostProcessor user(long empId) {
         return jwt().jwt(j -> j.subject(String.valueOf(empId)).claim("type", "access").claim("role", "USER"))
                 .authorities(new SimpleGrantedAuthority("ROLE_USER"));
