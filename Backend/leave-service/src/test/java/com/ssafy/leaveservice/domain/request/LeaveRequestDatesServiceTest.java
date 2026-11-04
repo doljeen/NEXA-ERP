@@ -25,6 +25,7 @@ class LeaveRequestDatesServiceTest {
     @Test
     void returnsSeoulCalendarDateAndStoredHourlyPortion() {
         RequestDateRow row = mock(RequestDateRow.class);
+        when(row.getEmployeeId()).thenReturn(7L);
         when(row.getLeaveDate()).thenReturn(OffsetDateTime.parse("2026-11-08T15:00:00Z"));
         when(row.getPortion()).thenReturn(LeaveRequestPortion.HOURLY);
         when(row.getLeaveTypeName()).thenReturn("무급휴가");
@@ -33,6 +34,7 @@ class LeaveRequestDatesServiceTest {
 
         var response = service.getDates(42L);
         assertThat(response.requestId()).isEqualTo(42L);
+        assertThat(response.employeeId()).isEqualTo(7L);
         assertThat(response.leaveTypeName()).isEqualTo("무급휴가");
         assertThat(response.isPaid()).isFalse();
         assertThat(response.dates()).singleElement().satisfies(date -> {

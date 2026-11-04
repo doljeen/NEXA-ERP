@@ -38,7 +38,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "leave.hr.enabled=true","leave.hr.employee-info-uri=urn:test:employee",
         "leave.hr.department-members-uri=urn:test:members","leave.hr.duty-info-uri=urn:test:duty",
         "leave.hr.jwt-claims.department-id=test_dept","leave.hr.jwt-claims.duty-id=test_duty",
-        "leave.hr.jwt-claims.position-id=test_position",
         "spring.jpa.properties.hibernate.session_factory.statement_inspector=com.ssafy.leaveservice.domain.department.DepartmentLeavePostgresIntegrationTest$SqlCapture"})
 @AutoConfigureMockMvc
 @Import(PostgresTestConfiguration.class)
@@ -84,15 +83,15 @@ class DepartmentLeavePostgresIntegrationTest {
         when(hrClient.findEmployee(10L)).thenAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             assertThat(SqlCapture.statements.get()).isEmpty();
-            return new EmployeeInfo(10L,3L,7L,99L);
+            return new EmployeeInfo(10L,3L,7L,99L, null, EmploymentStatus.EMPLOYED);
         });
         when(hrClient.findDuty(7L)).thenAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             return new DutyInfo(7L,"휴가 관리자");
         });
-        when(hrClient.findDepartmentMembers(10L)).thenAnswer(invocation -> {
+        when(hrClient.findDepartmentMembers(3L)).thenAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-            return new MemberBatch(List.of(new Member(12L,3L),new Member(10L,3L),new Member(11L,3L)),true);
+            return new MemberBatch(List.of(new Member(12L,3L, EmploymentStatus.EMPLOYED),new Member(10L,3L, EmploymentStatus.EMPLOYED),new Member(11L,3L, EmploymentStatus.EMPLOYED)),true);
         });
         jdbcTemplate.update("update leave_policy_group set active_policy_version_id=null");
         for (String table : TABLES) {
@@ -138,7 +137,7 @@ class DepartmentLeavePostgresIntegrationTest {
                 .andExpect(jsonPath("$.data[0].employeeId").value(10));
         verify(hrClient).findEmployee(10L);
         verify(hrClient).findDuty(7L);
-        verify(hrClient).findDepartmentMembers(10L);
+        verify(hrClient).findDepartmentMembers(3L);
         assertSingleRead();
         assertThat(SqlCapture.statements.get().getFirst()).contains("emp_id in");
         assertThat(rows()).isEqualTo(before);
@@ -183,7 +182,7 @@ class DepartmentLeavePostgresIntegrationTest {
         } else if (step.equals("DUTY")) {
             when(hrClient.findDuty(7L)).thenThrow(new IllegalStateException("HTTP 500"));
         } else {
-            when(hrClient.findDepartmentMembers(10L)).thenThrow(new IllegalStateException("timeout"));
+            when(hrClient.findDepartmentMembers(3L)).thenThrow(new IllegalStateException("timeout"));
         }
         unavailable("balances");
     }
@@ -194,23 +193,23 @@ class DepartmentLeavePostgresIntegrationTest {
         MemberBatch batch = switch (issue) {
             case "NULL" -> null;
             case "LIST_NULL" -> new MemberBatch(null,true);
-            case "DUPLICATE" -> new MemberBatch(List.of(new Member(10L,3L),new Member(10L,3L)),true);
-            case "OTHER_DEPT" -> new MemberBatch(List.of(new Member(10L,3L),new Member(99L,5L)),true);
+            case "DUPLICATE" -> new MemberBatch(List.of(new Member(10L,3L, EmploymentStatus.EMPLOYED),new Member(10L,3L, EmploymentStatus.EMPLOYED)),true);
+            case "OTHER_DEPT" -> new MemberBatch(List.of(new Member(10L,3L, EmploymentStatus.EMPLOYED),new Member(99L,5L, EmploymentStatus.EMPLOYED)),true);
             case "NULL_MEMBER" -> new MemberBatch(Arrays.asList((Member)null),true);
-            case "NULL_ID" -> new MemberBatch(List.of(new Member(null,3L)),true);
-            case "NEGATIVE_ID" -> new MemberBatch(List.of(new Member(-1L,3L)),true);
-            case "NULL_DEPT" -> new MemberBatch(List.of(new Member(10L,null)),true);
-            default -> new MemberBatch(List.of(new Member(10L,3L)),false);
+            case "NULL_ID" -> new MemberBatch(List.of(new Member(null,3L, EmploymentStatus.EMPLOYED)),true);
+            case "NEGATIVE_ID" -> new MemberBatch(List.of(new Member(-1L,3L, EmploymentStatus.EMPLOYED)),true);
+            case "NULL_DEPT" -> new MemberBatch(List.of(new Member(10L,null, EmploymentStatus.EMPLOYED)),true);
+            default -> new MemberBatch(List.of(new Member(10L,3L, EmploymentStatus.EMPLOYED)),false);
         };
-        when(hrClient.findDepartmentMembers(10L)).thenReturn(batch);
+        when(hrClient.findDepartmentMembers(3L)).thenReturn(batch);
         unavailable("requests");
     }
 
     @ParameterizedTest
-    @ValueSource(strings={"DEPARTMENT","DUTY","POSITION"})
+    @ValueSource(strings={"DEPARTMENT","DUTY","STATUS"})
     void staleOrganizationClaimsDenyWithoutUsingOldDuty(String change) throws Exception {
         when(hrClient.findEmployee(10L)).thenReturn(new EmployeeInfo(10L,change.equals("DEPARTMENT")?5L:3L,
-                change.equals("DUTY")?8L:7L,change.equals("POSITION")?100L:99L));
+                change.equals("DUTY")?8L:7L,99L, null, change.equals("STATUS") ? EmploymentStatus.ON_LEAVE : EmploymentStatus.EMPLOYED));
         mvc.perform(get(url("balances")).with(user("USER"))).andExpect(status().isForbidden());
         verify(hrClient,never()).findDuty(any());
         verify(hrClient,never()).findDepartmentMembers(any());
@@ -222,9 +221,9 @@ class DepartmentLeavePostgresIntegrationTest {
     void invalidEmployeeAndDutyResponsesAreUnavailable(String issue) throws Exception {
         switch (issue) {
             case "NULL_EMPLOYEE" -> when(hrClient.findEmployee(10L)).thenReturn(null);
-            case "WRONG_EMPLOYEE" -> when(hrClient.findEmployee(10L)).thenReturn(new EmployeeInfo(99L,3L,7L,99L));
-            case "NULL_DEPT" -> when(hrClient.findEmployee(10L)).thenReturn(new EmployeeInfo(10L,null,7L,99L));
-            case "NULL_DUTY" -> when(hrClient.findEmployee(10L)).thenReturn(new EmployeeInfo(10L,3L,null,99L));
+            case "WRONG_EMPLOYEE" -> when(hrClient.findEmployee(10L)).thenReturn(new EmployeeInfo(99L,3L,7L,99L, null, EmploymentStatus.EMPLOYED));
+            case "NULL_DEPT" -> when(hrClient.findEmployee(10L)).thenReturn(new EmployeeInfo(10L,null,7L,99L, null, EmploymentStatus.EMPLOYED));
+            case "NULL_DUTY" -> when(hrClient.findEmployee(10L)).thenReturn(new EmployeeInfo(10L,3L,null,99L, null, EmploymentStatus.EMPLOYED));
             case "WRONG_DUTY_RESPONSE" -> when(hrClient.findDuty(7L)).thenReturn(new DutyInfo(9L,"휴가 관리자"));
             default -> when(hrClient.findDuty(7L)).thenReturn(new DutyInfo(7L," "));
         }
@@ -234,7 +233,7 @@ class DepartmentLeavePostgresIntegrationTest {
     @ParameterizedTest
     @ValueSource(strings={"requests","balances"})
     void trustedEmptyMembershipReturnsEmptyWithoutSql(String endpoint) throws Exception {
-        when(hrClient.findDepartmentMembers(10L)).thenReturn(new MemberBatch(List.of(),true));
+        when(hrClient.findDepartmentMembers(3L)).thenReturn(new MemberBatch(List.of(),true));
         mvc.perform(get(url(endpoint)).with(user("USER"))).andExpect(status().isOk())
                 .andExpect(jsonPath(endpoint.equals("requests")?"$.data":"$.data.employees").isEmpty());
         assertThat(SqlCapture.statements.get()).isEmpty();
@@ -256,7 +255,7 @@ class DepartmentLeavePostgresIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings={"test_dept","test_duty","test_position"})
+    @ValueSource(strings={"test_dept","test_duty","sub"})
     void missingRequiredClaimCannotBeFilledByQueryOrHr(String key) throws Exception {
         mvc.perform(get(url("balances")).with(SecurityMockMvcRequestPostProcessors.jwt()
                         .jwt(jwt -> jwt.subject("10").claim("test_dept",3L).claim("test_duty",7L)
@@ -313,12 +312,12 @@ class DepartmentLeavePostgresIntegrationTest {
     @Test
     void largeDepartmentStillUsesOneSelect() throws Exception {
         List<Member> members = new ArrayList<>();
-        members.add(new Member(10L,3L));
-        members.add(new Member(11L,3L));
+        members.add(new Member(10L,3L, EmploymentStatus.EMPLOYED));
+        members.add(new Member(11L,3L, EmploymentStatus.EMPLOYED));
         for (long employeeId = 1000; employeeId < 2000; employeeId++) {
-            members.add(new Member(employeeId,3L));
+            members.add(new Member(employeeId,3L, EmploymentStatus.EMPLOYED));
         }
-        when(hrClient.findDepartmentMembers(10L)).thenReturn(new MemberBatch(members,true));
+        when(hrClient.findDepartmentMembers(3L)).thenReturn(new MemberBatch(members,true));
         mvc.perform(get(url("balances")).with(user("USER"))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.employees.length()").value(1002));
         assertSingleRead();

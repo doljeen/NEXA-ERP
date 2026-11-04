@@ -8,12 +8,14 @@ public interface HrClient {
 
     EmployeeInfo findEmployee(Long employeeId);
 
-    MemberBatch findDepartmentMembers(Long employeeId);
+    MemberBatch findDepartmentMembers(Long departmentId);
 
     DutyInfo findDuty(Long dutyId);
 
-    record EmployeeInfo(Long employeeId, Long departmentId, Long dutyId, Long positionId) {}
-    record Member(Long employeeId, Long departmentId) {}
+    record EmployeeInfo(Long employeeId, Long departmentId, Long dutyId, Long positionId,
+                        Long gradeId, EmploymentStatus status) {}
+    enum EmploymentStatus { EMPLOYED, ON_LEAVE, TERMINATED }
+    record Member(Long employeeId, Long departmentId, EmploymentStatus status) {}
     record MemberBatch(List<Member> members, boolean complete) {}
     record DutyInfo(Long dutyId, String name) {}
 }

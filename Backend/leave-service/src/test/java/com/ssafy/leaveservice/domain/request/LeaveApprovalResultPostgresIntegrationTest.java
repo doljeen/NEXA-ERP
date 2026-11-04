@@ -926,6 +926,7 @@ class LeaveApprovalResultPostgresIntegrationTest {
         ).andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.requestId").value(initial.requestId()))
+                .andExpect(jsonPath("$.data.employeeId").value(initial.employeeId()))
                 .andExpect(jsonPath("$.data.leaveTypeName").value("연차"))
                 .andExpect(jsonPath("$.data.isPaid").value(true))
                 .andExpect(jsonPath("$.data.dates.length()").value(3))

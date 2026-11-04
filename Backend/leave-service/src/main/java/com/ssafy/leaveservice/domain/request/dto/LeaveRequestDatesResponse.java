@@ -7,6 +7,7 @@ import java.util.List;
 
 public record LeaveRequestDatesResponse(
         Long requestId,
+        Long employeeId,
         String leaveTypeName,
         boolean isPaid,
         List<LeaveDateItem> dates

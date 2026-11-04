@@ -26,12 +26,12 @@ class DepartmentLeaveAccessServiceTest {
     @BeforeEach
     void setUp() {
         service = new DepartmentLeaveAccessService(new TokenEmployeeAccess(),properties(true,"employee","members","duty",
-                new JwtClaims("test_dept","test_duty","test_position")),hrClient);
+                new JwtClaims("test_dept","test_duty")),hrClient);
         token("10",new HashMap<>(Map.of("test_dept",3L,"test_duty",7L,"test_position",99L)));
         when(hrClient.isAvailable()).thenReturn(true);
-        when(hrClient.findEmployee(10L)).thenReturn(new EmployeeInfo(10L,3L,7L,99L));
+        when(hrClient.findEmployee(10L)).thenReturn(new EmployeeInfo(10L,3L,7L,99L, null, EmploymentStatus.EMPLOYED));
         when(hrClient.findDuty(7L)).thenReturn(new DutyInfo(7L,"휴가 관리자"));
-        when(hrClient.findDepartmentMembers(10L)).thenReturn(new MemberBatch(List.of(new Member(11L,3L),new Member(10L,3L)),true));
+        when(hrClient.findDepartmentMembers(3L)).thenReturn(new MemberBatch(List.of(new Member(11L,3L, EmploymentStatus.EMPLOYED),new Member(10L,3L, EmploymentStatus.EMPLOYED)),true));
     }
 
     @AfterEach
@@ -44,8 +44,8 @@ class DepartmentLeaveAccessServiceTest {
         assertThat(service.getAuthorizedEmployeeIds(3L)).containsExactly(10L,11L);
         verify(hrClient).findEmployee(10L);
         verify(hrClient).findDuty(7L);
-        verify(hrClient).findDepartmentMembers(10L);
-        verify(hrClient,never()).findDepartmentMembers(3L);
+        verify(hrClient).findDepartmentMembers(3L);
+        verify(hrClient,never()).findDepartmentMembers(10L);
     }
 
     @ParameterizedTest
@@ -53,10 +53,10 @@ class DepartmentLeaveAccessServiceTest {
     void missingConfigurationFailsClosedBeforeAnyHrOrDatabase(String issue) {
         JwtClaims keys = switch (issue) {
             case "NO_KEYS" -> null;
-            case "MISSING_KEY" -> new JwtClaims("test_dept","test_duty","");
-            case "DUPLICATE_KEY" -> new JwtClaims("test_dept","test_dept","test_position");
-            case "RESERVED_KEY" -> new JwtClaims("sub","test_duty","test_position");
-            default -> new JwtClaims("test_dept","test_duty","test_position");
+            case "MISSING_KEY" -> new JwtClaims("test_dept","");
+            case "DUPLICATE_KEY" -> new JwtClaims("test_dept","test_dept");
+            case "RESERVED_KEY" -> new JwtClaims("sub","test_duty");
+            default -> new JwtClaims("test_dept","test_duty");
         };
         HrIntegrationProperties settings = properties(!issue.equals("DISABLED"),
                 issue.equals("EMPLOYEE_URI")?"":"employee",issue.equals("MEMBER_URI")?"":"members",
@@ -121,6 +121,34 @@ class DepartmentLeaveAccessServiceTest {
         SecurityContextHolder.clearContext();
         assertCode(()->service.getAuthorizedEmployeeIds(3L),ErrorCode.UNAUTHORIZED);
         verifyNoInteractions(hrClient);
+    }
+
+
+    @ParameterizedTest
+    @EnumSource(value = EmploymentStatus.class, names = {"ON_LEAVE", "TERMINATED"})
+    void rejectsNonEmployedRequester(EmploymentStatus status) {
+        when(hrClient.findEmployee(10L)).thenReturn(new EmployeeInfo(10L,3L,7L,null,500L,status));
+        assertCode(() -> service.getAuthorizedEmployeeIds(3L),ErrorCode.ACCESS_DENIED);
+        verify(hrClient,never()).findDuty(any());
+    }
+
+    @Test
+    void ignoresPositionAndGradeForAuthorizationAndAppliesMemberEmploymentPolicy() {
+        token("10", new HashMap<>(Map.of("test_dept",3L,"test_duty",7L,"gradeId",500L)));
+        when(hrClient.findEmployee(10L)).thenReturn(
+                new EmployeeInfo(10L,3L,7L,999L,500L,EmploymentStatus.EMPLOYED));
+        when(hrClient.findDepartmentMembers(3L)).thenReturn(new MemberBatch(List.of(
+                new Member(10L,3L,EmploymentStatus.EMPLOYED),
+                new Member(11L,3L,EmploymentStatus.ON_LEAVE),
+                new Member(12L,3L,EmploymentStatus.TERMINATED)),true));
+
+        assertThat(service.getAuthorizedEmployeeIds(3L)).containsExactly(10L,11L);
+    }
+
+    @Test
+    void rejectsUnspecifiedRequesterStatus() {
+        when(hrClient.findEmployee(10L)).thenReturn(new EmployeeInfo(10L,3L,7L,null,null,null));
+        assertCode(() -> service.getAuthorizedEmployeeIds(3L),ErrorCode.HR_VERIFICATION_UNAVAILABLE);
     }
 
     private void token(String subject, Map<String,Object> claims) {

@@ -26,11 +26,11 @@ public record HrIntegrationProperties(
             return false;
         }
         List<String> reserved = List.of("sub", "role", "type", "iss", "aud", "iat", "exp", "nbf", "jti");
-        List<String> keys = Stream.of(jwtClaims.departmentId(), jwtClaims.dutyId(), jwtClaims.positionId()).toList();
+        List<String> keys = Stream.of(jwtClaims.departmentId(), jwtClaims.dutyId()).toList();
         return keys.stream().allMatch(key -> key != null && !key.isBlank() && !reserved.contains(key))
-                && keys.stream().distinct().count() == 3;
+                && keys.stream().distinct().count() == 2;
     }
 
-    // TODO: User Service가 조직 Claim을 추가하면 실제 키를 확인하여 설정한다.
-    public record JwtClaims(String departmentId, String dutyId, String positionId) {}
+    // User Service access 토큰의 deptId와 dutyId 키를 설정한다.
+    public record JwtClaims(String departmentId, String dutyId) {}
 }
