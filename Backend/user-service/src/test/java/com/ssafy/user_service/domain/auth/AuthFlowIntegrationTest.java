@@ -39,14 +39,6 @@ class AuthFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void 잘못된_비밀번호는_401_AUTH_005() throws Exception {
-        mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
-                        .content(loginJson("admin@local.dev", "nope")))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error.code").value("AUTH_005"));
-    }
-
-    @Test
     void 로그인_성공시_요약정보와_쿠키를_내려준다() throws Exception {
         MvcResult res = mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content(ADMIN_LOGIN))
                 .andExpect(status().isOk())

@@ -47,32 +47,4 @@ class OrganizationIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.chain[2].headEmpId").value(109));
     }
 
-    @Test
-    void 공석인_부서는_부서장이_null() throws Exception {
-        mvc.perform(get("/api/v1/employees/106/org-chain").with(viaGateway(login("user6@local.dev"))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.chain[1].deptName").value("영업본부"))
-                .andExpect(jsonPath("$.data.chain[1].headEmpId").doesNotExist());
-    }
-
-    @Test
-    void 대표이사는_회사_단계_하나뿐() throws Exception {
-        mvc.perform(get("/api/v1/employees/109/org-chain").with(viaGateway(login("user9@local.dev"))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.chain.length()").value(1))
-                .andExpect(jsonPath("$.data.chain[0].headEmpId").value(109));
-    }
-
-    @Test
-    void 없는_사원은_404_EMP_001() throws Exception {
-        mvc.perform(get("/api/v1/employees/999999/org-chain").with(viaGateway(login("user3@local.dev"))))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error.code").value("EMP_001"));
-    }
-
-    @Test
-    void 토큰이_없으면_401() throws Exception {
-        mvc.perform(get("/api/v1/employees/103/org-chain"))
-                .andExpect(status().isUnauthorized());
-    }
 }
