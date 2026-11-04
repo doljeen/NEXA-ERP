@@ -15,6 +15,7 @@ class OcrExtractNode(BaseNode):
     description = "업로드한 이미지에서 글자를 읽어 줄 단위 텍스트로 변환"
     config_fields = [
         {"key": "min_confidence", "label": "최소 신뢰도", "type": "number", "required": False},
+        {"key": "files", "label": "OCR할 파일 (예: {{n0.files}}, 비우면 첨부 파일 전체)", "type": "ref", "required": False},
     ]
     branches = ["성공", "확인 필요"]
     output_vars = [
@@ -24,11 +25,9 @@ class OcrExtractNode(BaseNode):
     ]
 
     def run(self, ctx: NodeContext) -> NodeResult:
-        # 실행 시 첨부된 파일 중 이미지만 대상
-        files = [
-            f for f in ctx.inputs.get("files", [])
-            if Path(f["path"]).suffix.lower() in IMAGE_EXTS
-        ]
+        # 바인딩된 파일 목록(파일 업로드 노드 등)이 있으면 그것, 없다면 실행 시 첨부된 파일 전체
+        source = ctx.config.get("files") or ctx.inputs.get("files", [])
+        files = [f for f in source if Path(f["path"]).suffix.lower() in IMAGE_EXTS]
         if not files:
             raise ValueError("OCR할 이미지 파일이 없습니다")
 
