@@ -523,12 +523,12 @@ def write_roster(cdir, emps, plan, seed):
 
 
 def write_org(cdir):
-    org = [{"deptCode": "DR000", "name": "더러건설(주)", "parentDeptCode": None, "_type": "회사"},
-           {"deptCode": "DR100", "name": "본사", "parentDeptCode": "DR000", "_type": "본부"},
-           {"deptCode": "DR200", "name": "공사부", "parentDeptCode": "DR000", "_type": "본부"}]
-    org += [{"deptCode": "DR1%02d" % (n * 10), "name": t, "parentDeptCode": "DR100", "_type": "팀"} for n, (t, _) in enumerate(HQ, 1)]
-    org += [{"deptCode": s[0], "name": s[1], "parentDeptCode": "DR200", "_type": "현장"} for s in SITES]
-    cols = [("deptCode", "조직코드"), ("name", "조직명"), ("parentDeptCode", "상위조직"), ("_type", "조직유형")]
+    org = [{"deptCode": "DR000", "name": "더러건설(주)", "parentDeptCode": None, "deptType": "회사"},
+           {"deptCode": "DR100", "name": "본사", "parentDeptCode": "DR000", "deptType": "본부"},
+           {"deptCode": "DR200", "name": "공사부", "parentDeptCode": "DR000", "deptType": "본부"}]
+    org += [{"deptCode": "DR1%02d" % (n * 10), "name": t, "parentDeptCode": "DR100", "deptType": "팀"} for n, (t, _) in enumerate(HQ, 1)]
+    org += [{"deptCode": s[0], "name": s[1], "parentDeptCode": "DR200", "deptType": "현장"} for s in SITES]
+    cols = [("deptCode", "조직코드"), ("name", "조직명"), ("parentDeptCode", "상위조직"), ("deptType", "조직유형")]
     B.write_org(cdir / "조직.csv", org, cols, "cp949")
     return org, cols
 
