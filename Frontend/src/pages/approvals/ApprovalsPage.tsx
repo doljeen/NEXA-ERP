@@ -1,0 +1,130 @@
+import { Drawer, Select, Tabs } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useDocuments, type DocumentFilter, type DocumentStatus, type DocumentSummary, type FormType } from '@/api/approval';
+import { PageHeader, EmptyState, Counter } from '@/ui/primitives';
+import { DataTable } from '@/ui/DataTable';
+import { ErrorPanel } from '@/ui/ErrorPanel';
+import { formTypeLabel } from '@/status/labels';
+import { useViewport } from '@/shell/useViewport';
+import { useTodoCounts } from '@/shell/useTodoCounts';
+import { DocumentView } from '@/approval/DocumentView';
+import { docColumns } from '@/approval/columns';
+import s from '@/approval/approval.module.css';
+
+type Tab = 'pending' | 'drafted' | 'all';
+
+const FORM_TYPES: FormType[] = ['GENERAL', 'BUSINESS_TRIP', 'LEAVE', 'OVERTIME', 'TIME_FIX', 'HOLIDAY_SUBST'];
+const STATUSES: { value: DocumentStatus; label: string }[] = [
+  { value: 'INPROGRESS', label: '진행중' }, { value: 'APPROVED', label: '승인' },
+  { value: 'REJECTED', label: '반려' }, { value: 'CANCEL', label: '회수' },
+];
+const BOX: Record<Tab, DocumentFilter['box']> = { pending: 'PENDING', drafted: 'DRAFTED', all: undefined };
+const EMPTY: Record<Tab, string> = {
+  pending: '결재할 문서가 없습니다', drafted: '기안한 문서가 없습니다', all: '볼 수 있는 문서가 없습니다',
+};
+
+function DocumentList({ tab, selected, onOpen }: { tab: Tab; selected: number | null; onOpen: (id: number) => void }) {
+  const [params, setParams] = useSearchParams();
+  const formType = (params.get('form') as FormType | null) ?? undefined;
+  // 결재 대기함은 진행중 문서만 나오므로 상태 필터를 두지 않는다
+  const approvalStatus = tab === 'pending' ? undefined : (params.get('status') as DocumentStatus | null) ?? undefined;
+  const q = useDocuments({ box: BOX[tab], formType, approvalStatus });
+
+  const setParam = (k: string, v: string | undefined) => {
+    const next = new URLSearchParams(params);
+    if (v) next.set(k, v); else next.delete(k);
+    setParams(next, { replace: true });
+  };
+
+  const cols: ColumnsType<DocumentSummary> = docColumns({
+    drafter: tab !== 'drafted',
+    status: tab !== 'pending',
+    progress: true,
+  });
+
+  if (q.isError) return <ErrorPanel error={q.error} onRetry={() => q.refetch()} />;
+  return (
+    <>
+      <div className={s.filters}>
+        <Select allowClear placeholder="양식" style={{ width: 140 }} value={formType} aria-label="양식 필터"
+                options={FORM_TYPES.map((f) => ({ value: f, label: formTypeLabel(f) }))}
+                onChange={(v) => setParam('form', v)} />
+        {tab !== 'pending' && (
+          <Select allowClear placeholder="상태" style={{ width: 110 }} value={approvalStatus} aria-label="상태 필터"
+                  options={STATUSES} onChange={(v) => setParam('status', v)} />
+        )}
+      </div>
+      <DataTable<DocumentSummary>
+        rowKey="documentId"
+        data={q.data}
+        loading={q.isPending}
+        columns={cols}
+        searchText={(r) => `${r.title} ${r.docNo}`}
+        searchPlaceholder="제목·문서번호 검색"
+        emptyTitle={EMPTY[tab]}
+        rowClassName={(r) => [s.row, r.documentId === selected ? s.rowActive : ''].join(' ')}
+        onRow={(r) => ({
+          onClick: () => onOpen(r.documentId),
+          onKeyDown: (e) => { if (e.key === 'Enter') onOpen(r.documentId); },
+          tabIndex: 0,
+        })}
+      />
+    </>
+  );
+}
+
+/** 전자결재 문서함 + 상세 2분할(설계 6.2). 1024~1151px에서는 상세를 Drawer로 연다. */
+export function ApprovalsPage() {
+  const { docId } = useParams();
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const { band } = useViewport();
+  const counts = useTodoCounts(false);
+  const raw = params.get('tab');
+  const tab: Tab = raw === 'drafted' || raw === 'all' ? raw : 'pending';
+  const selected = docId && /^\d+$/.test(docId) ? Number(docId) : null;
+
+  // 탭·필터 쿼리를 유지한 채 문서만 바꾼다
+  const keep = (p: URLSearchParams) => (p.toString() ? `?${p.toString()}` : '');
+  const open = (id: number) => navigate(`/approvals/${id}${keep(params)}`);
+  const close = () => navigate(`/approvals${keep(params)}`);
+  const switchTab = (k: string) => navigate(k === 'pending' ? '/approvals' : `/approvals?tab=${k}`);
+
+  const list = <DocumentList key={tab} tab={tab} selected={selected} onOpen={open} />;
+  const detail = selected != null
+    ? <DocumentView key={selected} id={selected} />
+    : <div className={s.empty}><EmptyState title="문서를 선택해 주세요" description="목록에서 문서를 고르면 여기에 상세가 표시됩니다" /></div>;
+
+  return (
+    <>
+      <PageHeader title="전자결재" />
+      <Tabs
+        activeKey={tab}
+        onChange={switchTab}
+        items={[
+          {
+            key: 'pending',
+            label: <span className={s.tabLabel}>결재 대기{counts.approval !== undefined && <Counter value={counts.approval} label="결재 대기" />}</span>,
+          },
+          { key: 'drafted', label: '기안함' },
+          { key: 'all', label: '전체' },
+        ]}
+      />
+      {band === 'compact' ? (
+        <>
+          {list}
+          <Drawer open={selected != null} onClose={close} width="70%" title={null} destroyOnHidden
+                  styles={{ body: { padding: 0, display: 'flex' } }}>
+            {selected != null && <DocumentView key={selected} id={selected} />}
+          </Drawer>
+        </>
+      ) : (
+        <div className={s.split}>
+          <div className={s.listPane}>{list}</div>
+          <div className={s.detailPane}>{detail}</div>
+        </div>
+      )}
+    </>
+  );
+}
