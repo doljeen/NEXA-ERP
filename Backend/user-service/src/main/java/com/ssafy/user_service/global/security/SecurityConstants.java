@@ -7,6 +7,9 @@ public final class SecurityConstants {
     public static final String ADMIN_BASE_PATH = "/api/v1/admin";
     public static final String EMPLOYEE_BASE_PATH = "/api/v1/employees";
     public static final String DUTY_BASE_PATH = "/api/v1/duties";
+    public static final String POSITION_BASE_PATH = "/api/v1/positions";
+    public static final String GRADE_BASE_PATH = "/api/v1/grades";
+    public static final String JOB_CODE_BASE_PATH = "/api/v1/job-codes";
     public static final String JWKS_PATH = "/.well-known/jwks.json";
 
     public static final String ACCESS_COOKIE = "accessToken";
