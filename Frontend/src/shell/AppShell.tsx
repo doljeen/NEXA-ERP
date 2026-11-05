@@ -24,7 +24,7 @@ export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { me, deptName, clear } = useSession();
+  const { me, clear } = useSession();
   const canAdmin = useCan('admin.view');
 
   // 모드는 URL에서 계산한다(새로고침해도 유지, 설계 5장)
@@ -136,7 +136,7 @@ export function AppShell() {
                 <span className={s.avatar} aria-hidden>{me?.name?.slice(0, 1) ?? '?'}</span>
                 <span style={{ textAlign: 'left', lineHeight: '16px' }}>
                   <div>{me?.name}</div>
-                  {deptName && <div className={s.profileSub}>{deptName}</div>}
+                  {me?.deptName && <div className={s.profileSub}>{me.deptName}</div>}
                 </span>
               </button>
             </Dropdown>

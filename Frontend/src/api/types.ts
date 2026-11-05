@@ -23,6 +23,11 @@ export interface Employee {
   hireType: string | null;
   hireDate: string | null;
   status: EmploymentStatus;
+  /** 소속 이름(user-service EmployeeInfoAssembler). 참조를 못 찾으면 null */
+  deptName: string | null;
+  positionName: string | null;
+  gradeName: string | null;
+  dutyName: string | null;
 }
 
 export interface LoginResponse {
