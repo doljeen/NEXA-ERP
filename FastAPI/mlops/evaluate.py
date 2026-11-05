@@ -29,12 +29,12 @@ logging.getLogger("LiteLLM").setLevel(logging.WARNING)   # 요청마다 찍히�
 
 # 조건별 분석 기준 (gen_receipts.py가 만든 meta 값 기준)
 GROUPS = {
-    "photo": lambda m: "사진" if m["photo"] else "스캔",
-    "date_fmt": lambda m: m["date_fmt"],
-    "money": lambda m: m["money"],
-    "header": lambda m: m["header"],
-    "discount": lambda m: "할인 있음" if m["discount"] else "할인 없음",
-    "kind": lambda m: m["kind"],
+    "photo": lambda m: "?" if m.get("photo") is None else ("사진" if m["photo"] else "스캔"),
+    "date_fmt": lambda m: m.get("date_fmt", "?"),
+    "money": lambda m: m.get("money", "?"),
+    "header": lambda m: m.get("header", "?"),
+    "discount": lambda m: "?" if "discount" not in m else ("할인 있음" if m["discount"] else "할인 없음"),
+    "kind": lambda m: m.get("kind", "?"),
 }
 
 
@@ -91,8 +91,8 @@ def summarize(rows: list[dict]) -> dict:
     s["wrong_ocr"] = sum(1 for r in rows for b in r["blame"].values() if b == "ocr")
     for k in ("store", "total"):
         s[f"ocr_ceiling_{k}"] = _rate(rows, lambda r, k=k: r["ceiling"][k])
-    s["acc_all_photo"] = _rate([r for r in rows if r["meta"]["photo"]], lambda r: r["all_ok"])
-    s["acc_all_scan"] = _rate([r for r in rows if not r["meta"]["photo"]], lambda r: r["all_ok"])
+    s["acc_all_photo"] = _rate([r for r in rows if r["meta"].get("photo") is True], lambda r: r["all_ok"])
+    s["acc_all_scan"] = _rate([r for r in rows if r["meta"].get("photo") is False], lambda r: r["all_ok"])
     return s
 
 
