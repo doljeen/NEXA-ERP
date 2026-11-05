@@ -1,9 +1,11 @@
+import { useRef, type MutableRefObject } from 'react';
 import { Drawer, Select, Tabs } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useDocuments, type DocumentFilter, type DocumentStatus, type DocumentSummary, type FormType } from '@/api/approval';
-import { PageHeader, EmptyState, Counter } from '@/ui/primitives';
-import { DataTable } from '@/ui/DataTable';
+import { PageHeader, EmptyState, Counter, Kbd } from '@/ui/primitives';
+import { DataTable, applySearch, focusListSearch } from '@/ui/DataTable';
+import { useHotkeys } from '@/common/useHotkeys';
 import { ErrorPanel } from '@/ui/ErrorPanel';
 import { formTypeLabel } from '@/status/labels';
 import { useViewport } from '@/shell/useViewport';
@@ -24,12 +26,17 @@ const EMPTY: Record<Tab, string> = {
   pending: '결재할 문서가 없습니다', drafted: '기안한 문서가 없습니다', all: '볼 수 있는 문서가 없습니다',
 };
 
-function DocumentList({ tab, selected, onOpen }: { tab: Tab; selected: number | null; onOpen: (id: number) => void }) {
+const docSearch = (r: DocumentSummary) => `${r.title} ${r.docNo}`;
+
+function DocumentList({ tab, selected, onOpen, orderRef }:
+  { tab: Tab; selected: number | null; onOpen: (id: number) => void; orderRef: MutableRefObject<number[]> }) {
   const [params, setParams] = useSearchParams();
   const formType = (params.get('form') as FormType | null) ?? undefined;
   // 결재 대기함은 진행중 문서만 나오므로 상태 필터를 두지 않는다
   const approvalStatus = tab === 'pending' ? undefined : (params.get('status') as DocumentStatus | null) ?? undefined;
   const q = useDocuments({ box: BOX[tab], formType, approvalStatus });
+  // 화면에 보이는 순서(검색 반영). J/K 이동과 처리 후 다음 문서가 쓴다
+  orderRef.current = applySearch(q.data, params.get('q') ?? '', docSearch).map((r) => r.documentId);
 
   const setParam = (k: string, v: string | undefined) => {
     const next = new URLSearchParams(params);
@@ -60,7 +67,7 @@ function DocumentList({ tab, selected, onOpen }: { tab: Tab; selected: number | 
         data={q.data}
         loading={q.isPending}
         columns={cols}
-        searchText={(r) => `${r.title} ${r.docNo}`}
+        searchText={docSearch}
         searchPlaceholder="제목·문서번호 검색"
         emptyTitle={EMPTY[tab]}
         rowClassName={(r) => [s.row, r.documentId === selected ? s.rowActive : ''].join(' ')}
@@ -70,6 +77,9 @@ function DocumentList({ tab, selected, onOpen }: { tab: Tab; selected: number | 
           tabIndex: 0,
         })}
       />
+      <div className={s.hint}>
+        <Kbd>J</Kbd>/<Kbd>K</Kbd> 이동 · <Kbd>/</Kbd> 검색 · 상세에서 <Kbd>A</Kbd> 승인 · <Kbd>R</Kbd> 반려 · <Kbd>F</Kbd> 전결 · <Kbd>?</Kbd> 도움말
+      </div>
     </>
   );
 }
@@ -91,9 +101,27 @@ export function ApprovalsPage() {
   const close = () => navigate(`/approvals${keep(params)}`);
   const switchTab = (k: string) => navigate(k === 'pending' ? '/approvals' : `/approvals?tab=${k}`);
 
-  const list = <DocumentList key={tab} tab={tab} selected={selected} onOpen={open} />;
+  const orderRef = useRef<number[]>([]);
+  // J/K: 보이는 목록에서 위아래 문서를 연다(2분할이라 선택이 곧 열기)
+  const step = (d: 1 | -1) => {
+    const ids = orderRef.current;
+    if (ids.length === 0) return;
+    const i = selected == null ? -1 : ids.indexOf(selected);
+    const n = i < 0 ? (d > 0 ? 0 : ids.length - 1) : Math.min(ids.length - 1, Math.max(0, i + d));
+    if (ids[n] !== selected) open(ids[n]);
+  };
+  useHotkeys({ j: () => step(1), k: () => step(-1), '/': focusListSearch });
+  // 처리 후 다음 문서(마지막이면 이전 문서, 없으면 닫기). 목록은 아직 처리 전 순서다(재조회 전)
+  const afterProcessed = (id: number) => {
+    const ids = orderRef.current;
+    const i = ids.indexOf(id);
+    const next = i < 0 ? null : ids[i + 1] ?? ids[i - 1] ?? null;
+    if (next != null) open(next); else close();
+  };
+
+  const list = <DocumentList key={tab} tab={tab} selected={selected} onOpen={open} orderRef={orderRef} />;
   const detail = selected != null
-    ? <DocumentView key={selected} id={selected} />
+    ? <DocumentView key={selected} id={selected} onProcessed={afterProcessed} />
     : <div className={s.empty}><EmptyState title="문서를 선택해 주세요" description="목록에서 문서를 고르면 여기에 상세가 표시됩니다" /></div>;
 
   return (
@@ -116,7 +144,7 @@ export function ApprovalsPage() {
           {list}
           <Drawer open={selected != null} onClose={close} width="70%" title={null} destroyOnHidden
                   styles={{ body: { padding: 0, display: 'flex' } }}>
-            {selected != null && <DocumentView key={selected} id={selected} />}
+            {selected != null && <DocumentView key={selected} id={selected} onProcessed={afterProcessed} />}
           </Drawer>
         </>
       ) : (

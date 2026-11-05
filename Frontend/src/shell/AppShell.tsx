@@ -12,6 +12,7 @@ import { adminNav, allNav, userNav, type NavItem } from './nav';
 import { useViewport } from './useViewport';
 import { useTodoCounts } from './useTodoCounts';
 import { ClockChip } from '@/attendance/Clock';
+import { ShortcutHelp } from './ShortcutHelp';
 import s from './shell.module.css';
 
 const COLLAPSE_KEY = 'nx.sidebarCollapsed';
@@ -146,6 +147,7 @@ export function AppShell() {
         <main className={`${s.content} nx-scroll`}>
           <Outlet />
         </main>
+        <ShortcutHelp />
       </div>
     </div>
   );

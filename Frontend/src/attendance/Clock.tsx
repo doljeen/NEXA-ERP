@@ -4,6 +4,7 @@ import { DotChip } from '@/ui/primitives';
 import { formatDurationShort, formatDuration, formatTime } from '@/format';
 import { workStatusTone } from '@/status/labels';
 import { useClock } from './useClock';
+import { newRequestHref } from './requests/links';
 import s from './attendance.module.css';
 
 type Clock = ReturnType<typeof useClock>;
@@ -29,7 +30,7 @@ function ClockButtons({ c, size }: { c: Clock; size: 'small' | 'middle' }) {
     return <Button size={size} loading={c.pending} onClick={c.undoClockOut}>퇴근 취소</Button>;
   }
   // 퇴근 2시간 이후에는 변경 불가 → 근태 신청(TIME_FIX)으로 안내
-  return <Link to="/attendance/requests">수정은 근태 신청 →</Link>;
+  return <Link to={newRequestHref({ type: 'TIME_FIX', date: c.today?.workDate })}>수정은 근태 신청 →</Link>;
 }
 
 /** 탑바 ClockChip(설계 5장). 출근 전에는 칩 자리에 "출근하기" 버튼을 둔다. */

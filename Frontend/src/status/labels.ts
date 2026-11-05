@@ -27,3 +27,14 @@ export function workStatusTone(code: string | null | undefined): Tone {
       return 'neutral';
   }
 }
+
+export const requestTypeLabel = label({ TIME_FIX: '근무시간 수정', OVERTIME: '초과근무', HOLIDAY_SUBST: '휴일대체' });
+
+export const itemActionLabel = label({ ADD: '추가', MODIFY: '수정', DELETE: '삭제' });
+
+/** 근무 상태 코드(요구사항 5장). 서버 statusName이 있으면 그것을 우선한다. */
+export const workStatusLabel = label({
+  WORKING: '업무', OFF_WORKING: '업무종료', LEAVE: '휴가', CLOCK_IN: '출근', CLOCK_OUT: '퇴근', CLOCK_OUT_CANCEL: '퇴근취소',
+});
+
+export const workStatusSourceLabel = label({ SELF: '본인', ADMIN: '관리자', APPROVAL: '결재 승인' });

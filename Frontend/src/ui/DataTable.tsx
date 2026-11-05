@@ -4,6 +4,18 @@ import type { TableProps } from 'antd';
 import { useSearchParams } from 'react-router-dom';
 import { EmptyState } from './primitives';
 
+/** 목록 검색창 id. '/' 단축키가 여기로 포커스를 옮긴다(설계 7.2) */
+export const LIST_SEARCH_ID = 'nx-list-search';
+export const focusListSearch = () => document.getElementById(LIST_SEARCH_ID)?.focus();
+
+/** DataTable과 같은 규칙으로 검색어를 적용한다(목록 순서를 밖에서 알아야 할 때: J/K 이동, 처리 후 다음 문서) */
+export function applySearch<T>(rows: T[] | undefined, q: string, searchText?: (row: T) => string): T[] {
+  if (!rows) return [];
+  if (!q || !searchText) return rows;
+  const needle = q.toLowerCase();
+  return rows.filter((r) => searchText(r).toLowerCase().includes(needle));
+}
+
 // 서버 페이지네이션이 없어 클라이언트에서 검색·정렬·20행 페이징을 한다(요구사항 1.4, 설계 7.1).
 interface Props<T> extends Omit<TableProps<T>, 'dataSource' | 'pagination' | 'loading'> {
   data: T[] | undefined;
@@ -22,12 +34,7 @@ export function DataTable<T extends object>({
   const q = params.get('q') ?? '';
   const [page, setPage] = useState(1);
 
-  const rows = useMemo(() => {
-    if (!data) return [];
-    if (!q || !searchText) return data;
-    const needle = q.toLowerCase();
-    return data.filter((r) => searchText(r).toLowerCase().includes(needle));
-  }, [data, q, searchText]);
+  const rows = useMemo(() => applySearch(data, q, searchText), [data, q, searchText]);
 
   const setQuery = (v: string) => {
     const next = new URLSearchParams(params);
@@ -45,7 +52,7 @@ export function DataTable<T extends object>({
     <div>
       {searchText && (
         <div style={{ marginBottom: 12, maxWidth: 320 }}>
-          <Input.Search allowClear defaultValue={q} placeholder={searchPlaceholder} onSearch={setQuery} aria-label={searchPlaceholder} />
+          <Input.Search id={LIST_SEARCH_ID} allowClear defaultValue={q} placeholder={searchPlaceholder} onSearch={setQuery} aria-label={searchPlaceholder} />
         </div>
       )}
       <Table<T>

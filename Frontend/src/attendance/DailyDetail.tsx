@@ -1,9 +1,9 @@
 import { Skeleton } from 'antd';
 import { useDaily, type DailyAttendance, type WorkTime } from '@/api/attendance';
 import { formatDuration, formatDurationShort, formatTime, kst, nowKst } from '@/format';
-import { StatusBadge } from '@/ui/StatusBadge';
 import { ErrorPanel } from '@/ui/ErrorPanel';
 import { EmptyState } from '@/ui/primitives';
+import { AnomalyChips, UnapprovedOtCta } from './AnomalyChips';
 import s from './attendance.module.css';
 
 interface Span { start: number; end: number; code: string; name: string; work: boolean; open: boolean }
@@ -100,7 +100,7 @@ export function DailyDetail({ date }: { date: string }) {
         <span>퇴근 <b className="nx-num">{formatTime(d.clockOut)}</b></span>
         <span>총 <b className="nx-num">{formatDuration(d.workTime.totalMin)}</b></span>
         {d.isHoliday && <span className={s.tag}>휴일</span>}
-        {d.anomalies.map((a) => <StatusBadge key={a} domain="AnomalyType" value={a} />)}
+        <AnomalyChips day={d} />
         <span className={s.muted}>{d.workGroupName}</span>
       </div>
       {noRecord ? (
@@ -109,6 +109,7 @@ export function DailyDetail({ date }: { date: string }) {
         <>
           <Timeline d={d} />
           {!d.clockOut && <div className={s.muted}>근로시간은 퇴근 후에 계산됩니다</div>}
+          <UnapprovedOtCta days={[d]} />
           <WorkTimeTable wt={d.workTime} />
         </>
       )}
