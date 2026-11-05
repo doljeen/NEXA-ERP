@@ -7,6 +7,7 @@ from dspy.utils.exceptions import LMServerError, LMTimeoutError, LMTransportErro
 
 from ai.llm import _gms_enabled, _local_enabled  # 설정 확인은 llm.py와 같은 기준 사용
 from core.config import settings
+from core.metrics import LLM_CALLS
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +60,21 @@ def run_with_fallback(module: dspy.Module, **inputs):
         try:
             # dspy.context: 이 블록 안에서만 해당 LM 사용 (요청마다 독립, 스레드 안전)
             with dspy.context(lm=get_local_lm()):
-                return module(**inputs)
+                result = module(**inputs)
+            LLM_CALLS.labels("local", "ok").inc()
+            return result
         except _FALLBACK_ERRORS as e:
+            LLM_CALLS.labels("local", "fallback").inc()      # 이 숫자가 늘면 GPU 서버 vLLM 장애 신호
             logger.warning("로컬 LLM(DSPy) 실패, GMS로 대체: %s", e)
 
     if _gms_enabled():
-        with dspy.context(lm=get_gms_lm()):
-            return module(**inputs)
+        try:
+            with dspy.context(lm=get_gms_lm()):
+                result = module(**inputs)
+        except Exception:
+            LLM_CALLS.labels("gms", "error").inc()
+            raise
+        LLM_CALLS.labels("gms", "ok").inc()
+        return result
 
     raise RuntimeError("사용 가능한 LLM이 없습니다 (로컬 실패 또는 미설정, GMS 미설정)")

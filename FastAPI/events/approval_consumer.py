@@ -13,6 +13,7 @@ from confluent_kafka import Consumer, KafkaError, TopicPartition
 from events.approval_results import resume_if_ready, save_result
 
 from core.config import settings
+from core.metrics import KAFKA_UP
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +52,12 @@ def _parse(raw: bytes | None) -> dict | None:
     return event
 
 
+def _on_error(err) -> None:
+    """librdkafka 연결 오류: 브로커가 전부 안 보이면 끊김으로 표시"""
+    if err.code() in (KafkaError._ALL_BROKERS_DOWN, KafkaError._TRANSPORT):
+        KAFKA_UP.set(0)
+
+
 def _run() -> None:
     consumer = Consumer({
         "bootstrap.servers": settings.kafka_bootstrap_servers,
@@ -61,8 +68,9 @@ def _run() -> None:
         "reconnect.backoff.ms": 1000,         # 브로커가 꺼져 있을 때 재접속 간격 (로그 폭주 방지)
         "reconnect.backoff.max.ms": 30000,
         "logger": logging.getLogger("kafka"), # librdkafka 로그를 파이썬 로그로
+        "error_cb": _on_error,                # 연결이 끊기면 게이지 0
     })
-    consumer.subscribe([TOPIC])
+    consumer.subscribe([TOPIC], on_assign=lambda c, partition: KAFKA_UP.set(1))
     attempts: dict[tuple[int, int], int] = {}   # (파티션, 오프셋) → 실패 횟수
     log.info("결재 결과 구독 시작: %s (group=%s)", TOPIC, settings.kafka_group_id)
 

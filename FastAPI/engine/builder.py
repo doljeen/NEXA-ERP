@@ -1,8 +1,11 @@
 from typing import Annotated, TypedDict
 
+import time
+
 from langgraph.errors import GraphInterrupt
 from langgraph.graph import END, START, StateGraph
 
+from core.metrics import NODE_BRANCH, NODE_SECONDS
 from nodes.base import NodeContext
 from nodes.registry import get_node_impl
 from engine.binding import resolve
@@ -47,14 +50,20 @@ def _make_node_fn(node_id: str, node_type: str, config: dict, recorder: StepReco
             inputs=state["inputs"],
             outputs=state["outputs"],
         )
+        start = time.perf_counter()
         try:
             result = node.run(ctx)
         except GraphInterrupt:
+            NODE_SECONDS.labels(node_type, "wait").observe(time.perf_counter() - start)
             recorder.wait(node_id)
             raise
         except Exception as e:
+            NODE_SECONDS.labels(node_type, "fail").observe(time.perf_counter() - start)
             recorder.fail(node_id, e)
             raise
+        NODE_SECONDS.labels(node_type, "ok").observe(time.perf_counter() - start)
+        if result.branch:
+            NODE_BRANCH.labels(node_type, result.branch).inc()
         recorder.finish(node_id, result.output, result.branch)
         return {
             "outputs": {node_id: result.output},

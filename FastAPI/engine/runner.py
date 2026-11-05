@@ -3,6 +3,7 @@ import logging
 from langgraph.types import Command
 from sqlalchemy import func, select, update
 
+from core.metrics import RUNS
 from core.database import SessionLocal
 from engine.builder import StepRecorder, build_graph
 from engine.checkpointer import get_checkpointer
@@ -155,6 +156,7 @@ def _set_waiting(run_id: int, payload: dict | None = None) -> None:
 
 
 def _finish(run_id: int, status: RunStatus, outputs: dict | None = None, error: str | None = None) -> None:
+    RUNS.labels(status.value).inc()
     with SessionLocal() as db:
         run = db.get(Run, run_id)
         if run.status == RunStatus.CANCELED:

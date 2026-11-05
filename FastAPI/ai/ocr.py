@@ -1,11 +1,14 @@
 """OCR 서버(PyTriton) 호출 클라이언트: 이미지 바이트 → 줄 단위 텍스트."""
 import json
 
+import time
+
 import numpy as np
 from pydantic import BaseModel, Field
 from tritonclient.http import InferenceServerClient, InferInput, InferRequestedOutput
 
 from core.config import settings
+from core.metrics import OCR_ERRORS, OCR_SECONDS
 
 
 class OcrItem(BaseModel):
@@ -40,14 +43,20 @@ def ocr_image(image_bytes: bytes) -> OcrResult:
     inp = InferInput("image", [1, 1], "BYTES")
     inp.set_data_from_numpy(np.array([[image_bytes]], dtype=np.object_))
 
+    start = time.perf_counter()
     client = _client()
     try:
         res = client.infer("ocr", [inp], outputs=[InferRequestedOutput("result")])
+    except Exception:
+        OCR_ERRORS.inc()               # 연결 실패·시간 초과 등
+        raise
     finally:
         client.close()
+        OCR_SECONDS.observe(time.perf_counter() - start)
 
     data = json.loads(res.as_numpy("result")[0][0])
     if not data.get("ok"):
+        OCR_ERRORS.inc()               # 서버는 응답했지만 이미지 처리 실패
         raise ValueError(f"OCR 실패: {data.get('error')}")
     return OcrResult(**data)
 
