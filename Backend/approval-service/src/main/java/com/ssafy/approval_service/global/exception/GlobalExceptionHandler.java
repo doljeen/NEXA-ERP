@@ -8,6 +8,8 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -40,6 +42,20 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResult<Void>> handleNotReadable(HttpMessageNotReadableException e) {
         return ResponseEntity.status(ErrorCode.INVALID_INPUT.getStatus())
                 .body(ApiResult.fail(ErrorCode.INVALID_INPUT));
+    }
+
+    // 쿼리·경로 값의 타입 변환 실패 (예: /documents/abc, ?formType=WRONG) → catch-all 500 이 아니라 400
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResult<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+        return ResponseEntity.status(ErrorCode.INVALID_INPUT.getStatus())
+                .body(ApiResult.fail(ErrorCode.INVALID_INPUT, e.getName() + " 값이 올바르지 않습니다: " + e.getValue()));
+    }
+
+    // 필수 쿼리 파라미터 누락 (예: 결재선 미리보기의 formType) → 400
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiResult<Void>> handleMissingParameter(MissingServletRequestParameterException e) {
+        return ResponseEntity.status(ErrorCode.INVALID_INPUT.getStatus())
+                .body(ApiResult.fail(ErrorCode.INVALID_INPUT, e.getParameterName() + " 값이 필요합니다."));
     }
 
     // 컨트롤러 내부에서 발생한 Security 예외 (필터 단계는 EntryPoint/AccessDeniedHandler가 처리)
