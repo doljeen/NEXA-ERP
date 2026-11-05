@@ -147,3 +147,4 @@ prometheus-fastapi-instrumentator==8.1.0
 prometheus_client==0.26.0
 fastembed==0.9.1
 PyYAML==6.0.3
+holidays==0.108
