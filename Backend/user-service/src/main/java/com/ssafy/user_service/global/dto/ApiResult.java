@@ -3,6 +3,8 @@ package com.ssafy.user_service.global.dto;
 import com.ssafy.user_service.global.exception.ErrorCode;
 import lombok.Getter;
 
+import java.util.Map;
+
 @Getter
 public class ApiResult<T> {
 
@@ -26,5 +28,9 @@ public class ApiResult<T> {
 
     public static <T> ApiResult<T> fail(ErrorCode errorCode, String message) {
         return new ApiResult<>(false, ErrorResponse.of(errorCode, message), null);
+    }
+
+    public static <T> ApiResult<T> fail(ErrorCode errorCode, String message, Map<String, Object> details) {
+        return new ApiResult<>(false, ErrorResponse.of(errorCode, message, details), null);
     }
 }

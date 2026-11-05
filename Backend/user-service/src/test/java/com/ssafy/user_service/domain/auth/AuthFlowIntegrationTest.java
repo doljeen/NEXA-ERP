@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -90,15 +91,22 @@ class AuthFlowIntegrationTest extends AbstractIntegrationTest {
     @Test
     void 로그인_5회_실패시_계정_잠금_423() throws Exception {
         // 잠금은 계정 존재 여부와 무관하게 loginId 기준으로 센다
+        // 실패마다 남은 시도 횟수(4 → 0)를 알려 준다. 5번째 실패로 잠기면 0
         for (int i = 0; i < 5; i++) {
             mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
                             .content(loginJson("lock@local.dev", "wrong")))
-                    .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.error.code").value("AUTH_005"));
+                    .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.error.code").value("AUTH_005"))
+                    .andExpect(jsonPath("$.error.details.remainingAttempts").value(4 - i));
         }
+        // 잠긴 뒤에는 실제 남은 시간(설정 15분 이내)과 해제 시각, Retry-After 헤더
         mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content(loginJson("lock@local.dev", "whatever")))
                 .andExpect(status().isLocked())
-                .andExpect(jsonPath("$.error.code").value("AUTH_010"));
+                .andExpect(jsonPath("$.error.code").value("AUTH_010"))
+                .andExpect(jsonPath("$.error.details.retryAfterSeconds").value(
+                        org.hamcrest.Matchers.allOf(org.hamcrest.Matchers.greaterThan(0), org.hamcrest.Matchers.lessThanOrEqualTo(900))))
+                .andExpect(jsonPath("$.error.details.lockedUntil").value(org.hamcrest.Matchers.endsWith("+09:00")))
+                .andExpect(header().exists("Retry-After"));
     }
 
     @Test
@@ -106,7 +114,8 @@ class AuthFlowIntegrationTest extends AbstractIntegrationTest {
         Cookie[] admin = login(ADMIN_LOGIN);
         mvc.perform(post("/api/v1/nothing").with(viaGateway(admin)))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error.code").value("COMMON_003"));
+                .andExpect(jsonPath("$.error.code").value("COMMON_003"))
+                .andExpect(jsonPath("$.error.details").doesNotExist());   // details 가 없는 오류는 형식이 예전과 같다
     }
 
     @Test

@@ -22,6 +22,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
+import java.time.Duration;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,9 +59,11 @@ class AuthServiceImplV1Test {
 
     @Test
     void 잠긴_계정은_조회_없이_거부() {
-        when(loginAttemptService.isLocked("a@b.c")).thenReturn(true);
+        when(loginAttemptService.lockRemaining("a@b.c")).thenReturn(Optional.of(Duration.ofSeconds(90)));
         assertThatThrownBy(() -> service.login(new LoginRequest("a@b.c", "x")))
-                .isInstanceOf(BusinessException.class).matches(t -> codeOf(t) == ErrorCode.ACCOUNT_LOCKED);
+                .isInstanceOf(BusinessException.class).matches(t -> codeOf(t) == ErrorCode.ACCOUNT_LOCKED)
+                .matches(t -> ((BusinessException) t).getDetails().get("retryAfterSeconds").equals(90L))
+                .matches(t -> ((BusinessException) t).getDetails().get("lockedUntil") instanceof String);
         verifyNoInteractions(employeeService);
     }
 
@@ -68,9 +71,11 @@ class AuthServiceImplV1Test {
     void 없는_계정과_틀린_비밀번호는_같은_오류이며_실패를_기록() {
         when(employeeService.findByLoginId("none@b.c")).thenReturn(Optional.empty());
         when(employeeService.findByLoginId("a@b.c")).thenReturn(Optional.of(employee));
+        when(loginAttemptService.recordFailure("none@b.c")).thenReturn(3);
 
         assertThatThrownBy(() -> service.login(new LoginRequest("none@b.c", "x")))
-                .matches(t -> codeOf(t) == ErrorCode.LOGIN_FAILED);
+                .matches(t -> codeOf(t) == ErrorCode.LOGIN_FAILED)
+                .matches(t -> ((BusinessException) t).getDetails().get("remainingAttempts").equals(3));
         assertThatThrownBy(() -> service.login(new LoginRequest("a@b.c", "wrong")))
                 .matches(t -> codeOf(t) == ErrorCode.LOGIN_FAILED);
         verify(loginAttemptService).recordFailure("none@b.c");
