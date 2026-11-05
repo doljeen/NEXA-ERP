@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
  * 이관 사원 행의 문자열(이름·코드) → 기준정보 ID. 한 요청 동안 쓰도록 기준정보를 한 번에 읽어 둔다.
  * 찾지 못하거나 여러 개가 걸리면 행 번호가 붙은 오류로 실패한다 (추측해서 고르지 않는다).
  */
-final class MigrationReferences {
+final class MigrationReferenceLookup {
 
     // "G3 2호봉", "G3-2", "G3(2호봉)", "G3 2" → 이름 G3, 호봉 2
     private static final Pattern GRADE_WITH_STEP = Pattern.compile("^(.+?)[\\s\\-_/(]+(\\d+)\\s*(?:호봉)?\\)?$");
@@ -32,7 +32,7 @@ final class MigrationReferences {
     private final Map<String, Department> deptsByCode;
     private final Map<String, List<Department>> deptsByName;
 
-    MigrationReferences(List<Position> positions, List<Duty> duties, List<Grade> grades,
+    MigrationReferenceLookup(List<Position> positions, List<Duty> duties, List<Grade> grades,
                         List<JobCode> jobCodes, List<Department> departments) {
         this.positions = groupByName(positions, Position::getName);
         this.duties = groupByName(duties, Duty::getName);

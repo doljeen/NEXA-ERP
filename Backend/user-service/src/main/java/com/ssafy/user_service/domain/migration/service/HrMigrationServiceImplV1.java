@@ -22,20 +22,20 @@ import java.util.List;
 @RequiredArgsConstructor
 public class HrMigrationServiceImplV1 implements HrMigrationService {
 
-    private final DepartmentMigrationUpserter departmentUpserter;
-    private final EmployeeMigrationUpserter employeeUpserter;
+    private final DepartmentMigrationLoader departmentLoader;
+    private final EmployeeMigrationLoader employeeLoader;
     private final MigrationBatchRowRepository batchRowRepository;
 
     @Override
     @Transactional
     public MigrationUpsertResponse upsertDepartments(String batchId, MigrationUpsertRequest request) {
-        return departmentUpserter.upsert(batchId, request.rows());
+        return departmentLoader.upsert(batchId, request.rows());
     }
 
     @Override
     @Transactional
     public MigrationUpsertResponse upsertEmployees(String batchId, MigrationUpsertRequest request) {
-        return employeeUpserter.upsert(batchId, request.rows());
+        return employeeLoader.upsert(batchId, request.rows());
     }
 
     /**

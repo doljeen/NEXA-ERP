@@ -29,7 +29,7 @@ import java.util.Map;
  */
 @Component
 @RequiredArgsConstructor
-class DepartmentMigrationUpserter {
+class DepartmentMigrationLoader {
 
     private static final Map<String, String> LABELS = Map.of(
             "deptCode", "부서코드", "name", "부서명", "parentDeptCode", "상위부서",

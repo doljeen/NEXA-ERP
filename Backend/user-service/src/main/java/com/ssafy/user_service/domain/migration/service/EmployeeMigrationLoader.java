@@ -50,7 +50,7 @@ import java.util.stream.Collectors;
  */
 @Component
 @RequiredArgsConstructor
-class EmployeeMigrationUpserter {
+class EmployeeMigrationLoader {
 
     private static final Map<String, String> LABELS = Map.ofEntries(
             Map.entry("empNo", "사번"), Map.entry("name", "이름"), Map.entry("engName", "영문이름"),
@@ -76,7 +76,7 @@ class EmployeeMigrationUpserter {
 
     MigrationUpsertResponse upsert(String batchId, List<MigrationUpsertRequest.Row> rows) {
         rejectIfParentsPending();
-        MigrationReferences refs = new MigrationReferences(positionRepository.findAll(), dutyRepository.findAll(),
+        MigrationReferenceLookup refs = new MigrationReferenceLookup(positionRepository.findAll(), dutyRepository.findAll(),
                 gradeRepository.findAll(), jobCodeRepository.findAll(), departmentRepository.findAll());
 
         List<MigrationRow> parsed = rows.stream().map(r -> new MigrationRow(r, LABELS)).toList();
@@ -137,7 +137,7 @@ class EmployeeMigrationUpserter {
     }
 
     /** 새 사원은 필수 항목이 모두 있어야 하고, 기존 사원은 주어진 항목만 바꾼다 */
-    private void apply(Employee emp, MigrationRow row, MigrationReferences refs, boolean isNew) {
+    private void apply(Employee emp, MigrationRow row, MigrationReferenceLookup refs, boolean isNew) {
         JobAssignment oldJob = emp.getJob();
         PersonalInfo oldPersonal = emp.getPersonal();
 
