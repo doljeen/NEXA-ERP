@@ -5,8 +5,11 @@ import com.ssafy.user_service.domain.user.repository.DutyRepository;
 import com.ssafy.user_service.global.exception.BusinessException;
 import com.ssafy.user_service.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -21,5 +24,12 @@ public class DutyServiceImplV1 implements DutyService {
         return dutyRepository.findById(dutyId)
                 .map(DutyResponse::from)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "존재하지 않는 직책입니다."));
+    }
+
+    @Override
+    public List<DutyResponse> findAll() {
+        return dutyRepository.findAll(Sort.by("dutyId")).stream()
+                .map(DutyResponse::from)
+                .toList();
     }
 }
