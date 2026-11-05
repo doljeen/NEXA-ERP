@@ -1,5 +1,7 @@
 package com.ssafy.approval_service.domain.document.repository;
 
+import com.ssafy.approval_service.domain.approval.model.entity.enums.LineAction;
+import com.ssafy.approval_service.domain.approval.model.entity.enums.LineRole;
 import com.ssafy.approval_service.domain.document.model.entity.Document;
 import com.ssafy.approval_service.domain.document.model.entity.enums.DocumentStatus;
 import com.ssafy.approval_service.domain.document.model.entity.enums.FormType;
@@ -9,6 +11,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -82,6 +85,47 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     long countPendingFor(@Param("status") DocumentStatus status,
                          @Param("formType") FormType formType,
                          @Param("employeeId") Long employeeId);
+
+    /**
+     * 참조함·처리함: 요청자의 결재선 줄 중 역할(roles)과 처리 상태(actions)가 맞는 줄이 있는 문서. 최신 문서부터.
+     * 문서 상태는 따지지 않는다 (status 를 주면 교집합)
+     */
+    @Query("""
+            SELECT d FROM Document d
+            WHERE (:status IS NULL OR d.status = :status)
+              AND (:formType IS NULL OR d.formType = :formType)
+              AND EXISTS (""" + MY_LINE + """
+            )
+            ORDER BY d.draftedAt DESC, d.docId DESC
+            """)
+    List<Document> findByMyLine(@Param("status") DocumentStatus status,
+                                @Param("formType") FormType formType,
+                                @Param("employeeId") Long employeeId,
+                                @Param("roles") Collection<LineRole> roles,
+                                @Param("actions") Collection<LineAction> actions);
+
+    /** findByMyLine 과 같은 조건의 건수 */
+    @Query("""
+            SELECT COUNT(d) FROM Document d
+            WHERE (:status IS NULL OR d.status = :status)
+              AND (:formType IS NULL OR d.formType = :formType)
+              AND EXISTS (""" + MY_LINE + """
+            )
+            """)
+    long countByMyLine(@Param("status") DocumentStatus status,
+                       @Param("formType") FormType formType,
+                       @Param("employeeId") Long employeeId,
+                       @Param("roles") Collection<LineRole> roles,
+                       @Param("actions") Collection<LineAction> actions);
+
+    /** 문서 d 에 요청자(:employeeId)의 줄 중 역할·처리 상태가 맞는 줄이 있는지. findByMyLine / countByMyLine 이 같이 쓴다 */
+    String MY_LINE = """
+            SELECT 1 FROM ApprovalLine l
+            WHERE l.document = d
+              AND l.empId = :employeeId
+              AND l.role IN :roles
+              AND l.action IN :actions
+            """;
 
     /** 문서 d 에서 요청자(:employeeId)의 줄이 현재 차례인지. findPendingFor / countPendingFor 가 같이 쓴다 */
     String MY_TURN_LINE = """

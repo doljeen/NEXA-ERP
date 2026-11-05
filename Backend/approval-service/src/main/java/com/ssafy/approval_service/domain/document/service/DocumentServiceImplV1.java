@@ -3,6 +3,8 @@ package com.ssafy.approval_service.domain.document.service;
 import com.ssafy.approval_service.domain.approval.model.entity.ApprovalHistory;
 import com.ssafy.approval_service.domain.approval.model.entity.ApprovalLine;
 import com.ssafy.approval_service.domain.approval.model.entity.enums.HistoryAction;
+import com.ssafy.approval_service.domain.approval.model.entity.enums.LineAction;
+import com.ssafy.approval_service.domain.approval.model.entity.enums.LineRole;
 import com.ssafy.approval_service.domain.approval.repository.ApprovalHistoryRepository;
 import com.ssafy.approval_service.domain.approval.repository.ApprovalLineRepository;
 import com.ssafy.approval_service.domain.approval.policy.ApprovalAttributes;
@@ -30,8 +32,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -42,6 +46,13 @@ import java.util.stream.Collectors;
 public class DocumentServiceImplV1 implements DocumentService {
 
     private static final int FIRST_ROUND = 1;
+
+    // 참조함: 참조·열람 줄 (처리 상태 무관. 이 줄은 결재 처리 대상이 아니라 늘 PENDING 이다)
+    private static final Set<LineRole> REFERENCE_ROLES = EnumSet.of(LineRole.REFERENCE, LineRole.VIEWER);
+    private static final Set<LineAction> ANY_ACTION = EnumSet.allOf(LineAction.class);
+    // 처리함: 결재·합의 줄 중 처리가 끝난 줄. 전결로 생략된 줄도 포함한다 (내 결재 단계를 지나간 문서)
+    private static final Set<LineRole> APPROVER_ROLES = EnumSet.of(LineRole.APPROVER, LineRole.AGREEMENT);
+    private static final Set<LineAction> DONE_ACTIONS = EnumSet.of(LineAction.AGREE, LineAction.DISAGREE, LineAction.SKIPPED);
 
     private final DocumentRepository documentRepository;
     private final ApprovalLineRepository approvalLineRepository;
@@ -60,10 +71,17 @@ public class DocumentServiceImplV1 implements DocumentService {
         DocumentBox documentBox = parseEnum(DocumentBox.class, box, "box");
         Long employeeId = requester.employeeId();
 
-        List<Document> documents = documentBox == DocumentBox.PENDING
-                ? documentRepository.findPendingFor(status, type, employeeId)
-                : documentRepository.findReadableByStatusAndFormType(
-                        status, type, drafterFilter(documentBox, employeeId), employeeId, requester.isAdmin());
+        List<Document> documents = documentBox == null
+                ? documentRepository.findReadableByStatusAndFormType(status, type, null, employeeId, requester.isAdmin())
+                : switch (documentBox) {
+                    case DRAFTED -> documentRepository.findReadableByStatusAndFormType(
+                            status, type, employeeId, employeeId, requester.isAdmin());
+                    case PENDING -> documentRepository.findPendingFor(status, type, employeeId);
+                    case REFERENCE -> documentRepository.findByMyLine(
+                            status, type, employeeId, REFERENCE_ROLES, ANY_ACTION);
+                    case COMPLETED -> documentRepository.findByMyLine(
+                            status, type, employeeId, APPROVER_ROLES, DONE_ACTIONS);
+                };
         return DocumentListResponse.of(documents, linesByDocId(documents), employeeId);
     }
 
@@ -75,16 +93,18 @@ public class DocumentServiceImplV1 implements DocumentService {
         DocumentBox documentBox = parseEnum(DocumentBox.class, box, "box");
         Long employeeId = requester.employeeId();
 
-        long count = documentBox == DocumentBox.PENDING
-                ? documentRepository.countPendingFor(status, type, employeeId)
-                : documentRepository.countReadableByStatusAndFormType(
-                        status, type, drafterFilter(documentBox, employeeId), employeeId, requester.isAdmin());
+        long count = documentBox == null
+                ? documentRepository.countReadableByStatusAndFormType(status, type, null, employeeId, requester.isAdmin())
+                : switch (documentBox) {
+                    case DRAFTED -> documentRepository.countReadableByStatusAndFormType(
+                            status, type, employeeId, employeeId, requester.isAdmin());
+                    case PENDING -> documentRepository.countPendingFor(status, type, employeeId);
+                    case REFERENCE -> documentRepository.countByMyLine(
+                            status, type, employeeId, REFERENCE_ROLES, ANY_ACTION);
+                    case COMPLETED -> documentRepository.countByMyLine(
+                            status, type, employeeId, APPROVER_ROLES, DONE_ACTIONS);
+                };
         return new DocumentCountResponse(count);
-    }
-
-    /** 기안함이면 기안자를 요청자로 제한 */
-    private static Long drafterFilter(DocumentBox box, Long employeeId) {
-        return box == DocumentBox.DRAFTED ? employeeId : null;
     }
 
     /** 목록 문서들의 결재선을 IN 조회 한 번으로 가져와 문서별로 묶는다 (문서마다 조회하지 않도록) */
