@@ -28,7 +28,7 @@ function useCountdown(until: number | null) {
 export function LoginPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const { status, setLoggedIn } = useSession();
+  const { status, markLoggedIn } = useSession();
   const [form] = Form.useForm<FormValues>();
   const [error, setError] = useState<string | null>(null);
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
@@ -50,8 +50,9 @@ export function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await authApi.login(email.trim(), pass);
-      setLoggedIn(res.employeeId, res.deptName, res.gradeName);
+      await authApi.login(email.trim(), pass);
+      // 신원·소속은 SessionGate가 /employees/me로 확인한다
+      markLoggedIn();
       navigate(target, { replace: true });
     } catch (e) {
       if (!isApiError(e)) {

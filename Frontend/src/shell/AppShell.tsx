@@ -11,6 +11,7 @@ import { useCan } from '@/auth/useCan';
 import { adminNav, allNav, userNav, type NavItem } from './nav';
 import { useViewport } from './useViewport';
 import { useTodoCounts } from './useTodoCounts';
+import { ClockChip } from '@/attendance/Clock';
 import s from './shell.module.css';
 
 const COLLAPSE_KEY = 'nx.sidebarCollapsed';
@@ -24,7 +25,7 @@ export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { me, deptName, clear } = useSession();
+  const { me, clear } = useSession();
   const canAdmin = useCan('admin.view');
 
   // 모드는 URL에서 계산한다(새로고침해도 유지, 설계 5장)
@@ -117,7 +118,7 @@ export function AppShell() {
             {adminMode ? '관리' : '사원'} / <b>{current?.label ?? ''}</b>
           </div>
           <div className={s.topRight}>
-            {/* ClockChip은 2주차(설계 9장) */}
+            {!adminMode && <ClockChip />}
             {!adminMode && counts.approval !== undefined && (
               <NavLink to="/approvals" className={`${s.todo} nx-hit24`}>
                 결재 <Counter value={counts.approval} tone="brand" label="결재" />
@@ -136,7 +137,7 @@ export function AppShell() {
                 <span className={s.avatar} aria-hidden>{me?.name?.slice(0, 1) ?? '?'}</span>
                 <span style={{ textAlign: 'left', lineHeight: '16px' }}>
                   <div>{me?.name}</div>
-                  {deptName && <div className={s.profileSub}>{deptName}</div>}
+                  {me?.deptName && <div className={s.profileSub}>{me.deptName}</div>}
                 </span>
               </button>
             </Dropdown>

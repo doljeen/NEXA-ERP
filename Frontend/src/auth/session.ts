@@ -1,49 +1,35 @@
 import { create } from 'zustand';
 import type { Employee } from '@/api/types';
 
-const STORAGE_KEY = 'nx.employeeId';
+// 1주차에 쓰던 localStorage 키(employeeId 기반 복원). /me로 바꾸면서 남은 값을 지운다.
+try { localStorage.removeItem('nx.employeeId'); } catch { /* 저장소 접근 불가 환경 */ }
 
-function readStoredId(): number | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const id = raw ? Number(raw) : NaN;
-    return Number.isInteger(id) && id > 0 ? id : null;
-  } catch {
-    return null;
-  }
-}
-
-export type SessionStatus = 'unknown' | 'restoring' | 'authenticated' | 'anonymous';
+/**
+ * unknown: 아직 확인 안 함(앱 시작, 로그인 직후) → SessionGate가 GET /employees/me로 확인한다
+ * authenticated: /me 성공
+ * anonymous: /me 실패(쿠키 없음·만료·퇴직) 또는 로그아웃
+ */
+export type SessionStatus = 'unknown' | 'authenticated' | 'anonymous';
 
 interface SessionState {
   status: SessionStatus;
-  employeeId: number | null;
   me: Employee | null;
-  deptName: string | null;
-  gradeName: string | null;
-  setLoggedIn: (employeeId: number, deptName?: string, gradeName?: string) => void;
+  /** 로그인 성공 직후: 신원은 /me로 다시 확인한다(토큰의 주체만 믿는다) */
+  markLoggedIn: () => void;
   setMe: (me: Employee) => void;
-  setRestoring: () => void;
   clear: () => void;
 }
 
-// /me API가 없어 employeeId를 localStorage에 둔다(요구사항 1.1, 설계 9장 #6)
+// 신원은 access 토큰의 주체로만 정한다(GET /api/v1/employees/me). 브라우저 저장소에 ID를 두지 않는다.
 export const useSession = create<SessionState>((set) => ({
-  status: readStoredId() ? 'unknown' : 'anonymous',
-  employeeId: readStoredId(),
+  status: 'unknown',
   me: null,
-  deptName: null,
-  gradeName: null,
-  setLoggedIn: (employeeId, deptName, gradeName) => {
-    try { localStorage.setItem(STORAGE_KEY, String(employeeId)); } catch { /* 저장 불가 환경 */ }
-    set({ employeeId, deptName: deptName ?? null, gradeName: gradeName ?? null, status: 'restoring' });
-  },
+  markLoggedIn: () => set({ status: 'unknown', me: null }),
   setMe: (me) => set({ me, status: 'authenticated' }),
-  setRestoring: () => set({ status: 'restoring' }),
-  clear: () => {
-    try { localStorage.removeItem(STORAGE_KEY); } catch { /* noop */ }
-    set({ status: 'anonymous', employeeId: null, me: null, deptName: null, gradeName: null });
-  },
+  clear: () => set({ status: 'anonymous', me: null }),
 }));
+
+/** 로그인한 본인 사원 ID */
+export const useMyId = () => useSession((s) => s.me?.empId ?? null);
 
 export const isAdmin = (me: Employee | null) => me?.role === 'ADMIN';

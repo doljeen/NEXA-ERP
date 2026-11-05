@@ -18,8 +18,12 @@ import { App } from './App';
 
 // reissue 실패: 세션을 비우면 SessionGate가 로그인(돌아올 URL 보존)으로 보낸다(설계 7.2)
 setSessionExpiredHandler(() => {
-  if (useSession.getState().status === 'anonymous') return; // 한 번만
-  try { sessionStorage.setItem(EXPIRED_FLAG, '1'); } catch { /* noop */ }
+  const { status } = useSession.getState();
+  if (status === 'anonymous') return; // 한 번만
+  // 쓰던 세션이 끊긴 경우만 "세션 만료"를 띄운다. 앱 시작 시 /me 확인 실패(처음 방문)는 안내하지 않는다.
+  if (status === 'authenticated') {
+    try { sessionStorage.setItem(EXPIRED_FLAG, '1'); } catch { /* noop */ }
+  }
   queryClient.clear();
   useSession.getState().clear();
 });
