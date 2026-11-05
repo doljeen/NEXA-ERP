@@ -2,7 +2,7 @@
 import json
 
 import numpy as np
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from tritonclient.http import InferenceServerClient, InferInput, InferRequestedOutput
 
 from core.config import settings
@@ -20,6 +20,7 @@ class OcrResult(BaseModel):
     text: str             # 줄 단위로 정리한 전체 텍스트 → DSPy 추출 입력
     lines: list[str]      # 줄 목록
     items: list[OcrItem]  # 글자별 원본 (신뢰도 낮은 글자 표시, 학습 데이터용)
+    config: dict = Field(default_factory=dict)  # 서버의 OCR 설정 (예전 서버는 안 보내므로 기본값 빈 dict)
 
 
 def _client() -> InferenceServerClient:

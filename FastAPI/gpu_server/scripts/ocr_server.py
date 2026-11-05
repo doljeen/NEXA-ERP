@@ -22,7 +22,7 @@ def _flag(name: str, default: bool) -> bool:
 
 # 비교 대상 설정 2개 (기본값은 지금과 같게 켜둠 → 비교 결과에 따라 바꿈)
 OCR_CONFIG = {
-    "textline_orientation": _flag("OCR_TEXTLINE_ORIENTATION", True),   # 줄마다 뒤집힘 판단 (멀쩡한 줄을 뒤집는 의심)
+    "textline_orientation": _flag("OCR_TEXTLINE_ORIENTATION", False),  # 끔: 멀쩡한 줄을 뒤집어 store 82→88%, 2026-11-05 A/B 결과
     "doc_unwarping": _flag("OCR_DOC_UNWARPING", True),                 # 기울기·휘어짐 보정 (여백 없는 스캔의 윗줄을 망가뜨리는 의심)
 }
 

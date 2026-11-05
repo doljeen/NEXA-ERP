@@ -145,10 +145,10 @@ def print_report(name: str, split: str, data: str, s: dict, bd: dict, rows: list
                 print(f"  {r['id']} {k:5} 정답={r['label'][k]!r} 예측={r['pred'][k]!r} ({b} 탓) [함정 {traps}]")
 
 
-def log_to_mlflow(name, split, data_dir, program, program_path, s, bd, rows, threads, tags=None) -> str:
+def log_to_mlflow(name, split, data_dir, program, program_path, s, bd, rows, threads, tags=None, ocr_file="ocr.jsonl") -> str:
     """지표(숫자) + 조건별 분석 + 장별 예측 + 프로그램 상태를 run 하나로 기록"""
     mlflow = setup_mlflow()
-    ds = dataset_info(data_dir)
+    ds = dataset_info(data_dir, ocr_file)
     with mlflow.start_run(run_name=f"eval-{name}-{ds['dataset']}-{split}") as run:
         mlflow.set_tags({"stage": "eval", "program": name, "split": split, **ds, **(tags or {})})
         mlflow.log_params({
@@ -182,9 +182,10 @@ def main():
     p.add_argument("--name", default="base", help="MLflow에 남길 프로그램 이름")
     p.add_argument("--threads", type=int, default=4, help="동시 요청 수 (vLLM max-num-seqs 8보다 작게)")
     p.add_argument("--no-mlflow", action="store_true", help="기록 없이 화면 출력만")
+    p.add_argument("--ocr", default="ocr.jsonl", help="OCR 텍스트셋 파일 이름 (OCR 설정 비교용)")
     args = p.parse_args()
 
-    records = load_records(args.split, args.data)
+    records = load_records(args.split, args.data, args.ocr)
     program = load_program(args.program)
     print(f"{args.name} 프로그램으로 {args.data.name}/{args.split} {len(records)}장 평가 (모델 {settings.local_llm_model})")
 
@@ -193,7 +194,8 @@ def main():
     print_report(args.name, args.split, args.data.name, s, bd, rows)
 
     if not args.no_mlflow:
-        run_id = log_to_mlflow(args.name, args.split, args.data, program, args.program, s, bd, rows, args.threads)
+        run_id = log_to_mlflow(args.name, args.split, args.data, program, args.program, s, bd, rows, args.threads,
+                               tags={"ocr_config": args.ocr}, ocr_file=args.ocr)
         print(f"\nMLflow 기록 완료: run_id={run_id}")
 
 
