@@ -79,7 +79,7 @@ public class DocumentServiceImplV1 implements DocumentService {
                     case PENDING -> documentRepository.findPendingFor(status, type, employeeId);
                     case REFERENCE -> documentRepository.findByMyLine(
                             status, type, employeeId, REFERENCE_ROLES, ANY_ACTION);
-                    case COMPLETED -> documentRepository.findByMyLine(
+                    case COMPLETED -> documentRepository.findByMyLineOrderByActedAt(
                             status, type, employeeId, APPROVER_ROLES, DONE_ACTIONS);
                 };
         return DocumentListResponse.of(documents, linesByDocId(documents), employeeId);

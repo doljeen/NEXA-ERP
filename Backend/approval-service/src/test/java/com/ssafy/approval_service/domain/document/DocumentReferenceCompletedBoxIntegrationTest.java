@@ -105,16 +105,29 @@ class DocumentReferenceCompletedBoxIntegrationTest extends AbstractIntegrationTe
     }
 
     @Test
-    void 참조함과_처리함은_최신_문서부터() throws Exception {
+    void 참조함은_최신_문서부터_처리함은_최근에_처리한_문서부터() throws Exception {
         long referrer = newEmployee();
         long approver = newEmployee();
         long older = createDocument(newEmployee(), line(approver, 1, "APPROVER"), line(referrer, 2, "REFERENCE"));
         long newer = createDocument(newEmployee(), line(approver, 1, "APPROVER"), line(referrer, 2, "REFERENCE"));
-        act(older, approver, "approve");
+        // 기안 순서와 처리 순서를 반대로: 새 문서를 먼저, 오래된 문서를 나중에 처리
         act(newer, approver, "approve");
+        act(older, approver, "approve");
 
         assertThat(box("REFERENCE", referrer)).containsExactly((int) newer, (int) older);
-        assertThat(box("COMPLETED", approver)).containsExactly((int) newer, (int) older);
+        assertThat(box("COMPLETED", approver)).containsExactly((int) older, (int) newer);
+    }
+
+    @Test
+    void 한_문서에_내_줄이_여럿이어도_처리함에는_한_번만_나온다() throws Exception {
+        long me = newEmployee();
+        long documentId = createDocument(newEmployee(),
+                line(me, 1, "APPROVER"),
+                line(me, 2, "AGREEMENT"));
+        act(documentId, me, "approve");
+        act(documentId, me, "approve");
+
+        assertThat(box("COMPLETED", me)).containsExactly((int) documentId);
     }
 
     @Test

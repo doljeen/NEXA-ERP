@@ -87,7 +87,7 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
                          @Param("employeeId") Long employeeId);
 
     /**
-     * 참조함·처리함: 요청자의 결재선 줄 중 역할(roles)과 처리 상태(actions)가 맞는 줄이 있는 문서. 최신 문서부터.
+     * 참조함: 요청자의 결재선 줄 중 역할(roles)과 처리 상태(actions)가 맞는 줄이 있는 문서. 최신 문서부터.
      * 문서 상태는 따지지 않는다 (status 를 주면 교집합)
      */
     @Query("""
@@ -103,6 +103,27 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
                                 @Param("employeeId") Long employeeId,
                                 @Param("roles") Collection<LineRole> roles,
                                 @Param("actions") Collection<LineAction> actions);
+
+    /**
+     * 처리함: 요청자의 줄 중 역할(roles)·처리 상태(actions)가 맞는 줄이 있는 문서. 요청자가 처리한 시각이 최근인 문서부터.
+     * 정렬 기준(actedAt)이 결재선에 있어서 결재선에서 출발한다. 한 문서에 내 줄이 여럿이면 GROUP BY 로 한 번만, 가장 최근 처리 시각으로 정렬한다.
+     * 건수는 countByMyLine 과 조건이 같다
+     */
+    @Query("""
+            SELECT d FROM ApprovalLine l JOIN l.document d
+            WHERE l.empId = :employeeId
+              AND l.role IN :roles
+              AND l.action IN :actions
+              AND (:status IS NULL OR d.status = :status)
+              AND (:formType IS NULL OR d.formType = :formType)
+            GROUP BY d
+            ORDER BY MAX(l.actedAt) DESC, d.docId DESC
+            """)
+    List<Document> findByMyLineOrderByActedAt(@Param("status") DocumentStatus status,
+                                              @Param("formType") FormType formType,
+                                              @Param("employeeId") Long employeeId,
+                                              @Param("roles") Collection<LineRole> roles,
+                                              @Param("actions") Collection<LineAction> actions);
 
     /** findByMyLine 과 같은 조건의 건수 */
     @Query("""
