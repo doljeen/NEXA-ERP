@@ -45,6 +45,9 @@ class SecurityIntegrationTest {
     LeaveAccountRepository accountRepository;
 
     @MockitoBean
+    com.ssafy.leaveservice.domain.request.service.LeaveRequestDatesService datesService;
+
+    @MockitoBean
     com.ssafy.leaveservice.client.hr.HrClient hrClient;
 
     @org.junit.jupiter.api.BeforeEach
@@ -105,14 +108,17 @@ class SecurityIntegrationTest {
     }
 
     @Test
-    void internalDatesRejectUnauthenticatedAndAllCurrentUserRoles() throws Exception {
+    void internalDatesAllowAnonymousAndCurrentUserRoles() throws Exception {
         String path = "/api/v1/leaves/internal/requests/42/dates";
+        org.mockito.Mockito.when(datesService.getDates(42L)).thenReturn(
+                new com.ssafy.leaveservice.domain.request.dto.LeaveRequestDatesResponse(
+                        42L, 7L, "연차", true, java.util.List.of()));
         mvc.perform(get(path).header("X-Service-Name", "attendance-service"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isOk());
         mvc.perform(get(path).with(user(7)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isOk());
         mvc.perform(get(path).with(admin(1)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isOk());
     }
 
     private static RequestPostProcessor user(long empId) {

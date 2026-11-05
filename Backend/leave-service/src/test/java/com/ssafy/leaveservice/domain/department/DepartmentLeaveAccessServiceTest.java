@@ -173,7 +173,7 @@ class DepartmentLeaveAccessServiceTest {
     }
 
     private HrIntegrationProperties properties(boolean enabled,String employeeUri,String membersUri,String dutyUri,JwtClaims claims) {
-        return new HrIntegrationProperties(enabled,"",employeeUri,membersUri,dutyUri,Duration.ofSeconds(2),Duration.ofSeconds(3),claims);
+        return new HrIntegrationProperties(enabled,"","user-service",employeeUri,membersUri,dutyUri,Duration.ofSeconds(2),Duration.ofSeconds(3),claims);
     }
 
     private void assertCode(Runnable action,ErrorCode code) {
