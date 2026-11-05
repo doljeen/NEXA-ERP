@@ -1,13 +1,17 @@
 import type { ReactNode } from 'react';
-import { Button, DatePicker, Tabs } from 'antd';
+import { Button, DatePicker, Drawer, Tabs } from 'antd';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { Card, PageHeader, EmptyState } from '@/ui/primitives';
+import { Card, PageHeader } from '@/ui/primitives';
 import { Icon } from '@/ui/Icon';
 import { ChevronLeft, ChevronRight } from '@/ui/icons';
 import { ClockPanel } from '@/attendance/Clock';
 import { DailyDetail } from '@/attendance/DailyDetail';
 import { WeeklyView, mondayOf } from '@/attendance/Weekly';
+import { RequestForm } from '@/attendance/requests/RequestForm';
+import { RequestList } from '@/attendance/requests/RequestList';
+import { RequestDetail } from '@/attendance/requests/RequestDetail';
+import { REQUESTS_PATH } from '@/attendance/requests/links';
 import { formatDate, kst, nowKst } from '@/format';
 import s from '@/attendance/attendance.module.css';
 
@@ -78,7 +82,26 @@ function WeeklyTab() {
   );
 }
 
-/** 근태(요구사항 3.2, 설계 6.4). 2주차: 일간·주간. 근태 신청은 3주차. */
+/** 근태 신청: /attendance/requests 목록(+ /:id 상세 Drawer), /attendance/requests/new 신청 */
+function RequestsTab() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const rest = location.pathname.replace(/^\/attendance\/requests\/?/, '');
+  // 딥링크(근태이상 칩 등)로 다시 들어오면 입력을 새로 채운다
+  if (rest === 'new') return <RequestForm key={location.search} />;
+  const id = /^\d+$/.test(rest) ? Number(rest) : null;
+  return (
+    <>
+      <Card><RequestList /></Card>
+      <Drawer open={id != null} onClose={() => navigate(`${REQUESTS_PATH}${location.search}`)} width={560}
+              title="근태 신청" destroyOnHidden>
+        {id != null && <RequestDetail key={id} id={id} />}
+      </Drawer>
+    </>
+  );
+}
+
+/** 근태(요구사항 3.2·3.3, 설계 6.4): 일간·주간·근태 신청 */
 export function AttendancePage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -94,9 +117,7 @@ export function AttendancePage() {
       />
       {active === '' && <DailyTab />}
       {active === 'weekly' && <WeeklyTab />}
-      {active === 'requests' && (
-        <Card><EmptyState title="화면 준비 중" description="근태 신청(근무시간 수정·초과근무·휴일대체)은 3주차에 구현합니다" /></Card>
-      )}
+      {active === 'requests' && <RequestsTab />}
     </>
   );
 }

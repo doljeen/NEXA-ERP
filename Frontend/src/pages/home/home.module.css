@@ -20,3 +20,7 @@
 .aiList li { display: flex; align-items: center; gap: 12px; }
 .aiList li > a { margin-left: auto; }
 .aiIcon { color: var(--nx-ai-500); }
+
+.grid2 { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
+.grid2 > section { min-width: 0; }
+@media (max-width: 1151px) { .grid2 { grid-template-columns: 1fr; } }

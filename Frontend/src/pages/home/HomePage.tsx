@@ -12,6 +12,12 @@ import { FeatureGate } from '@/ui/FeatureGate';
 import { ErrorPanel } from '@/ui/ErrorPanel';
 import { ClockPanel } from '@/attendance/Clock';
 import { WeeklyGauge, WeeklySummary, mondayOf } from '@/attendance/Weekly';
+import { UnapprovedOtCta } from '@/attendance/AnomalyChips';
+import { RequestStatusCell, targetText } from '@/attendance/requests/RequestList';
+import { REQUESTS_PATH, newRequestHref, requestHref } from '@/attendance/requests/links';
+import { useMyRequests } from '@/api/attendanceRequests';
+import { requestTypeLabel } from '@/status/labels';
+import rs from '@/attendance/requests/requests.module.css';
 import { formatDate, formatDurationShort, formatRelative, kst, nowKst } from '@/format';
 import s from './home.module.css';
 
@@ -49,6 +55,7 @@ function WeekCard() {
           <div className={s.week}>
             <WeeklySummary w={q.data} />
             <WeeklyGauge w={q.data} />
+            <UnapprovedOtCta days={q.data.days} />
             <div className={s.days}>
               {q.data.days.filter((d) => !d.isHoliday || d.workTime.totalMin > 0).map((d) => (
                 <span key={d.workDate} className={d.workDate === today ? s.dayToday : undefined}>
@@ -95,6 +102,33 @@ function PendingCard() {
   );
 }
 
+/** 내 최근 근태 신청 5건(올해). 결재 대기 행이 있으면 목록 화면과 같은 규칙으로 5초마다 확인한다 */
+function RecentRequestsCard() {
+  const q = useMyRequests(nowKst().year());
+  return (
+    <Card title="내 최근 신청" meta={<Link to={REQUESTS_PATH}>전체 보기 →</Link>} flush>
+      {q.isError ? <div style={{ padding: 16 }}><ErrorPanel error={q.error} onRetry={() => q.refetch()} /></div>
+        : !q.data ? <div style={{ padding: 16 }}><Skeleton active={false} paragraph={{ rows: 3 }} /></div>
+        : q.data.length === 0 ? (
+          <EmptyState title="올해 근태 신청이 없습니다"
+                      action={<Link to={newRequestHref({ type: 'TIME_FIX' })}><Button size="small">새 신청</Button></Link>} />
+        ) : (
+          <ul className={rs.recent}>
+            {q.data.slice(0, 5).map((r) => (
+              <li key={r.attReqId}>
+                <Link to={requestHref(r.attReqId)}>
+                  <span>{requestTypeLabel(r.reqType)}</span>
+                  <span className={`${s.todoMuted} nx-num`}>{targetText(r)}</span>
+                  <span style={{ marginLeft: 'auto' }}><RequestStatusCell r={r} /></span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+    </Card>
+  );
+}
+
 /** 대기 건이 있을 때만 보인다(설계 6.1). 사유(reasons)는 목록 응답에 없어 표시하지 않는다(frontend-backend-gaps.md B5). */
 function AiWaitingCard() {
   const q = useMyPendingRuns();
@@ -128,7 +162,10 @@ export function HomePage() {
           <WeekCard />
           <Card title="휴가 잔여"><FeatureGate flag="leaveBalance">{null}</FeatureGate></Card>
         </div>
-        <PendingCard />
+        <div className={s.grid2}>
+          <PendingCard />
+          <RecentRequestsCard />
+        </div>
         <AiWaitingCard />
       </div>
     </>

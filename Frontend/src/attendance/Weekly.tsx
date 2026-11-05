@@ -3,10 +3,10 @@ import { Drawer, Skeleton, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useWeekly, type AttendanceDaySummary, type WeeklyAttendance } from '@/api/attendance';
 import { formatDate, formatDateShort, formatDuration, formatDurationShort, formatTime, kst, nowKst } from '@/format';
-import { StatusBadge } from '@/ui/StatusBadge';
 import { ErrorPanel } from '@/ui/ErrorPanel';
 import { leavePortionLabel } from '@/status/labels';
 import { DailyDetail } from './DailyDetail';
+import { AnomalyChips, UnapprovedOtCta } from './AnomalyChips';
 import s from './attendance.module.css';
 
 /** 날짜가 속한 주의 월요일(YYYY-MM-DD). 주간 조회 키로 쓴다. */
@@ -77,7 +77,7 @@ export function WeeklyTable({ w }: { w: WeeklyAttendance }) {
         <div className={s.cellTags}>
           {r.isHoliday && <span className={s.tag}>휴일</span>}
           {r.leaves.map((l, i) => <span key={i} className={s.tag}>{l.leaveTypeName} {leavePortionLabel(l.portion)}</span>)}
-          {r.anomalies.map((a) => <StatusBadge key={a} domain="AnomalyType" value={a} />)}
+          <AnomalyChips day={r} />
         </div>
       ),
     },
@@ -115,6 +115,7 @@ export function WeeklyView({ monday }: { monday: string }) {
         <WeeklySummary w={q.data} />
         <WeeklyGauge w={q.data} />
       </div>
+      <UnapprovedOtCta days={q.data.days} />
       <WeeklyTable w={q.data} />
     </div>
   );

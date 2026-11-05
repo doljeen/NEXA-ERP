@@ -60,3 +60,9 @@
 .dayCell { display: inline-flex; gap: 6px; align-items: baseline; }
 .dayToday { color: var(--nx-brand-600); font-weight: 700; }
 .cellTags { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* ---------- 근태이상 → 신청 딥링크 (설계 6.4) ---------- */
+.anomalyLink { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; }
+.anomalyLink:hover span:last-child { text-decoration: underline; }
+.otCta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 12px; border-radius: var(--nx-r-md);
+         background: var(--nx-danger-bg); font-size: 13px; }
