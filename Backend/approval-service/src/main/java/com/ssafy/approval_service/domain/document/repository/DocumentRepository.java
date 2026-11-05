@@ -6,6 +6,7 @@ import com.ssafy.approval_service.domain.document.model.entity.Document;
 import com.ssafy.approval_service.domain.document.model.entity.enums.DocumentStatus;
 import com.ssafy.approval_service.domain.document.model.entity.enums.FormType;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -16,6 +17,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+/**
+ * 목록 조회(find*)는 Pageable 을 받는다. 정렬은 각 쿼리의 ORDER BY 로 고정이고(문서함마다 의미가 다름),
+ * 페이지가 흔들리지 않게 마지막 정렬 키는 docId 다. Pageable.unpaged() 면 전체
+ */
 public interface DocumentRepository extends JpaRepository<Document, Long> {
 
     /**
@@ -30,13 +35,14 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
               AND (:admin = true
                    OR d.drafterId = :employeeId
                    OR EXISTS (SELECT 1 FROM ApprovalLine l WHERE l.document = d AND l.empId = :employeeId))
-            ORDER BY d.draftedAt DESC
+            ORDER BY d.draftedAt DESC, d.docId DESC
             """)
     List<Document> findReadableByStatusAndFormType(@Param("status") DocumentStatus status,
                                                    @Param("formType") FormType formType,
                                                    @Param("drafterId") Long drafterId,
                                                    @Param("employeeId") Long employeeId,
-                                                   @Param("admin") boolean admin);
+                                                   @Param("admin") boolean admin,
+                                                   Pageable pageable);
 
     /** findReadableByStatusAndFormType 과 같은 조건의 건수 */
     @Query("""
@@ -71,7 +77,8 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
             """)
     List<Document> findPendingFor(@Param("status") DocumentStatus status,
                                   @Param("formType") FormType formType,
-                                  @Param("employeeId") Long employeeId);
+                                  @Param("employeeId") Long employeeId,
+                                  Pageable pageable);
 
     /** findPendingFor 와 같은 조건의 건수 */
     @Query("""
@@ -102,7 +109,8 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
                                 @Param("formType") FormType formType,
                                 @Param("employeeId") Long employeeId,
                                 @Param("roles") Collection<LineRole> roles,
-                                @Param("actions") Collection<LineAction> actions);
+                                @Param("actions") Collection<LineAction> actions,
+                                Pageable pageable);
 
     /**
      * 처리함: 요청자의 줄 중 역할(roles)·처리 상태(actions)가 맞는 줄이 있는 문서. 요청자가 처리한 시각이 최근인 문서부터.
@@ -123,7 +131,8 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
                                               @Param("formType") FormType formType,
                                               @Param("employeeId") Long employeeId,
                                               @Param("roles") Collection<LineRole> roles,
-                                              @Param("actions") Collection<LineAction> actions);
+                                              @Param("actions") Collection<LineAction> actions,
+                                Pageable pageable);
 
     /** findByMyLine 과 같은 조건의 건수 */
     @Query("""
