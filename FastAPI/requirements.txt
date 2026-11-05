@@ -142,3 +142,4 @@ cryptography==50.0.2
 pycparser==3.12
 PyJWT==2.15.1
 confluent-kafka==2.16.1
+optuna==5.0.0

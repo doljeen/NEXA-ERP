@@ -14,15 +14,28 @@ HTTP_PORT = int(os.getenv("OCR_HTTP_PORT", "18100"))
 GRPC_PORT = int(os.getenv("OCR_GRPC_PORT", "18101"))
 METRICS_PORT = int(os.getenv("OCR_METRICS_PORT", "18102"))
 
+
+def _flag(name: str, default: bool) -> bool:
+    """환경변수 켜기/끄기 (1/0, true/false). OCR 설정 비교(A/B)를 코드 수정 없이 하려고"""
+    return os.getenv(name, str(default)).strip().lower() in ("1", "true", "yes", "on")
+
+
+# 비교 대상 설정 2개 (기본값은 지금과 같게 켜둠 → 비교 결과에 따라 바꿈)
+OCR_CONFIG = {
+    "textline_orientation": _flag("OCR_TEXTLINE_ORIENTATION", True),   # 줄마다 뒤집힘 판단 (멀쩡한 줄을 뒤집는 의심)
+    "doc_unwarping": _flag("OCR_DOC_UNWARPING", True),                 # 기울기·휘어짐 보정 (여백 없는 스캔의 윗줄을 망가뜨리는 의심)
+}
+
 # 서버 시작 시 모델을 한 번만 불러옴
 ocr = PaddleOCR(
     text_detection_model_name="PP-OCRv5_server_det",          # 글자 영역 찾기
     text_recognition_model_name="korean_PP-OCRv5_mobile_rec",  # 한국어 글자 읽기
     use_doc_orientation_classify=False,
-    use_doc_unwarping=True,                                    # 기울기·휘어짐 보정 (휴대폰 촬영 대비)
-    use_textline_orientation=True,
+    use_doc_unwarping=OCR_CONFIG["doc_unwarping"],
+    use_textline_orientation=OCR_CONFIG["textline_orientation"],
     device="gpu:0",                                            # 실제 GPU는 CUDA_VISIBLE_DEVICES로 지정
 )
+print(f"OCR 설정: {OCR_CONFIG}", flush=True)
 
 
 def group_lines(texts, scores, boxes):
@@ -61,7 +74,8 @@ def run_ocr(image_bytes: bytes) -> dict:
         return {"ok": False, "error": "이미지를 읽을 수 없습니다"}
     res = next(iter(ocr.predict(img)))
     lines, items = group_lines(res["rec_texts"], res["rec_scores"], res["rec_boxes"])
-    return {"ok": True, "text": "\n".join(lines), "lines": lines, "items": items}
+    # config: 어떤 OCR 설정으로 읽었는지 같이 돌려줌 → 텍스트셋에 기록 (데이터 계보)
+    return {"ok": True, "text": "\n".join(lines), "lines": lines, "items": items, "config": OCR_CONFIG}
 
 
 @batch

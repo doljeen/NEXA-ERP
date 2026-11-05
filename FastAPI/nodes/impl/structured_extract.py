@@ -1,14 +1,14 @@
 """항목 추출 노드 : OCR 텍스트 -> 문서 종류별 구조화 데이터 (DSPy)."""
 from datetime import date
 
-from ai.modules.receipt import extract_receipt
+from ai.modules.receipt import RECEIPT_VERSION, extract_receipt
 from nodes.base import BaseNode, NodeContext, NodeResult, latest_output
 
 # 문서 종류 -> (추출 함수, 모델 버전)
 # 새 문서 종류는 DSPy 모듈을 만들고 여기에 한 줄 추가
-# 모델 버전은 5단계에서 MLflow champion 버전으로 바뀜
+# 모델 버전 = 서버가 불러온 챔피언 버전 (ai/programs/*.meta.json, 없으면 base)
 EXTRACTORS = {
-    "영수증": (extract_receipt, "receipt@base"),
+    "영수증": (extract_receipt, RECEIPT_VERSION),
 }
 
 
