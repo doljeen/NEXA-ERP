@@ -2,6 +2,7 @@ package com.ssafy.approval_service.domain.document.controller;
 
 import com.ssafy.approval_service.domain.approval.policy.ApprovalAttributes;
 import com.ssafy.approval_service.domain.document.model.dto.ApprovalLinePreviewResponse;
+import com.ssafy.approval_service.domain.document.model.dto.DocumentCountResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateRequest;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentInfoResponse;
@@ -40,7 +41,7 @@ public class DocumentController {
      * 문서 목록 조회
      * approvalStatus = 결재상태 (INPROGRESS/APPROVED/REJECTED/CANCEL)
      * formType = 문서양식
-     * box = 문서함 (DRAFTED: 기안함). 없으면 조회할 수 있는 문서 전체
+     * box = 문서함 (DRAFTED: 기안함, PENDING: 결재 대기함). 없으면 조회할 수 있는 문서 전체
      */
     @GetMapping
     public ResponseEntity<ApiResult<DocumentListResponse>> getDocumentList(
@@ -51,6 +52,18 @@ public class DocumentController {
     ) {
         DocumentListResponse response = documentService.findByStatusAndType(approvalStatus, formType, box, requester);
         return ResponseEntity.ok(ApiResult.success(response));
+    }
+
+    /** 문서 건수. 파라미터는 목록과 같다 (예: box=PENDING 결재 대기 카운터) */
+    @GetMapping("/count")
+    public ResponseEntity<ApiResult<DocumentCountResponse>> countDocuments(
+            @CurrentUser AuthUser requester,
+            @RequestParam(required = false) String approvalStatus,
+            @RequestParam(required = false) String formType,
+            @RequestParam(required = false) String box
+    ) {
+        return ResponseEntity.ok(ApiResult.success(
+                documentService.countByStatusAndType(approvalStatus, formType, box, requester)));
     }
 
     /**

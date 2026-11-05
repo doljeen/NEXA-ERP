@@ -2,6 +2,7 @@ package com.ssafy.approval_service.domain.document.service;
 
 import com.ssafy.approval_service.domain.approval.policy.ApprovalAttributes;
 import com.ssafy.approval_service.domain.document.model.dto.ApprovalLinePreviewResponse;
+import com.ssafy.approval_service.domain.document.model.dto.DocumentCountResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateRequest;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentInfoResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentListResponse;
@@ -15,6 +16,9 @@ public interface DocumentService {
 
     /** 결재상태/문서양식/문서함으로 목록 조회. 모두 null 허용. 요청자가 조회할 수 있는 문서만 */
     DocumentListResponse findByStatusAndType(String approvalStatus, String formType, String box, AuthUser requester);
+
+    /** findByStatusAndType 과 같은 조건의 건수 */
+    DocumentCountResponse countByStatusAndType(String approvalStatus, String formType, String box, AuthUser requester);
 
     /**
      * 문서 생성 + 상신. 결재선 저장과 SUBMIT 이력 기록까지 한 트랜잭션.
