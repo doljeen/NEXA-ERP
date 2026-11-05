@@ -56,6 +56,23 @@ class ApprovalConfigurationTest {
     }
 
     @Test
+    void serviceIdIsUsedWithoutBaseUrlOnlyAfterAllFlagsAreEnabled() {
+        com.ssafy.leaveservice.client.LeaveRestClientFactory factory = org.mockito.Mockito.mock(
+                com.ssafy.leaveservice.client.LeaveRestClientFactory.class);
+        org.mockito.Mockito.when(factory.create(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(org.springframework.web.client.RestClient.create());
+        runner.withBean(com.ssafy.leaveservice.client.LeaveRestClientFactory.class, () -> factory)
+                .withPropertyValues("leave.approval.enabled=true", "leave.approval.service-id=approval-service",
+                        "leave.approval.http-contract-verified=true", "leave.approval.results.enabled=true",
+                        "leave.approval.results.contract-verified=true", "spring.kafka.bootstrap-servers=unused:9092")
+                .run(context -> {
+                    assertThat(context.getBean(ApprovalClient.class)).isInstanceOf(ApprovalHttpClient.class);
+                    org.mockito.Mockito.verify(factory).create(null, "approval-service", Duration.ofSeconds(2), Duration.ofSeconds(3));
+                });
+    }
+
+    @Test
     void unavailableCreateAndLookupDoNotInventSuccess() {
         ApprovalClient client = new UnavailableApprovalClient();
         assertThatThrownBy(() -> client.create(null)).isInstanceOfSatisfying(BusinessException.class,

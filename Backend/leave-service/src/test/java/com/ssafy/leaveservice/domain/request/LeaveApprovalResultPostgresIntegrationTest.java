@@ -918,8 +918,10 @@ class LeaveApprovalResultPostgresIntegrationTest {
         }
         Map<String, List<Map<String, Object>>> before = rows();
 
-        // 내부 응답 계약은 실제 MVC와 DB로 확인하고 운영 보안 필터는 별도 테스트에서 검증한다.
-        MockMvcBuilders.webAppContextSetup(context).build().perform(
+        // 실제 보안 필터를 거친 익명 GET에서도 저장된 날짜를 조회한다.
+        MockMvcBuilders.webAppContextSetup(context)
+                .apply(org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity())
+                .build().perform(
                 org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
                         "/api/v1/leaves/internal/requests/{requestId}/dates", initial.requestId()
                 )
@@ -946,7 +948,9 @@ class LeaveApprovalResultPostgresIntegrationTest {
         submissionService.submit("paid", input(1, null, date(day.plusDays(1), LeaveRequestPortion.FULL)));
         jdbcTemplate.update("update leave_type set name='무급 특별휴가' where leave_type_id=2");
 
-        MockMvcBuilders.webAppContextSetup(context).build().perform(
+        MockMvcBuilders.webAppContextSetup(context)
+                .apply(org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity())
+                .build().perform(
                 org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
                         "/api/v1/leaves/internal/requests/{requestId}/dates", unpaid.requestId()
                 )
@@ -957,15 +961,25 @@ class LeaveApprovalResultPostgresIntegrationTest {
     }
 
     @Test
-    void internalDatesDistinguishMissingRequestAndMissingStoredDates() {
+    void internalDatesDistinguishMissingRequestAndMissingStoredDates() throws Exception {
         LeaveSubmissionResult initial = pending();
         LeaveRequestDatesService datesService = context.getBean(LeaveRequestDatesService.class);
         assertBusiness(() -> datesService.getDates(Long.MAX_VALUE), ErrorCode.NOT_FOUND);
         assertBusiness(() -> datesService.getDates(0L), ErrorCode.INVALID_INPUT);
+        org.springframework.test.web.servlet.MockMvc internalMvc = MockMvcBuilders.webAppContextSetup(context)
+                .apply(org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity())
+                .build();
+        String path = "/api/v1/leaves/internal/requests/{requestId}/dates";
+        internalMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(path, Long.MAX_VALUE))
+                .andExpect(status().isNotFound());
+        internalMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(path, 0))
+                .andExpect(status().isBadRequest());
         jdbcTemplate.update("delete from leave_ledger where leave_req_id=?", initial.requestId());
         jdbcTemplate.update("delete from leave_request_allocation where leave_req_id=?", initial.requestId());
         jdbcTemplate.update("delete from leave_request_date where leave_req_id=?", initial.requestId());
         assertBusiness(() -> datesService.getDates(initial.requestId()), ErrorCode.DATA_INTEGRITY_VIOLATION);
+        internalMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(path, initial.requestId()))
+                .andExpect(status().isConflict());
     }
 
     private LeaveSubmissionResult pending() {

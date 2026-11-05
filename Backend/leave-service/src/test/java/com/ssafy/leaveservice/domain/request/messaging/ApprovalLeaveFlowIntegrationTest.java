@@ -18,6 +18,9 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.cloud.client.discovery.DiscoveryClient;
+import org.springframework.cloud.client.DefaultServiceInstance;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -66,6 +69,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "leave.approval.results.enabled=true",
         "leave.approval.results.contract-verified=true",
         "spring.cloud.config.enabled=false",
+        "spring.cloud.loadbalancer.cache.enabled=false",
         "eureka.client.enabled=false",
         "spring.jpa.open-in-view=false"
 })
@@ -89,6 +93,9 @@ class ApprovalLeaveFlowIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired WebApplicationContext context;
     @Autowired KafkaTemplate<Object, Object> kafka;
+
+    @MockitoBean(name = "compositeDiscoveryClient")
+    DiscoveryClient discovery;
 
     private final AtomicReference<Throwable> externalFailure = new AtomicReference<>();
     private final AtomicInteger posts = new AtomicInteger();
@@ -114,12 +121,16 @@ class ApprovalLeaveFlowIntegrationTest {
     static void configureEndpoints(DynamicPropertyRegistry registry) throws IOException {
         externalHttp = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         externalHttp.createContext("/api/v1/documents", exchange -> SCENARIO.get().handleApproval(exchange));
-        externalHttp.createContext("/api/v1/attendance/holidays", exchange ->
-                respond(exchange, 200, "{\"success\":true,\"error\":null,\"data\":[]}"));
+        externalHttp.createContext("/api/v1/attn/holidays", exchange -> {
+            ApprovalLeaveFlowIntegrationTest scenario = SCENARIO.get();
+            scenario.holidayCalls.incrementAndGet();
+            scenario.holidayAuthorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            int responseStatus = "Bearer flow-test-access".equals(scenario.holidayAuthorization.get()) ? 200 : 401;
+            respond(exchange, responseStatus, "{\"success\":true,\"error\":null,\"data\":[]}");
+        });
         externalHttp.start();
-        String baseUrl = "http://127.0.0.1:" + externalHttp.getAddress().getPort();
-        registry.add("leave.approval.base-url", () -> baseUrl);
-        registry.add("leave.attendance.base-url", () -> baseUrl);
+        registry.add("leave.approval.base-url", () -> "");
+        registry.add("leave.attendance.base-url", () -> "");
         registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
     }
 
@@ -133,6 +144,9 @@ class ApprovalLeaveFlowIntegrationTest {
     @BeforeEach
     void setUp() {
         SCENARIO.set(this);
+        org.mockito.Mockito.when(discovery.getInstances(org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(invocation -> List.of(new DefaultServiceInstance("flow", invocation.getArgument(0),
+                        "127.0.0.1", externalHttp.getAddress().getPort(), false)));
         mvc = MockMvcBuilders.webAppContextSetup(context).build();
         Jwt token = Jwt.withTokenValue("flow-test-access").header("alg", "RS256")
                 .subject("1").claim("type", "access").claim("role", "USER").build();
@@ -175,6 +189,31 @@ class ApprovalLeaveFlowIntegrationTest {
         SecurityContextHolder.clearContext();
         SCENARIO.set(null);
         assertThat(externalFailure.get()).isNull();
+    }
+
+    private final AtomicInteger holidayCalls = new AtomicInteger();
+    private final AtomicReference<String> holidayAuthorization = new AtomicReference<>();
+
+    @Test
+    void previewAndSubmissionRelayEmployeeTokenToActualHolidayPath() throws Exception {
+        String body = """
+                {"leaveTypeId":1,"dates":[{"leaveDate":"%s","portion":"FULL"}]}
+                """.formatted(day);
+        mvc.perform(post(REQUESTS + "/preview").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk());
+        assertThat(holidayCalls).hasValue(1);
+        assertThat(holidayAuthorization.get()).isEqualTo("Bearer flow-test-access");
+
+        submit().andExpect(status().isCreated());
+        assertThat(holidayCalls).hasValue(2);
+        assertThat(holidayAuthorization.get()).isEqualTo("Bearer flow-test-access");
+
+        // 공유 테스트 계정에 예약을 남기지 않도록 기존 반려 정산까지 완료한다.
+        publish(event("REJECTED"));
+        String conflictingApproval = event("APPROVED");
+        publish(conflictingApproval);
+        awaitDeadLetter(conflictingApproval);
+        assertSettlement("REJECTED", "RELEASE", 0);
     }
 
     @ParameterizedTest

@@ -1,54 +1,36 @@
 package com.ssafy.leaveservice.client.attendance;
 
-import org.springframework.cloud.client.discovery.DiscoveryClient;
+import com.ssafy.leaveservice.client.LeaveRestClientFactory;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
-import java.net.http.HttpClient;
 import java.time.LocalDate;
 import java.util.*;
 
 @Component
 public class RestHolidayClient implements HolidayClient {
-    private final AttendanceHolidayProperties properties;
-    private final DiscoveryClient discoveryClient;
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
 
     public RestHolidayClient(
             AttendanceHolidayProperties properties,
-            DiscoveryClient discoveryClient,
+            LeaveRestClientFactory clientFactory,
             ObjectMapper objectMapper
     ) {
-        this.properties = properties;
-        this.discoveryClient = discoveryClient;
         this.objectMapper = objectMapper;
-        HttpClient httpClient = HttpClient.newBuilder().connectTimeout(properties.connectTimeout())
-                .followRedirects(HttpClient.Redirect.NEVER).build();
-        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
-        factory.setReadTimeout(properties.readTimeout());
-        this.restClient = RestClient.builder().requestFactory(factory).build();
+        this.restClient = clientFactory.create(
+                properties.baseUrl(), properties.serviceId(), properties.connectTimeout(), properties.readTimeout());
     }
 
     @Override
     public HolidayResult findHolidays(LocalDate startDate, LocalDate endDate) {
         try {
-            String baseUrl = properties.baseUrl();
-            if (baseUrl == null || baseUrl.isBlank()) {
-                List<org.springframework.cloud.client.ServiceInstance> instances = discoveryClient.getInstances(properties.serviceId());
-                if (instances.isEmpty()) {
-                    return HolidayResult.unavailable();
-                }
-                baseUrl = instances.getFirst().getUri().toString();
-            }
-            // TODO: 근태 내부 인증 계약 확정 후 서비스 자격 증명을 연동한다. 401/403은 현재도 검증 불가다.
+            // 현재 직원의 Bearer JWT를 전달하며 인증·조회 실패는 검증 불가로 처리한다.
             ResponseEntity<String> response = restClient.get()
-                    .uri(org.springframework.web.util.UriComponentsBuilder.fromUriString(baseUrl)
-                            .path("/api/v1/attendance/holidays").queryParam("startDate", startDate)
-                            .queryParam("endDate", endDate).build().toUri())
+                    .uri(uriBuilder -> uriBuilder.path("/api/v1/attn/holidays").queryParam("startDate", startDate)
+                            .queryParam("endDate", endDate).build())
                     .retrieve().toEntity(String.class);
             if (response.getStatusCode().value() != 200 || response.getBody() == null) {
                 return HolidayResult.unavailable();

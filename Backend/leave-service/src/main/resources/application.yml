@@ -4,6 +4,7 @@ leave:
   hr:
     enabled: ${LEAVE_HR_ENABLED:false}
     base-url: ${LEAVE_HR_BASE_URL:}
+    service-id: ${LEAVE_HR_SERVICE_ID:user-service}
     employee-info-uri: ${LEAVE_HR_EMPLOYEE_INFO_URI:}
     department-members-uri: ${LEAVE_HR_DEPARTMENT_MEMBERS_URI:}
     duty-info-uri: ${LEAVE_HR_DUTY_INFO_URI:}
@@ -22,7 +23,7 @@ leave:
     enabled: ${LEAVE_APPROVAL_ENABLED:false}
     http-contract-verified: ${LEAVE_APPROVAL_HTTP_CONTRACT_VERIFIED:false}
     base-url: ${LEAVE_APPROVAL_BASE_URL:}
-    service-id: ${LEAVE_APPROVAL_SERVICE_ID:}
+    service-id: ${LEAVE_APPROVAL_SERVICE_ID:approval-service}
     connect-timeout: ${LEAVE_APPROVAL_CONNECT_TIMEOUT:2s}
     read-timeout: ${LEAVE_APPROVAL_READ_TIMEOUT:3s}
   attendance:
@@ -49,6 +50,10 @@ spring:
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
       acks: all
   cloud:
+    loadbalancer:
+      retry:
+        # 결재 생성 POST는 재전송하지 않고 UNKNOWN 및 UUID 조회로 복구한다.
+        enabled: false
     config:
       enabled: false
 

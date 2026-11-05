@@ -4,6 +4,7 @@ import com.ssafy.nexa.security.NexaSecurityConfigurer;
 import com.ssafy.leaveservice.global.auth.EmployeeAccess;
 import com.ssafy.leaveservice.global.auth.LeaveAdministratorAccess;
 import com.ssafy.leaveservice.global.auth.LeaveAdministratorFilter;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.web.access.ExceptionTranslationFilter;
 import tools.jackson.databind.json.JsonMapper;
 import org.springframework.context.annotation.Bean;
@@ -32,7 +33,8 @@ public class SecurityConfig {
                 .addFilterAfter(new LeaveAdministratorFilter(administratorAccess, employeeAccess, jsonMapper),
                         ExceptionTranslationFilter.class)
                 .authorizeHttpRequests(auth -> auth
-                        // TODO Attendance 서비스 인증 계약 확정 후 전용 호출 권한 적용
+                        // TODO 서비스 인증 계약 확정 후 이 GET의 익명 허용을 전용 호출 권한으로 교체한다.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/leaves/internal/requests/{requestId}/dates").permitAll()
                         .requestMatchers("/api/v1/leaves/internal/**").denyAll()
                         .requestMatchers("/api/v1/leaves/admin/**").authenticated()
                         .anyRequest().authenticated())

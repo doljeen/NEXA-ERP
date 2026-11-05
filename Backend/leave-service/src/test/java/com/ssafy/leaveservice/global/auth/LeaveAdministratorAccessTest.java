@@ -98,6 +98,7 @@ class LeaveAdministratorAccessTest {
         HrIntegrationProperties settings = new HrIntegrationProperties(
                 true,
                 "http://user.test",
+                "user-service",
                 "employee",
                 "members",
                 "duty",

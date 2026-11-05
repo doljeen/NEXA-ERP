@@ -9,6 +9,7 @@ import java.util.stream.Stream;
 public record HrIntegrationProperties(
         boolean enabled,
         String baseUrl,
+        String serviceId,
         String employeeInfoUri,
         String departmentMembersUri,
         String dutyInfoUri,
