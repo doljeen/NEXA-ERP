@@ -2,8 +2,8 @@ package com.ssafy.user_service.domain.migration.service;
 
 import com.ssafy.user_service.domain.migration.dto.MigrationUpsertRequest;
 import com.ssafy.user_service.domain.migration.dto.MigrationUpsertResponse;
-import com.ssafy.user_service.domain.migration.repository.MigrationBatchLog;
-import com.ssafy.user_service.domain.migration.repository.MigrationBatchLog.Target;
+import com.ssafy.user_service.domain.migration.repository.MigrationBatchRowRepository;
+import com.ssafy.user_service.domain.migration.repository.MigrationBatchRowRepository.Target;
 import com.ssafy.user_service.domain.user.entity.Company;
 import com.ssafy.user_service.domain.user.entity.Department;
 import com.ssafy.user_service.domain.user.entity.Employee;
@@ -29,7 +29,7 @@ import java.util.Map;
  */
 @Component
 @RequiredArgsConstructor
-class OrgMigrationUpserter {
+class DepartmentMigrationUpserter {
 
     private static final Map<String, String> LABELS = Map.of(
             "deptCode", "부서코드", "name", "부서명", "parentDeptCode", "상위부서",
@@ -39,7 +39,7 @@ class OrgMigrationUpserter {
     private final DepartmentRepository departmentRepository;
     private final CompanyRepository companyRepository;
     private final EmployeeRepository employeeRepository;
-    private final MigrationBatchLog batchLog;
+    private final MigrationBatchRowRepository batchRowRepository;
 
     MigrationUpsertResponse upsert(String batchId, List<MigrationUpsertRequest.Row> rows) {
         Company company = singleCompany();
@@ -66,10 +66,10 @@ class OrgMigrationUpserter {
                         .company(company).deptType(deptType)
                         .build());
                 byCode.put(code, dept);
-                batchLog.recordCreated(batchId, Target.ORG, dept.getDeptId(), row.rowNo());
+                batchRowRepository.recordCreated(batchId, Target.DEPARTMENT, dept.getDeptId(), row.rowNo());
                 created++;
             } else {
-                batchLog.recordUpdateIfAbsent(batchId, Target.ORG, dept.getDeptId(), row.rowNo());
+                batchRowRepository.recordUpdateIfAbsent(batchId, Target.DEPARTMENT, dept.getDeptId(), row.rowNo());
                 dept.updateBasics(row.string("name"), sortOrder);
                 if (deptType != null) {
                     dept.changeType(deptType);
@@ -109,7 +109,7 @@ class OrgMigrationUpserter {
         for (Department waiting : departmentRepository.findByPendingParentCodeIsNotNull()) {
             Department parent = byCode.get(waiting.getPendingParentCode());
             if (parent != null) {
-                batchLog.recordUpdateIfAbsent(batchId, Target.ORG, waiting.getDeptId(), null);
+                batchRowRepository.recordUpdateIfAbsent(batchId, Target.DEPARTMENT, waiting.getDeptId(), null);
                 linkWithoutCycle(waiting, parent, null);
             }
         }

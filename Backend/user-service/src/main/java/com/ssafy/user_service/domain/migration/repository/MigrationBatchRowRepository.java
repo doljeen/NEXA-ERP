@@ -16,10 +16,10 @@ import java.util.stream.Collectors;
  */
 @Repository
 @RequiredArgsConstructor
-public class MigrationBatchLog {
+public class MigrationBatchRowRepository {
 
     public enum Target {
-        ORG("department", "dept_id"),
+        DEPARTMENT("department", "dept_id"),
         EMPLOYEE("employee", "emp_id");
 
         private final String table;

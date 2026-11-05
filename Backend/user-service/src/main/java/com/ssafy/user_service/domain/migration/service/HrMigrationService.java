@@ -8,7 +8,7 @@ import com.ssafy.user_service.domain.migration.dto.MigrationUpsertResponse;
 public interface HrMigrationService {
 
     /** 한 요청은 하나의 트랜잭션: 한 행이라도 실패하면 이 요청분은 모두 취소된다 */
-    MigrationUpsertResponse upsertOrgs(String batchId, MigrationUpsertRequest request);
+    MigrationUpsertResponse upsertDepartments(String batchId, MigrationUpsertRequest request);
 
     MigrationUpsertResponse upsertEmployees(String batchId, MigrationUpsertRequest request);
 

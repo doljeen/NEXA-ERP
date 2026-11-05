@@ -19,7 +19,7 @@ CREATE UNIQUE INDEX uk_employee_emp_no ON employee (emp_no) WHERE emp_no IS NOT 
 CREATE TABLE migration_batch_row (
     id          BIGSERIAL PRIMARY KEY,
     batch_id    VARCHAR(100) NOT NULL,
-    entity      VARCHAR(20)  NOT NULL,   -- ORG / EMPLOYEE
+    entity      VARCHAR(20)  NOT NULL,   -- DEPARTMENT / EMPLOYEE
     target_id   BIGINT       NOT NULL,   -- dept_id / emp_id
     action      VARCHAR(10)  NOT NULL,   -- CREATED / UPDATED
     before_json TEXT,                    -- UPDATED 일 때 수정 전 행 (row_to_json)

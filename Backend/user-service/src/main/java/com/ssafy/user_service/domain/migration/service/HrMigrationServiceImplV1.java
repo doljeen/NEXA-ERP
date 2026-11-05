@@ -3,10 +3,10 @@ package com.ssafy.user_service.domain.migration.service;
 import com.ssafy.user_service.domain.migration.dto.MigrationBatchSummaryResponse;
 import com.ssafy.user_service.domain.migration.dto.MigrationUpsertRequest;
 import com.ssafy.user_service.domain.migration.dto.MigrationUpsertResponse;
-import com.ssafy.user_service.domain.migration.repository.MigrationBatchLog;
-import com.ssafy.user_service.domain.migration.repository.MigrationBatchLog.Action;
-import com.ssafy.user_service.domain.migration.repository.MigrationBatchLog.Entry;
-import com.ssafy.user_service.domain.migration.repository.MigrationBatchLog.Target;
+import com.ssafy.user_service.domain.migration.repository.MigrationBatchRowRepository;
+import com.ssafy.user_service.domain.migration.repository.MigrationBatchRowRepository.Action;
+import com.ssafy.user_service.domain.migration.repository.MigrationBatchRowRepository.Entry;
+import com.ssafy.user_service.domain.migration.repository.MigrationBatchRowRepository.Target;
 import com.ssafy.user_service.global.exception.BusinessException;
 import com.ssafy.user_service.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -22,14 +22,14 @@ import java.util.List;
 @RequiredArgsConstructor
 public class HrMigrationServiceImplV1 implements HrMigrationService {
 
-    private final OrgMigrationUpserter orgUpserter;
+    private final DepartmentMigrationUpserter departmentUpserter;
     private final EmployeeMigrationUpserter employeeUpserter;
-    private final MigrationBatchLog batchLog;
+    private final MigrationBatchRowRepository batchRowRepository;
 
     @Override
     @Transactional
-    public MigrationUpsertResponse upsertOrgs(String batchId, MigrationUpsertRequest request) {
-        return orgUpserter.upsert(batchId, request.rows());
+    public MigrationUpsertResponse upsertDepartments(String batchId, MigrationUpsertRequest request) {
+        return departmentUpserter.upsert(batchId, request.rows());
     }
 
     @Override
@@ -47,34 +47,34 @@ public class HrMigrationServiceImplV1 implements HrMigrationService {
     @Override
     @Transactional
     public void rollback(String batchId) {
-        List<Entry> entries = batchLog.entries(batchId);
+        List<Entry> entries = batchRowRepository.entries(batchId);
         if (entries.isEmpty()) {
             return;
         }
-        List<String> later = batchLog.laterBatchesTouchingSameRows(batchId);
+        List<String> later = batchRowRepository.laterBatchesTouchingSameRows(batchId);
         if (!later.isEmpty()) {
             throw new BusinessException(ErrorCode.MIGRATION_ROLLBACK_CONFLICT,
                     "이후 batch(" + String.join(", ", later) + ")가 같은 행을 다시 적재했습니다. 그 batch 부터 되돌리세요");
         }
         try {
-            entries.stream().filter(e -> e.action() == Action.UPDATED).forEach(batchLog::restore);
-            batchLog.detachDepartments(entries.stream()
-                    .filter(e -> e.action() == Action.CREATED && e.target() == Target.ORG)
+            entries.stream().filter(e -> e.action() == Action.UPDATED).forEach(batchRowRepository::restore);
+            batchRowRepository.detachDepartments(entries.stream()
+                    .filter(e -> e.action() == Action.CREATED && e.target() == Target.DEPARTMENT)
                     .map(Entry::targetId).toList());
             entries.stream().filter(e -> e.action() == Action.CREATED)
-                    .forEach(e -> batchLog.delete(e.target(), e.targetId()));
+                    .forEach(e -> batchRowRepository.delete(e.target(), e.targetId()));
         } catch (DataIntegrityViolationException e) {
             // 예: 이 batch 로 만든 부서에 이관 밖에서 사원을 등록했거나, 다른 batch 의 부서가 하위로 붙은 경우
             log.warn("Migration rollback blocked: batch={}, cause={}", batchId, e.getMostSpecificCause().getMessage());
             throw new BusinessException(ErrorCode.MIGRATION_ROLLBACK_CONFLICT,
                     "이 batch 로 만든 부서·사원을 다른 데이터가 참조하고 있어 되돌릴 수 없습니다");
         }
-        batchLog.deleteBatch(batchId);
+        batchRowRepository.deleteBatch(batchId);
     }
 
     @Override
     @Transactional(readOnly = true)
     public MigrationBatchSummaryResponse summarize(String batchId) {
-        return new MigrationBatchSummaryResponse(batchLog.countRows(batchId));
+        return new MigrationBatchSummaryResponse(batchRowRepository.countRows(batchId));
     }
 }

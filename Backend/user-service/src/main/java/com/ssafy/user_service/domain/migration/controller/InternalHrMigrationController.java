@@ -29,7 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping(SecurityConstants.INTERNAL_MIGRATION_PATH)
-public class HrMigrationController {
+public class InternalHrMigrationController {
 
     private static final int MAX_BATCH_ID_LENGTH = 100;   // migration_batch_row.batch_id
 
@@ -42,7 +42,7 @@ public class HrMigrationController {
             @Valid @RequestBody MigrationUpsertRequest request) {
         checkBatchId(batchId);
         MigrationUpsertResponse result = switch (entity) {
-            case "orgs" -> hrMigrationService.upsertOrgs(batchId, request);
+            case "orgs" -> hrMigrationService.upsertDepartments(batchId, request);
             case "employees" -> hrMigrationService.upsertEmployees(batchId, request);
             default -> throw new BusinessException(ErrorCode.NOT_FOUND, "지원하지 않는 이관 대상입니다: " + entity);
         };

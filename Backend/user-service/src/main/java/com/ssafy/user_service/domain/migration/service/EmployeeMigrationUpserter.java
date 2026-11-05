@@ -2,8 +2,8 @@ package com.ssafy.user_service.domain.migration.service;
 
 import com.ssafy.user_service.domain.migration.dto.MigrationUpsertRequest;
 import com.ssafy.user_service.domain.migration.dto.MigrationUpsertResponse;
-import com.ssafy.user_service.domain.migration.repository.MigrationBatchLog;
-import com.ssafy.user_service.domain.migration.repository.MigrationBatchLog.Target;
+import com.ssafy.user_service.domain.migration.repository.MigrationBatchRowRepository;
+import com.ssafy.user_service.domain.migration.repository.MigrationBatchRowRepository.Target;
 import com.ssafy.user_service.domain.user.entity.Department;
 import com.ssafy.user_service.domain.user.entity.Employee;
 import com.ssafy.user_service.domain.user.entity.JobAssignment;
@@ -72,7 +72,7 @@ class EmployeeMigrationUpserter {
     private final JobCodeRepository jobCodeRepository;
     private final PasswordEncoder passwordEncoder;
     private final TokenStore tokenStore;
-    private final MigrationBatchLog batchLog;
+    private final MigrationBatchRowRepository batchRowRepository;
 
     MigrationUpsertResponse upsert(String batchId, List<MigrationUpsertRequest.Row> rows) {
         rejectIfParentsPending();
@@ -108,7 +108,7 @@ class EmployeeMigrationUpserter {
             if (isNew) {
                 emp = Employee.builder().empNo(empNo).passwordEnc(lockedPasswordHash).role(Role.USER).build();
             } else {
-                batchLog.recordUpdateIfAbsent(batchId, Target.EMPLOYEE, emp.getEmpId(), row.rowNo());
+                batchRowRepository.recordUpdateIfAbsent(batchId, Target.EMPLOYEE, emp.getEmpId(), row.rowNo());
             }
             boolean wasTerminated = !isNew && emp.isTerminated();
             String oldEmail = emp.getLoginId();
@@ -116,7 +116,7 @@ class EmployeeMigrationUpserter {
 
             if (isNew) {
                 employeeRepository.save(emp);
-                batchLog.recordCreated(batchId, Target.EMPLOYEE, emp.getEmpId(), row.rowNo());
+                batchRowRepository.recordCreated(batchId, Target.EMPLOYEE, emp.getEmpId(), row.rowNo());
                 byEmpNo.put(empNo, emp);
                 created++;
             } else {
@@ -232,7 +232,7 @@ class EmployeeMigrationUpserter {
             return;
         }
         for (Department dept : departmentRepository.findByPendingHeadEmpNoIn(byEmpNo.keySet())) {
-            batchLog.recordUpdateIfAbsent(batchId, Target.ORG, dept.getDeptId(), null);
+            batchRowRepository.recordUpdateIfAbsent(batchId, Target.DEPARTMENT, dept.getDeptId(), null);
             dept.linkPendingHead(byEmpNo.get(dept.getPendingHeadEmpNo()).getEmpId());
         }
     }
