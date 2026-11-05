@@ -8,6 +8,7 @@ import com.ssafy.user_service.domain.user.entity.JobAssignment;
 import com.ssafy.user_service.domain.user.service.EmployeeService;
 import com.ssafy.user_service.global.exception.BusinessException;
 import com.ssafy.user_service.global.exception.ErrorCode;
+import com.ssafy.user_service.global.exception.GlobalExceptionHandler;
 import com.ssafy.user_service.global.security.TokenStore;
 import com.ssafy.user_service.global.security.jwt.IssuedToken;
 import com.ssafy.user_service.global.security.jwt.JwtUtil;
@@ -18,9 +19,18 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.util.Map;
+import java.util.Optional;
+
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImplV1 implements AuthService {
+
+    /** 잠금 해제 시각(lockedUntil) 표기 시간대. 서버 기본 시간대와 무관하게 +09:00 으로 내려준다 */
+    private static final ZoneId LOCK_ZONE = ZoneId.of("Asia/Seoul");
 
     private final EmployeeService employeeService;
     private final PasswordEncoder passwordEncoder;
@@ -40,8 +50,13 @@ public class AuthServiceImplV1 implements AuthService {
     @Override
     public TokenResponse login(LoginRequest request) {
         String loginId = request.email();
-        if (loginAttemptService.isLocked(loginId)) {
-            throw new BusinessException(ErrorCode.ACCOUNT_LOCKED);
+        // 잠겨 있으면 해제 시각과 남은 초를 알려 준다 (클라이언트가 고정 15분이 아니라 실제 남은 시간으로 센다)
+        Optional<Duration> locked = loginAttemptService.lockRemaining(loginId);
+        if (locked.isPresent()) {
+            long seconds = locked.get().toSeconds();
+            throw new BusinessException(ErrorCode.ACCOUNT_LOCKED, Map.of(
+                    "lockedUntil", OffsetDateTime.now(LOCK_ZONE).plusSeconds(seconds).toString(),
+                    GlobalExceptionHandler.RETRY_AFTER_SECONDS, seconds));
         }
 
         Employee employee = employeeService.findByLoginId(loginId).orElse(null);
@@ -49,8 +64,9 @@ public class AuthServiceImplV1 implements AuthService {
         boolean matched = passwordEncoder.matches(request.pass(), hash);
 
         if (employee == null || !matched) {
-            loginAttemptService.recordFailure(loginId);
-            throw new BusinessException(ErrorCode.LOGIN_FAILED);
+            // 이번 실패로 잠겼어도 응답은 AUTH_005(remainingAttempts=0). 잠금 시각은 다음 시도의 AUTH_010 이 알려 준다
+            int remaining = loginAttemptService.recordFailure(loginId);
+            throw new BusinessException(ErrorCode.LOGIN_FAILED, Map.of("remainingAttempts", remaining));
         }
         if (employee.isTerminated()) {
             throw new BusinessException(ErrorCode.ACCOUNT_TERMINATED);

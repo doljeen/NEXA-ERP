@@ -3,6 +3,7 @@ package com.ssafy.user_service.global.exception;
 import com.ssafy.user_service.global.dto.ApiResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
@@ -21,10 +22,18 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    public static final String RETRY_AFTER_SECONDS = "retryAfterSeconds";
+
+    /** details 에 retryAfterSeconds 가 있으면 Retry-After 헤더로도 보낸다 (예: 로그인 잠금 423) */
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResult<Void>> handleBusiness(BusinessException e) {
         ErrorCode code = e.getErrorCode();
-        return ResponseEntity.status(code.getStatus()).body(ApiResult.fail(code, e.getMessage()));
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(code.getStatus());
+        Object retryAfter = e.getDetails().get(RETRY_AFTER_SECONDS);
+        if (retryAfter != null) {
+            response.header(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfter));
+        }
+        return response.body(ApiResult.fail(code, e.getMessage(), e.getDetails()));
     }
 
     // @Valid 실패: 필드별 메시지를 모아 400
