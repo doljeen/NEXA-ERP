@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 
+from prometheus_fastapi_instrumentator import Instrumentator
 import py_eureka_client.eureka_client as eureka_client
 from fastapi import Depends, FastAPI
 
@@ -50,6 +51,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="업무 자동화", lifespan=lifespan)
+
+# /metrics: HTTP 요청 수·지연(자동) + core/metrics.py 지표를 Prometheus 형식으로 노출
+# 인증 없음 (팀 Prometheus가 compose 내부망에서 fastapi:8086 으로 직접 수집, 게이트웨이는 /api/** 만 연결해서 외부엔 안 열림)
+Instrumentator(excluded_handlers=["/metrics", "/health"]).instrument(app).expose(
+    app, endpoint="/metrics", include_in_schema=False
+)
 
 register_exception_handlers(app)
 

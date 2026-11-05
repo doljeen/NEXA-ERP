@@ -2,6 +2,7 @@
 from ai.llm import gms_status
 from ai.modules.receipt import extract_receipt_with_gms
 from core.database import SessionLocal
+from core.metrics import VERIFY
 from nodes.base import BaseNode, NodeContext, NodeResult, latest_output
 from runs.models import RunFeedback
 
@@ -80,6 +81,7 @@ class LlmVerifyNode(BaseNode):
         }
 
         if reasons:
+            VERIFY.labels(extraction.get("doc_type") or "?", extraction.get("model_version") or "?", "human").inc()
             return NodeResult(output=out, branch="사람 확인")
 
         # 모두 통과 → 자동 확정, 피드백 저장 (라벨 출처: 로컬·GMS 일치)
@@ -91,4 +93,5 @@ class LlmVerifyNode(BaseNode):
                 label_source="llm_agree",
             ))
             db.commit()
+        VERIFY.labels(extraction.get("doc_type") or "?", extraction.get("model_version") or "?", "auto").inc()
         return NodeResult(output=out, branch="자동 확정")
