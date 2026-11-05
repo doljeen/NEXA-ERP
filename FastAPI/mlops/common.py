@@ -20,21 +20,25 @@ EXPERIMENT = "receipt-extraction"           # MLflow 실험 이름 (영수증 �
 FIELDS = ("store", "total", "date")
 
 
-def load_records(split: str | None = None, data_dir: Path = DATA_DIR) -> list[dict]:
-    """5-2에서 만든 ocr.jsonl 읽기. split을 주면 그 묶음(train/dev/test)만"""
-    path = Path(data_dir) / "ocr.jsonl"
+def load_records(split: str | None = None, data_dir: Path = DATA_DIR, ocr_file: str = "ocr.jsonl") -> list[dict]:
+    """5-2에서 만든 OCR 텍스트셋 읽기. split을 주면 그 묶음(train/dev/test)만"""
+    path = Path(data_dir) / ocr_file
     if not path.exists():
-        raise SystemExit(f"{path}가 없습니다. 먼저 python -m mlops.build_textset --data {data_dir} 를 실행하세요")
+        raise SystemExit(f"{path}가 없습니다. 먼저 python -m mlops.build_textset --data {data_dir} --out {ocr_file} 를 실행하세요")
     with path.open(encoding="utf-8") as f:
         rows = [json.loads(line) for line in f if line.strip()]
     return [r for r in rows if split is None or r["split"] == split]
 
 
-def dataset_info(data_dir: Path = DATA_DIR) -> dict:
-    """데이터 버전 기록용: 폴더 이름 + ocr.jsonl 내용 해시.
+def dataset_info(data_dir: Path = DATA_DIR, ocr_file: str = "ocr.jsonl") -> dict:
+    """데이터 버전 기록용: 폴더 이름 + OCR 파일 이름 + 내용 해시.
     내용이 1바이트라도 바뀌면 해시가 바뀜 → '어떤 데이터로 잰 점수인지' run마다 확인 가능"""
-    path = Path(data_dir) / "ocr.jsonl"
-    return {"dataset": Path(data_dir).name, "dataset_hash": hashlib.sha256(path.read_bytes()).hexdigest()[:12]}
+    path = Path(data_dir) / ocr_file
+    return {
+        "dataset": Path(data_dir).name,
+        "ocr_file": ocr_file,
+        "dataset_hash": hashlib.sha256(path.read_bytes()).hexdigest()[:12],
+    }
 
 
 def squash(text) -> str:
