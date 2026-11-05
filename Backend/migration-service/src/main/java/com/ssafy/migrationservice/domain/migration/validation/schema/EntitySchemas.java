@@ -58,7 +58,12 @@ public final class EntitySchemas {
                 FieldSpec.of("name", "부서명", STRING).required().synonyms("조직명", "부서", "deptname", "orgname").build(),
                 FieldSpec.of("parentDeptCode", "상위부서", STRING)
                         .synonyms("상위부서코드", "상위조직", "상위조직코드", "parentcode", "parentdept", "upperdeptcode", "parentorgcode").build(),
-                FieldSpec.of("sortOrder", "정렬순서", NUMBER).synonyms("순서", "표시순서").build()
+                FieldSpec.of("sortOrder", "정렬순서", NUMBER).synonyms("순서", "표시순서").build(),
+                // user-service 부서 유형(DeptType)·부서장(head_emp_id). 결재선 자동 결정에 쓰인다
+                FieldSpec.of("deptType", "부서유형", ENUM).synonyms("조직유형", "부서구분", "조직구분", "depttype", "orgtype")
+                        .enumValues(Map.of("회사", "COMPANY", "본부", "DIVISION", "팀", "TEAM")).build(),
+                FieldSpec.of("headEmpNo", "부서장 사번", STRING).maxLength(50)
+                        .synonyms("부서장", "부서장사번", "조직장", "조직장사번", "headempno", "deptheadempno", "managerempno").build()
         )));
     }
 

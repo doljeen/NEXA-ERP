@@ -114,7 +114,91 @@ user-service의 이관용 내부 API는 아직 없어서, 적재 테스트는 `F
   - 급여 시트 연도의 월 기본급(없으면 연봉 ÷ 12) ≠ 가장 늦은 달 급여 시트 기본급 `SALARY_PAYROLL_MISMATCH` (100원·1,000원 허용)
   - 다른 파일의 연도 붙은 연봉 열(4대보험 `연봉(2026)`) ≠ 연봉이력 그 해 연봉 `SALARY_HISTORY_MISMATCH` (어느 쪽이 맞는지는 판단하지 않음)
   - 급여 시트·연봉이력을 어떤 순서로 올려도 대조되게 짝이 되는 파일을 다시 검증
+- 조직 부서유형·부서장 (user-service 부서 유형·부서장 지정 규칙과 같게): 최상위만 회사, 하위가 상위보다 높은 단계 `DEPT_TYPE_ORDER`.
+  부서장 사번을 같은 작업의 직원명부와 대조해 명부에 없음·재직 아님·그 부서나 하위 부서 소속 아님을 경고. 부서장이 비어 있으면 결재선 자동 결정이 안 되므로
+  user-service V4와 같은 규칙(부서 유형에 맞는 직책 대표이사·본부장·팀장인 그 부서 재직자가 한 명)으로 사번을 제안하고, 못 정하면 공석 경고. 직원명부를 나중에 올리면 조직 파일을 다시 검증
 - `REFERENCE` entity: 적재하지 않는 참고 자료(근태기록·발령대장 등)를 올려 위 검사·규칙 추출만 한다
+
+## 이슈 코드
+
+심각도: **적재 불가**(BLOCK, 고치기 전에는 적재 안 됨) / **확인 필요**(WARN) / **자동 정리**(FIX, `suggestion` 값으로 바꾸자는 제안. 남아 있으면 적재 안 됨).
+AI(LLM)가 관여하는 코드는 `ENUM_VALUE_SUGGESTED` 하나다. 나머지 자동 정리는 규칙 기반이다. 행이 없는 이슈(`rowNo` 없음)는 파일·시트 단위다.
+
+| 코드 | 심각도 | 뜻 |
+|---|---|---|
+| **파일 구조** | | |
+| `MISSING_REQUIRED_COLUMN` | 적재 불가 | 필수 필드에 매핑된 열이 없음 |
+| `SCHEMA_NOT_READY` | 확인 필요 | 아직 필드 정의가 없는 entity라 형식 검사를 하지 않음 |
+| `TOTAL_ROW_SKIPPED` | 확인 필요 | 합계·소계 행을 데이터에서 뺌 |
+| `ROW_AFTER_TOTAL` | 확인 필요 | 합계 행 아래에 데이터 행이 있음 |
+| **엑셀 수식** | | |
+| `FORMULA_ERROR` | 적재 불가 | 수식 결과가 오류값(`#N/A`·`#REF!` 등) |
+| `HARDCODED_VALUE` | 확인 필요 | 수식 열인데 값을 직접 입력함 |
+| `BLANK_IN_FORMULA_COLUMN` | 확인 필요 | 수식 열인데 빈 칸 |
+| `FORMULA_INCONSISTENT` | 확인 필요 | 같은 열의 대표 수식과 모양이 다름 |
+| `FORMULA_DIFFERS_ACROSS_SHEETS` | 확인 필요 | 같은 양식 다른 시트와 대표 수식이 다름 |
+| **검산** | | |
+| `RECALC_MISMATCH` | 확인 필요 | 다시 계산한 값과 저장값이 다름 (계산값은 `suggestion`) |
+| `TOTAL_ITEM_MISSING` | 확인 필요 | 지급계·공제계 합에 들어가지 않은 항목 열 |
+| **법정 기준** | | |
+| `INSURANCE_RATE_OUTDATED` | 확인 필요 | 4대보험 요율이 귀속연도 요율과 다름 |
+| `INSURANCE_BASE_INCLUDES_MEAL` | 확인 필요 | 4대보험 기준 금액에 비과세 식대가 들어감 |
+| `PREMIUM_BELOW_STATUTORY` | 확인 필요 | 연장·야간·휴일 수당이 법정 배율보다 적음 |
+| `BELOW_MINIMUM_WAGE` | 확인 필요 | 월 급여가 최저임금 × 209시간보다 적음 |
+| **형식·필수값** | | |
+| `REQUIRED` | 적재 불가 | 필수값이 비어 있음 |
+| `INVALID_DATE` | 적재 불가 | 날짜로 읽을 수 없음 |
+| `DATE_FORMAT` | 자동 정리 | 날짜를 YYYY-MM-DD로 통일 |
+| `INVALID_NUMBER` | 적재 불가 | 숫자가 아님 |
+| `NUMBER_FORMAT` | 자동 정리 | 숫자의 쉼표 등을 없앰 |
+| `INVALID_EMAIL` | 적재 불가 | 이메일 형식이 아님 |
+| `INVALID_PHONE` | 확인 필요 | 전화번호 자리 수가 맞지 않음 (앞자리 0 빠짐 등) |
+| `INVALID_ENUM` | 적재 불가 | 허용되지 않는 값 (허용 값을 메시지에 적음) |
+| `ENUM_VALUE_SUGGESTED` | 자동 정리 | 허용되지 않는 값을 허용 값으로 바꾸자는 LLM 추천 (근거는 메시지) |
+| `TOO_LONG` | 적재 불가 | 최대 길이를 넘음 |
+| **파일 안 정합성** | | |
+| `DUPLICATE_KEY` | 적재 불가 | 키(사번·부서코드)가 중복 |
+| `DUPLICATE_SUSPECTED` | 확인 필요 | 사번은 다른데 이름·생년월일이 같음 (같은 사람 두 번) |
+| `CODE_TYPO_SUSPECTED` | 확인 필요 | 직위·직급 등의 드문 값이 흔한 값과 한 글자만 다름 (제안값 있음) |
+| `DATE_ORDER` | 적재 불가 / 확인 필요 | 퇴사일 < 입사일(적재 불가), 인정입사일 > 입사일(확인 필요) |
+| `SELF_PARENT` | 적재 불가 | 부서의 상위부서가 자기 자신 |
+| `PARENT_NOT_IN_FILE` | 확인 필요 | 상위부서 코드가 조직 파일에 없음 |
+| **직원명부 대조** | | |
+| `EMP_NOT_IN_ROSTER` | 확인 필요 | 사번이 직원명부에 없음 |
+| `EMP_NAME_MISMATCH` | 확인 필요 | 사번은 있는데 이름이 다름 |
+| `EMP_KEY_MISSING` | 확인 필요 | 사번 빈 칸 (이름으로 찾은 사번 제안) |
+| `EMPNO_ZERO_PADDED` | 확인 필요 | 앞자리 0이 빠진 사번을 명부 자리 수로 채워 대조함 |
+| `ROSTER_HIRE_DATE_MISMATCH` | 확인 필요 | 입사일이 명부와 다름 |
+| `INSURANCE_ACQ_DATE_MISMATCH` | 확인 필요 | 4대보험 취득일 ≠ 입사일 |
+| `INSURANCE_LOSS_DATE_MISMATCH` | 확인 필요 | 4대보험 상실일 ≠ 퇴사일 다음 날, 또는 퇴사자인데 상실일 없음 |
+| `PAID_OUTSIDE_EMPLOYMENT` | 확인 필요 | 재직 기간 밖 달에 급여가 있음 |
+| `FAMILY_COUNT_MISMATCH` | 확인 필요 | 부양가족 수가 급여의 공제가족수와 다름 |
+| `SALARY_PAYROLL_MISMATCH` | 확인 필요 | 연봉이력의 월 기본급 ≠ 급여 기본급 |
+| `SALARY_HISTORY_MISMATCH` | 확인 필요 | 다른 파일의 연도별 연봉 ≠ 연봉이력 |
+| `VISA_EXPIRED_PAID` | 확인 필요 | 체류 기간이 끝난 뒤 달에 급여가 있음 |
+| **파일 사이 집계 대조** | | |
+| `CROSS_FILE_MISMATCH` | 확인 필요 | 같은 사람·같은 항목의 값이 다른 파일과 다름 (근무표 ↔ 급여 등) |
+| `MISSING_IN_COPY` | 확인 필요 | 다른 파일에 있는 사람이 이 파일(신고·지급)에 없음 |
+| `SAME_DAY_TWO_SHEETS` | 확인 필요 | 같은 날 두 현장(시트)에 기록됨 |
+| **근무표** | | |
+| `SHIFT_OVERLAP` | 확인 필요 | 앞날 근무가 끝나기 전에 다음 근무가 시작함 |
+| `REST_INTERVAL_SHORT` | 확인 필요 | 근무 사이 휴식이 11시간보다 짧음 (특례 업종) |
+| `CONSECUTIVE_WORK_DAYS` | 확인 필요 | 쉬는 날 없이 7일 이상 연속 근무 |
+| **업무 규칙** | | |
+| `NEGATIVE_NET_PAY` | 확인 필요 | 실지급액이 음수 |
+| `PAY_MONTH_GAP` | 확인 필요 | 사람마다 급여가 빠진 달 |
+| `DEPENDENT_AGE_RULE` | 확인 필요 | 기본공제 자녀 나이 > 20 또는 부모 나이 < 60 |
+| `WITHHOLDING_RATIO_INVALID` | 확인 필요 | 원천징수비율이 80·100·120%가 아님 |
+| `RAISE_RATE_AS_PERCENT` | 확인 필요 | 인상률을 비율이 아니라 %로 적음 |
+| **조직 부서유형·부서장** | | |
+| `DEPT_TYPE_ORDER` | 확인 필요 | 최상위가 회사가 아님, 회사 아래 회사, 상위보다 높은 단계 |
+| `HEAD_NOT_IN_ROSTER` | 확인 필요 | 부서장 사번이 직원명부에 없음 |
+| `HEAD_NAME_GIVEN` | 자동 정리 | 부서장에 이름을 적음 → 명부에서 한 명뿐인 그 이름의 사번 |
+| `HEAD_NOT_EMPLOYED` | 확인 필요 | 부서장이 재직 중이 아님 |
+| `HEAD_OUTSIDE_DEPT` | 확인 필요 | 부서장이 그 부서나 하위 부서 소속이 아님 |
+| `HEAD_FROM_DUTY` | 자동 정리 | 빈 부서장 → 명부 직책으로 정한 사번 |
+| `HEAD_VACANT` | 확인 필요 | 부서장이 비어 있고 직책으로도 정할 수 없음 (공석이면 결재선 자동 결정 409) |
+| `HEAD_COLUMN_MISSING` | 확인 필요 | 조직 파일에 부서장 열이 없음 (파일 단위) |
 
 ## 대상 서비스 내부 API (user-service가 구현해야 함, 합의 필요)
 

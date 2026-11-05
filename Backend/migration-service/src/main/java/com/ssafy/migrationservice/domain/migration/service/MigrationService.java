@@ -118,10 +118,10 @@ public class MigrationService {
         salaryHistoryChecker.related(file).forEach(validationService::validate);
         // 근무표·출역부 ↔ 급여·신고 집계 대조, 같은 파일 다른 시트의 같은 날 근무
         crossFileTotalsChecker.related(file).forEach(validationService::validate);
-        // 직원명부를 새로 올리면 다른 파일의 사번 대조 결과가 바뀐다
+        // 직원명부를 새로 올리면 다른 파일의 사번 대조 결과(조직 파일은 부서장)가 바뀐다
         if (entity == MigrationEntity.HR_EMPLOYEE) {
             fileRepository.findByMigrationIdOrderByFileIdAsc(migrationId).stream()
-                    .filter(f -> f.getEntity() != MigrationEntity.HR_EMPLOYEE && f.getEntity() != MigrationEntity.HR_ORG)
+                    .filter(f -> f.getEntity() != MigrationEntity.HR_EMPLOYEE)
                     .forEach(validationService::validate);
         }
 

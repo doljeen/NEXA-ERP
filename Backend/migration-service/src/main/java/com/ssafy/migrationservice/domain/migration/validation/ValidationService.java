@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -35,12 +36,15 @@ import java.util.stream.Collectors;
 
 /**
  * 파일 하나를 단계별로 검증하고 결과를 validation_issue에 덮어쓴다.
- * ⓪ 엑셀 구조(합계 행·수식 오류·수식 규칙에서 벗어난 칸·합계 열 검산)·급여 법정 기준·⑤ 직원명부 참조·부양가족(공제가족수)·연봉이력(급여 기본급·연봉)·집계(근무표·출역부 ↔ 급여·신고) 파일 사이 대조·근무표 (모든 entity) → ① 파일 구조 → ② 형식·③ 필수값 → ④ 파일 안 중복 → ⑥ 업무 규칙
+ * ⓪ 엑셀 구조(합계 행·수식 오류·수식 규칙에서 벗어난 칸·합계 열 검산)·급여 법정 기준·⑤ 직원명부 참조·부양가족(공제가족수)·연봉이력(급여 기본급·연봉)·집계(근무표·출역부 ↔ 급여·신고)·조직 부서장(직원명부) 파일 사이 대조·근무표 (모든 entity) → ① 파일 구조 → ② 형식·③ 필수값 → ④ 파일 안 중복 → ⑥ 업무 규칙
  * 앞 단계에서 형식이 틀린 값은 업무 규칙에서 쓰지 않는다 (오류가 번지지 않게).
  */
 @Service
 @RequiredArgsConstructor
 public class ValidationService {
+
+    // 부서유형 단계 순서 (user-service DeptType 선언 순서: 앞이 높은 단계)
+    private static final List<String> DEPT_TYPES = List.of("COMPANY", "DIVISION", "TEAM");
 
     private final MappingService mappingService;
     private final StagingRowRepository stagingRowRepository;
@@ -51,6 +55,7 @@ public class ValidationService {
     private final DependentsChecker dependentsChecker;
     private final SalaryHistoryChecker salaryHistoryChecker;
     private final CrossFileTotalsChecker crossFileTotalsChecker;
+    private final DeptHeadChecker deptHeadChecker;
 
     @Transactional
     public void validate(MigrationFile file) {
@@ -65,6 +70,7 @@ public class ValidationService {
         issues.addAll(salaryHistoryChecker.check(file, rows));
         issues.addAll(crossFileTotalsChecker.check(file, rows));
         issues.addAll(DutyRosterChecker.check(file, rows));
+        issues.addAll(deptHeadChecker.check(file, rows));
         Optional<EntitySchema> schemaOpt = EntitySchemas.of(file.getEntity());
         if (schemaOpt.isEmpty()) {
             if (file.getEntity() != MigrationEntity.REFERENCE) {
@@ -235,6 +241,50 @@ public class ValidationService {
                         parent, null));
             }
         }
+        deptTypeOrder(file, rows, fieldToColumn, issues);
+    }
+
+    /**
+     * 부서유형 단계 (user-service 부서 유형 규칙과 같게): 최상위 부서만 회사, 하위 부서는 상위보다 높은 단계일 수 없음 (같은 단계는 됨).
+     * 허용 값이 아닌 유형은 형식 단계에서 이미 나오므로 여기서는 건너뛴다
+     */
+    private static void deptTypeOrder(MigrationFile file, List<ParsedTable.Row> rows, Map<String, String> fieldToColumn,
+                                      List<ValidationIssue> issues) {
+        String typeCol = fieldToColumn.get("deptType");
+        if (typeCol == null) {
+            return;
+        }
+        String codeCol = fieldToColumn.get("deptCode");
+        String parentCol = fieldToColumn.get("parentDeptCode");
+        FieldSpec spec = EntitySchemas.of(MigrationEntity.HR_ORG).flatMap(s -> s.field("deptType")).orElseThrow();
+        Map<String, String> typeByCode = new HashMap<>();
+        rows.forEach(r -> deptType(spec, r.values().get(typeCol))
+                .ifPresent(t -> typeByCode.put(r.values().get(codeCol), t)));
+        for (ParsedTable.Row row : rows) {
+            Optional<String> type = deptType(spec, row.values().get(typeCol));
+            if (type.isEmpty()) {
+                continue;
+            }
+            String parent = row.values().get(parentCol);
+            String parentType = parent == null ? null : typeByCode.get(parent);
+            String message = parent == null && !type.get().equals("COMPANY") ? "최상위 부서는 부서유형이 회사여야 합니다"
+                    : parent != null && type.get().equals("COMPANY") ? "회사 아래에 또 회사를 둘 수 없습니다. 본부나 팀으로 바꿔 주세요"
+                    : parentType != null && DEPT_TYPES.indexOf(type.get()) < DEPT_TYPES.indexOf(parentType)
+                    ? "상위부서 '" + parent + "'보다 높은 단계입니다 (회사 > 본부 > 팀)" : null;
+            if (message != null) {
+                issues.add(new ValidationIssue(file.getFileId(), row.rowNo(), "deptType", typeCol, Severity.WARN,
+                        IssueCode.DEPT_TYPE_ORDER, message, row.values().get(typeCol), null));
+            }
+        }
+    }
+
+    /** '본부' → DIVISION, 'TEAM' → TEAM, 허용 값이 아니면 비어 있음 */
+    private static Optional<String> deptType(FieldSpec spec, String value) {
+        if (value == null) {
+            return Optional.empty();
+        }
+        String code = spec.enumValues().getOrDefault(value, value.toUpperCase(Locale.ROOT));
+        return DEPT_TYPES.contains(code) ? Optional.of(code) : Optional.empty();
     }
 
     /** 코드성(ENUM) 필드마다 허용 값이 아닌 값들 → LLM 추천 (파일·필드·값마다 한 번만 묻고 저장된 것을 씀) */
