@@ -2,7 +2,10 @@ package com.ssafy.user_service.domain.user.controller;
 
 import com.ssafy.user_service.domain.user.dto.*;
 import com.ssafy.user_service.domain.user.entity.Employee;
+import com.ssafy.user_service.domain.user.service.EmployeeInfoAssembler;
 import com.ssafy.user_service.domain.user.service.EmployeeService;
+import com.ssafy.user_service.global.security.AuthUser;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import com.ssafy.user_service.global.dto.ApiResult;
 import com.ssafy.user_service.global.exception.BusinessException;
 import com.ssafy.user_service.global.exception.ErrorCode;
@@ -22,6 +25,7 @@ import java.util.List;
 public class EmployeeAdminController {
 
     private final EmployeeService employeeService;
+    private final EmployeeInfoAssembler employeeInfoAssembler;
 
     @PostMapping
     public ResponseEntity<ApiResult<EmployeeCreateResponse>> create(@Valid @RequestBody EmployeeCreateRequest request) {
@@ -48,14 +52,29 @@ public class EmployeeAdminController {
         } else {
             employees = employeeService.findAll();
         }
-        return ResponseEntity.ok(ApiResult.success(EmployeeListResponse.from(employees)));
+        return ResponseEntity.ok(ApiResult.success(new EmployeeListResponse(employeeInfoAssembler.toResponses(employees))));
+    }
+
+    /**
+     * 로그인한 본인 정보 (소속 이름 포함). 신원은 access 토큰의 주체로만 정한다.
+     * 퇴직 처리 후 남은 access 토큰으로 호출하면 로그인·재발급과 같은 401 AUTH_006.
+     * 리터럴 경로라 /{employeeId} 보다 먼저 매칭된다
+     */
+    @GetMapping("/me")
+    public ResponseEntity<ApiResult<EmployeeInfoResponse>> getMe(@AuthenticationPrincipal AuthUser user) {
+        Employee employee = employeeService.findById(user.employeeId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.EMPLOYEE_NOT_FOUND));
+        if (employee.isTerminated()) {
+            throw new BusinessException(ErrorCode.ACCOUNT_TERMINATED);
+        }
+        return ResponseEntity.ok(ApiResult.success(employeeInfoAssembler.toResponse(employee)));
     }
 
     @GetMapping("/{employeeId}")
     public ResponseEntity<ApiResult<EmployeeInfoResponse>> getEmployeeInfo(@PathVariable Long employeeId) {
         Employee employee = employeeService.findById(employeeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.EMPLOYEE_NOT_FOUND));
-        return ResponseEntity.ok(ApiResult.success(EmployeeInfoResponse.from(employee)));
+        return ResponseEntity.ok(ApiResult.success(employeeInfoAssembler.toResponse(employee)));
     }
 
     @PatchMapping("/{employeeId}/terminate")

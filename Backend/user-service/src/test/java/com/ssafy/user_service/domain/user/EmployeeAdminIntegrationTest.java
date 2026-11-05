@@ -163,4 +163,66 @@ class EmployeeAdminIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.error.code").value("COMMON_001"));
     }
 
+    // ===== 본인 조회 (/me)·소속 이름 =====
+
+    @Test
+    void me는_토큰_주체의_정보와_소속_이름을_돌려준다() throws Exception {
+        Cookie[] admin = login(ADMIN_LOGIN);
+        long employeeId = createEmployee(admin, "me@local.dev");
+        Cookie[] user = login(loginJson("me@local.dev", "user12345"));
+
+        // employeeJson: deptId=1(인사팀), positionId=1(사원), gradeId=1(G1), dutyId=1(팀원)
+        mvc.perform(get("/api/v1/employees/me").with(viaGateway(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.empId").value(employeeId))
+                .andExpect(jsonPath("$.data.loginId").value("me@local.dev"))
+                .andExpect(jsonPath("$.data.deptId").value(1))
+                .andExpect(jsonPath("$.data.deptName").value("인사팀"))
+                .andExpect(jsonPath("$.data.positionName").value("사원"))
+                .andExpect(jsonPath("$.data.gradeName").value("G1"))
+                .andExpect(jsonPath("$.data.dutyName").value("팀원"));
+    }
+
+    @Test
+    void me는_퇴직_후_남은_토큰이면_401_AUTH_006() throws Exception {
+        Cookie[] admin = login(ADMIN_LOGIN);
+        long employeeId = createEmployee(admin, "mequit@local.dev");
+        Cookie[] user = login(loginJson("mequit@local.dev", "user12345"));
+        mvc.perform(patch("/api/v1/employees/" + employeeId + "/terminate").with(viaGateway(admin))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"resignDate":"2026-11-05"}"""))
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/v1/employees/me").with(viaGateway(user)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("AUTH_006"));
+    }
+
+    @Test
+    void me는_인증이_없으면_401() throws Exception {
+        mvc.perform(get("/api/v1/employees/me"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void 단건과_ids_조회에도_소속_이름이_붙는다() throws Exception {
+        Cookie[] admin = login(ADMIN_LOGIN);
+        long first = createEmployee(admin, "names1@local.dev");
+        long second = createEmployee(admin, "names2@local.dev");
+
+        mvc.perform(get("/api/v1/employees/" + first).with(viaGateway(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.deptName").value("인사팀"))
+                .andExpect(jsonPath("$.data.gradeName").value("G1"));
+
+        MvcResult result = mvc.perform(get("/api/v1/employees").with(viaGateway(admin))
+                        .param("ids", first + "," + second))
+                .andExpect(status().isOk())
+                .andReturn();
+        List<String> deptNames = JsonPath.read(result.getResponse().getContentAsString(), "$.data.employees[*].deptName");
+        List<String> dutyNames = JsonPath.read(result.getResponse().getContentAsString(), "$.data.employees[*].dutyName");
+        assertThat(deptNames).containsExactly("인사팀", "인사팀");
+        assertThat(dutyNames).containsExactly("팀원", "팀원");
+    }
+
 }

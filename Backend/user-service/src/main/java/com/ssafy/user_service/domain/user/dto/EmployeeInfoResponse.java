@@ -9,7 +9,11 @@ import com.ssafy.user_service.global.security.Role;
 
 import java.time.LocalDate;
 
-/** 사원 조회 응답. 개인정보(PersonalInfo)는 제외한다. */
+/**
+ * 사원 조회 응답. 개인정보(PersonalInfo)는 제외한다.
+ * 소속 이름(deptName 등)은 EmployeeInfoAssembler 가 붙인다. 참조를 못 찾으면 null.
+ * 다른 서비스(approval 등)도 이 응답을 쓰므로 필드는 추가만 하고 기존 필드는 바꾸지 않는다.
+ */
 public record EmployeeInfoResponse(
         Long empId,
         String empNo,
@@ -23,9 +27,14 @@ public record EmployeeInfoResponse(
         EmpType empType,
         HireType hireType,
         LocalDate hireDate,
-        EmploymentStatus status
+        EmploymentStatus status,
+        String deptName,        // 부서명
+        String positionName,    // 직위명
+        String gradeName,       // 직급명
+        String dutyName         // 직책명
 ) {
-    public static EmployeeInfoResponse from(Employee employee) {
+    public static EmployeeInfoResponse of(Employee employee, String deptName, String positionName,
+                                          String gradeName, String dutyName) {
         JobAssignment job = employee.getJob();
         return new EmployeeInfoResponse(
                 employee.getEmpId(),
@@ -40,7 +49,11 @@ public record EmployeeInfoResponse(
                 employee.getEmpType(),
                 employee.getHireType(),
                 employee.getHireDate(),
-                employee.getStatus()
+                employee.getStatus(),
+                deptName,
+                positionName,
+                gradeName,
+                dutyName
         );
     }
 }
