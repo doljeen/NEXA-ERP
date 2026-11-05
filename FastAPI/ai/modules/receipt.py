@@ -1,9 +1,14 @@
 """영수증 항목 추출 DSPy 모듈."""
+import json
+from pathlib import Path
+
 import dspy
 from pydantic import BaseModel, Field
 
-from ai.dspy_lm import run_with_fallback
-from ai.dspy_lm import get_gms_lm
+from ai.dspy_lm import get_gms_lm, run_with_fallback
+
+# 승격된 챔피언 프로그램 위치 (mlops/promote.py가 여기에 내보냄, Git에 포함 → 배포)
+PROGRAM_DIR = Path(__file__).resolve().parent.parent / "programs"
 
 
 class Receipt(BaseModel):
@@ -31,8 +36,21 @@ class ReceiptExtractor(dspy.Module):
         return self.extract(text=text)
 
 
-# 모듈은 한 번만 만들어 재사용 (5단계에서는 여기서 최적화된 버전을 load)
-_extractor = ReceiptExtractor()
+def _load_extractor() -> tuple[ReceiptExtractor, str]:
+    """챔피언 파일이 있으면 지시문·예시를 덮어씌워 불러오고, 없으면 기본(base)으로.
+    돌려주는 버전 이름은 노드 출력·run_feedback에 기록됨 → 어떤 버전이 추출했는지 추적"""
+    extractor = ReceiptExtractor()
+    path = PROGRAM_DIR / "receipt.json"
+    if not path.exists():
+        return extractor, "receipt@base"
+    extractor.load(str(path))
+    meta_path = PROGRAM_DIR / "receipt.meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+    return extractor, meta.get("label", "receipt@champion")
+
+
+# 서버 시작 때 한 번만 불러와서 재사용 (승격 반영 = 배포 후 재시작)
+_extractor, RECEIPT_VERSION = _load_extractor()
 
 
 def extract_receipt(text: str) -> Receipt:
