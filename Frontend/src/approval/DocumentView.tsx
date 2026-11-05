@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { Button, Input, Skeleton } from 'antd';
 import { useDocument, useDocumentAction, type DocumentAction, type DocumentDetail, type ApprovalHistoryItem } from '@/api/approval';
 import { useMyId } from '@/auth/session';
@@ -10,6 +11,8 @@ import { AiMark, Kbd, modKey } from '@/ui/primitives';
 import { useNotify } from '@/ui/useNotify';
 import { formatDateTime, formatDuration, formatMoney } from '@/format';
 import { approvalLevelLabel, formTypeLabel } from '@/status/labels';
+import { useHotkeys } from '@/common/useHotkeys';
+import { requestHref } from '@/attendance/requests/links';
 import { ApprovalLine } from './ApprovalLine';
 import { documentPermissions, type DocumentPermissions } from './permissions';
 import s from './approval.module.css';
@@ -63,11 +66,12 @@ function Histories({ list }: { list: ApprovalHistoryItem[] }) {
   );
 }
 
-function ActionBar({ doc, p }: { doc: DocumentDetail; p: DocumentPermissions }) {
+function ActionBar({ doc, p, onProcessed }: { doc: DocumentDetail; p: DocumentPermissions; onProcessed?: (id: number) => void }) {
   const action = useDocumentAction(doc.documentId);
   const notify = useNotify();
   const [rejecting, setRejecting] = useState(false);
   const [comment, setComment] = useState('');
+  const openFinal = useRef<(() => void) | null>(null);
 
   const run = (a: DocumentAction, done: string) =>
     action.mutateAsync(a).then(
@@ -76,6 +80,8 @@ function ActionBar({ doc, p }: { doc: DocumentDetail; p: DocumentPermissions }) 
         notify.success(`${shortNo(doc.docNo)} ${done}`, fromSource ? '원본 반영은 몇 초 걸릴 수 있습니다.' : undefined);
         setRejecting(false);
         setComment('');
+        // 승인·반려·전결 뒤에는 다음 문서로 넘어간다(설계 6.2 연속 처리). 회수는 기안자 동작이라 제자리
+        if (a.kind !== 'cancel') onProcessed?.(doc.documentId);
       },
       (e) => notify.error(e),
     );
@@ -85,6 +91,14 @@ function ActionBar({ doc, p }: { doc: DocumentDetail; p: DocumentPermissions }) 
     if (c.length === 0 || c.length > 1000) return;
     run({ kind: 'reject', comment: c }, '반려 완료');
   };
+
+  // 결재 단축키(설계 7.2): A 승인, R 반려, F 전결. 처리 중이거나 반려 입력 중이면 끈다
+  const approve = () => run({ kind: 'approve' }, '승인 완료');
+  useHotkeys({
+    a: approve,
+    r: () => setRejecting(true),
+    ...(p.canFinalApprove ? { f: () => openFinal.current?.() } : {}),
+  }, p.myTurn && !action.isPending && !rejecting);
 
   if (p.myTurn) {
     return (
@@ -115,13 +129,13 @@ function ActionBar({ doc, p }: { doc: DocumentDetail; p: DocumentPermissions }) 
           </div>
         )}
         <div className={s.actionBar}>
-          {!rejecting && <Button danger onClick={() => setRejecting(true)} disabled={action.isPending}>반려</Button>}
+          {!rejecting && <Button danger onClick={() => setRejecting(true)} disabled={action.isPending}>반려 <Kbd>R</Kbd></Button>}
           {p.canFinalApprove && (
             <ConfirmAction
               title="전결로 승인합니다"
               confirmLabel="전결"
               onConfirm={() => run({ kind: 'final-approve' }, '전결 완료')}
-              trigger={(open) => <Button onClick={open} disabled={action.isPending}>전결</Button>}
+              trigger={(open) => { openFinal.current = open; return <Button onClick={open} disabled={action.isPending}>전결 <Kbd>F</Kbd></Button>; }}
             >
               {p.skipped.length > 0 ? (
                 <>
@@ -134,8 +148,8 @@ function ActionBar({ doc, p }: { doc: DocumentDetail; p: DocumentPermissions }) 
           )}
           <span className={s.spacer} />
           <Button type="primary" loading={action.isPending && action.variables?.kind === 'approve'}
-                  disabled={action.isPending} onClick={() => run({ kind: 'approve' }, '승인 완료')}>
-            승인
+                  disabled={action.isPending} onClick={approve}>
+            승인 <Kbd onPrimary>A</Kbd>
           </Button>
         </div>
       </div>
@@ -147,7 +161,10 @@ function ActionBar({ doc, p }: { doc: DocumentDetail; p: DocumentPermissions }) 
     <div className={s.actionBar}>
       <span className={s.muted}>
         {doc.status === 'INPROGRESS' && p.current && <>현재 결재자: <EmpName id={p.current.empId} /> · 대기 중</>}
-        {p.sourceRejected && <>{SOURCE_TEXT[doc.sourceType] ?? '원본'} 문서는 반려가 최종입니다. 원래 화면에서 새로 신청해 주세요.</>}
+        {p.sourceRejected && <>{SOURCE_TEXT[doc.sourceType] ?? '원본'} 문서는 반려가 최종입니다.{' '}
+          {doc.sourceType === 'ATTENDANCE' && doc.sourceId != null
+            ? <Link to={requestHref(doc.sourceId)}>원래 화면에서 새로 신청 →</Link>
+            : '원래 화면에서 새로 신청해 주세요.'}</>}
         {p.directRejected && <>재기안은 준비 중입니다.</>}
         {doc.status === 'APPROVED' && <>결재가 끝난 문서입니다.</>}
         {doc.status === 'CANCEL' && <>회수된 문서입니다.</>}
@@ -169,7 +186,7 @@ function ActionBar({ doc, p }: { doc: DocumentDetail; p: DocumentPermissions }) 
 }
 
 /** 문서 상세(설계 6.2): 헤더, 출처, 결재선, 속성, 이력, 액션 바. */
-export function DocumentView({ id }: { id: number }) {
+export function DocumentView({ id, onProcessed }: { id: number; onProcessed?: (id: number) => void }) {
   const meId = useMyId();
   const q = useDocument(id);
   if (q.isPending) return <div className={s.detail}><Skeleton active={false} paragraph={{ rows: 8 }} /></div>;
@@ -201,6 +218,10 @@ export function DocumentView({ id }: { id: number }) {
           <div className={s.source}>
             <StatusBadge domain="SourceType" value={doc.sourceType} />
             <span>{SOURCE_TEXT[doc.sourceType]} <span className="nx-num">#{doc.sourceId}</span>에서 생성된 문서입니다</span>
+            {/* 근태 신청 상세는 본인 API(/me/requests)뿐이라 기안자에게만 연결한다(frontend-backend-gaps.md C) */}
+            {doc.sourceType === 'ATTENDANCE' && doc.sourceId != null && doc.drafterId === meId && (
+              <Link to={requestHref(doc.sourceId)} style={{ marginLeft: 'auto' }}>원본 신청 보기 →</Link>
+            )}
           </div>
         )}
 
@@ -214,7 +235,7 @@ export function DocumentView({ id }: { id: number }) {
           <Histories list={doc.histories} />
         </section>
       </div>
-      <ActionBar key={doc.documentId} doc={doc} p={p} />
+      <ActionBar key={doc.documentId} doc={doc} p={p} onProcessed={onProcessed} />
     </div>
   );
 }
