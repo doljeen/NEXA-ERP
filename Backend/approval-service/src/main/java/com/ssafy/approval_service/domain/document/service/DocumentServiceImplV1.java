@@ -106,6 +106,9 @@ public class DocumentServiceImplV1 implements DocumentService {
     public DocumentCreateResult create(DocumentCreateRequest request, Long drafterId) {
         // 출처 검증: 원본 신청 ID·요청 키 유무, 양식과 출처의 조합
         validateSource(request.formType(), request.sourceType(), request.sourceId(), request.requestKey());
+        if (request.sourceType() == SourceType.DIRECT && request.sourceLabel() != null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "직접 기안 문서는 sourceLabel을 보낼 수 없습니다.");
+        }
 
         // 같은 요청 키로 이미 만든 문서가 있으면 새로 만들지 않고 돌려준다 (재시도 대비)
         if (request.requestKey() != null) {
@@ -127,6 +130,7 @@ public class DocumentServiceImplV1 implements DocumentService {
                 .drafterId(drafterId)
                 .sourceType(request.sourceType())
                 .sourceId(request.sourceId())
+                .sourceLabel(request.sourceLabel())
                 .requestKey(request.requestKey())
                 .approvalLevel(level)
                 .attributes(request.attributes())
