@@ -17,6 +17,9 @@ public interface ApprovalLineRepository extends JpaRepository<ApprovalLine, Long
     /** 문서의 특정 역할 결재선 조회 (결재자: APPROVER/AGREEMENT, 참조자: REFERENCE, 열람자: VIEWER) */
     List<ApprovalLine> findByDocumentDocIdAndRoleInOrderByStepAscLineIdAsc(Long docId, Collection<LineRole> roles);
 
+    /** 여러 문서의 결재선을 한 번에 조회 (목록 항목의 진행 상황 계산용, 문서마다 조회하지 않도록) */
+    List<ApprovalLine> findByDocumentDocIdIn(Collection<Long> docIds);
+
     /** 문서에서 특정 사원의 결재선 조회 */
     Optional<ApprovalLine> findByDocumentDocIdAndEmpId(Long docId, Long empId);
 

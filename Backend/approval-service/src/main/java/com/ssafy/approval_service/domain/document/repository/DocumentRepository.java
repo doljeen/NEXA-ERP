@@ -35,6 +35,71 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
                                                    @Param("employeeId") Long employeeId,
                                                    @Param("admin") boolean admin);
 
+    /** findReadableByStatusAndFormType 과 같은 조건의 건수 */
+    @Query("""
+            SELECT COUNT(d) FROM Document d
+            WHERE (:status IS NULL OR d.status = :status)
+              AND (:formType IS NULL OR d.formType = :formType)
+              AND (:drafterId IS NULL OR d.drafterId = :drafterId)
+              AND (:admin = true
+                   OR d.drafterId = :employeeId
+                   OR EXISTS (SELECT 1 FROM ApprovalLine l WHERE l.document = d AND l.empId = :employeeId))
+            """)
+    long countReadableByStatusAndFormType(@Param("status") DocumentStatus status,
+                                          @Param("formType") FormType formType,
+                                          @Param("drafterId") Long drafterId,
+                                          @Param("employeeId") Long employeeId,
+                                          @Param("admin") boolean admin);
+
+    /**
+     * 결재 대기함: 진행 중이고 지금 요청자 차례인 문서. 오래된 문서부터 (처리 순서).
+     * 차례 규칙은 ApprovalProgress 와 같다: 결재자(APPROVER/AGREEMENT) PENDING 줄 중 (step, lineId) 가 가장 앞인 줄.
+     * 그래서 MIN(step) 비교가 아니라 "나보다 앞선 PENDING 결재자 줄이 없다"(NOT EXISTS)로 쓴다.
+     * status 를 함께 주면 교집합이다 (INPROGRESS 외에는 빈 결과)
+     */
+    @Query("""
+            SELECT d FROM Document d
+            WHERE d.status = com.ssafy.approval_service.domain.document.model.entity.enums.DocumentStatus.INPROGRESS
+              AND (:status IS NULL OR d.status = :status)
+              AND (:formType IS NULL OR d.formType = :formType)
+              AND EXISTS (""" + MY_TURN_LINE + """
+            )
+            ORDER BY d.draftedAt ASC, d.docId ASC
+            """)
+    List<Document> findPendingFor(@Param("status") DocumentStatus status,
+                                  @Param("formType") FormType formType,
+                                  @Param("employeeId") Long employeeId);
+
+    /** findPendingFor 와 같은 조건의 건수 */
+    @Query("""
+            SELECT COUNT(d) FROM Document d
+            WHERE d.status = com.ssafy.approval_service.domain.document.model.entity.enums.DocumentStatus.INPROGRESS
+              AND (:status IS NULL OR d.status = :status)
+              AND (:formType IS NULL OR d.formType = :formType)
+              AND EXISTS (""" + MY_TURN_LINE + """
+            )
+            """)
+    long countPendingFor(@Param("status") DocumentStatus status,
+                         @Param("formType") FormType formType,
+                         @Param("employeeId") Long employeeId);
+
+    /** 문서 d 에서 요청자(:employeeId)의 줄이 현재 차례인지. findPendingFor / countPendingFor 가 같이 쓴다 */
+    String MY_TURN_LINE = """
+            SELECT 1 FROM ApprovalLine l
+            WHERE l.document = d
+              AND l.empId = :employeeId
+              AND l.role IN (com.ssafy.approval_service.domain.approval.model.entity.enums.LineRole.APPROVER,
+                             com.ssafy.approval_service.domain.approval.model.entity.enums.LineRole.AGREEMENT)
+              AND l.action = com.ssafy.approval_service.domain.approval.model.entity.enums.LineAction.PENDING
+              AND NOT EXISTS (
+                  SELECT 1 FROM ApprovalLine p
+                  WHERE p.document = d
+                    AND p.role IN (com.ssafy.approval_service.domain.approval.model.entity.enums.LineRole.APPROVER,
+                                   com.ssafy.approval_service.domain.approval.model.entity.enums.LineRole.AGREEMENT)
+                    AND p.action = com.ssafy.approval_service.domain.approval.model.entity.enums.LineAction.PENDING
+                    AND (p.step < l.step OR (p.step = l.step AND p.lineId < l.lineId)))
+            """;
+
     /** 생성 요청 키로 조회 */
     Optional<Document> findByRequestKey(UUID requestKey);
 

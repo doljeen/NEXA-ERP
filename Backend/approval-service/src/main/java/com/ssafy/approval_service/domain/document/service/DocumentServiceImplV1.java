@@ -13,6 +13,7 @@ import com.ssafy.approval_service.domain.approval.policy.GeneratedApprovalLine;
 import com.ssafy.approval_service.domain.approval.service.DocumentCompleter;
 import com.ssafy.approval_service.domain.document.model.dto.ApprovalLinePreviewResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentBox;
+import com.ssafy.approval_service.domain.document.model.dto.DocumentCountResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateRequest;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentCreateResponse;
 import com.ssafy.approval_service.domain.document.model.dto.DocumentInfoResponse;
@@ -30,8 +31,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -54,13 +57,44 @@ public class DocumentServiceImplV1 implements DocumentService {
                                                     AuthUser requester) {
         DocumentStatus status = parseEnum(DocumentStatus.class, approvalStatus, "approvalStatus");
         FormType type = parseEnum(FormType.class, formType, "formType");
-        Long drafterId = parseEnum(DocumentBox.class, box, "box") == DocumentBox.DRAFTED
-                ? requester.employeeId()
-                : null;
+        DocumentBox documentBox = parseEnum(DocumentBox.class, box, "box");
+        Long employeeId = requester.employeeId();
 
-        List<Document> documents = documentRepository.findReadableByStatusAndFormType(
-                status, type, drafterId, requester.employeeId(), requester.isAdmin());
-        return DocumentListResponse.from(documents);
+        List<Document> documents = documentBox == DocumentBox.PENDING
+                ? documentRepository.findPendingFor(status, type, employeeId)
+                : documentRepository.findReadableByStatusAndFormType(
+                        status, type, drafterFilter(documentBox, employeeId), employeeId, requester.isAdmin());
+        return DocumentListResponse.of(documents, linesByDocId(documents), employeeId);
+    }
+
+    @Override
+    public DocumentCountResponse countByStatusAndType(String approvalStatus, String formType, String box,
+                                                      AuthUser requester) {
+        DocumentStatus status = parseEnum(DocumentStatus.class, approvalStatus, "approvalStatus");
+        FormType type = parseEnum(FormType.class, formType, "formType");
+        DocumentBox documentBox = parseEnum(DocumentBox.class, box, "box");
+        Long employeeId = requester.employeeId();
+
+        long count = documentBox == DocumentBox.PENDING
+                ? documentRepository.countPendingFor(status, type, employeeId)
+                : documentRepository.countReadableByStatusAndFormType(
+                        status, type, drafterFilter(documentBox, employeeId), employeeId, requester.isAdmin());
+        return new DocumentCountResponse(count);
+    }
+
+    /** 기안함이면 기안자를 요청자로 제한 */
+    private static Long drafterFilter(DocumentBox box, Long employeeId) {
+        return box == DocumentBox.DRAFTED ? employeeId : null;
+    }
+
+    /** 목록 문서들의 결재선을 IN 조회 한 번으로 가져와 문서별로 묶는다 (문서마다 조회하지 않도록) */
+    private Map<Long, List<ApprovalLine>> linesByDocId(List<Document> documents) {
+        if (documents.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> docIds = documents.stream().map(Document::getDocId).toList();
+        return approvalLineRepository.findByDocumentDocIdIn(docIds).stream()
+                .collect(Collectors.groupingBy(line -> line.getDocument().getDocId()));
     }
 
     /*

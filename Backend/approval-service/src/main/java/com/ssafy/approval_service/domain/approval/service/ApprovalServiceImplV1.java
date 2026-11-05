@@ -1,5 +1,6 @@
 package com.ssafy.approval_service.domain.approval.service;
 
+import com.ssafy.approval_service.domain.approval.model.ApprovalProgress;
 import com.ssafy.approval_service.domain.approval.model.dto.ApprovalHistoryResponse;
 import com.ssafy.approval_service.domain.approval.model.dto.ResubmitRequest;
 import com.ssafy.approval_service.domain.approval.model.entity.ApprovalHistory;
@@ -166,11 +167,9 @@ public class ApprovalServiceImplV1 implements ApprovalService {
         }
     }
 
-    /** 현재 차례(PENDING 중 가장 앞 step)가 요청자인지 확인하고 그 결재선을 반환 */
+    /** 현재 차례(ApprovalProgress 규칙)가 요청자인지 확인하고 그 결재선을 반환 */
     private ApprovalLine getMyTurn(List<ApprovalLine> approvers, Long employeeId) {
-        ApprovalLine current = approvers.stream()
-                .filter(ApprovalLine::isPending)
-                .findFirst()
+        ApprovalLine current = ApprovalProgress.currentTurn(approvers)
                 .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_NOT_IN_PROGRESS));
         if (!current.getEmpId().equals(employeeId)) {
             throw new BusinessException(ErrorCode.NOT_YOUR_TURN);
