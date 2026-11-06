@@ -4,7 +4,7 @@ import {
   useApplyFixes, useIssues, useUpdateRow, type IssueGroup, type IssueTotals, type Severity, type ValidationIssue,
 } from '@/api/migration';
 import { Icon } from '@/ui/Icon';
-import { Pencil } from '@/ui/icons';
+import { Pencil, Wand, WandSparkles } from '@/ui/icons';
 import { ErrorPanel } from '@/ui/ErrorPanel';
 import { StatusBadge } from '@/ui/StatusBadge';
 import { AiMark, EmptyState } from '@/ui/primitives';
@@ -18,6 +18,10 @@ const SEV_COLOR: Record<Severity, string> = { BLOCK: 'var(--nx-danger-fg)', WARN
 const PAGE_SIZE = 50;
 /** AI 표식은 LLM이 값을 추천한 묶음에만(설계 6.7) */
 const AI_CODES = new Set(['ENUM_VALUE_SUGGESTED']);
+/** 일괄 적용 버튼 앞 아이콘(style-guide 버튼 계층 '일괄 적용'): wand n-600, AI 추천 묶음만 wand-sparkles ai-700. 보라 채움 금지 */
+const ApplyIcon = ({ ai }: { ai?: boolean }) => ai
+  ? <Icon as={WandSparkles} size={16} style={{ color: 'var(--nx-ai-700)' }} />
+  : <Icon as={Wand} size={16} style={{ color: 'var(--nx-n-600)' }} />;
 
 function Count({ sev, n }: { sev: Severity; n: number }) {
   const shown = useCountUp(n);
@@ -130,7 +134,7 @@ export function IssuesPanel({ migrationId, fileId, rows }: { migrationId: number
         <span className={s.muted}><b className="nx-num">{formatNumber(rows)}</b>행 · 이슈 건수</span>
         {SEVS.map((k) => <Count key={k} sev={k} n={totals[k]} />)}
         <span className={s.spacer} />
-        <Button type="primary" disabled={totals.FIX === 0} loading={fix.isPending && fix.variables?.code == null}
+        <Button icon={<ApplyIcon />} disabled={totals.FIX === 0} loading={fix.isPending && fix.variables?.code == null}
                 onClick={() => apply({ fileId }, '자동 정리')}>
           자동 정리 {formatNumber(totals.FIX)}건 적용
         </Button>
@@ -155,7 +159,7 @@ export function IssuesPanel({ migrationId, fileId, rows }: { migrationId: number
                   </span>
                   <b className="nx-num">{formatNumber(g.count)}</b>
                   {g.severity === 'FIX' && (
-                    <Button size="small" disabled={fix.isPending}
+                    <Button size="small" icon={<ApplyIcon ai={AI_CODES.has(g.code)} />} disabled={fix.isPending}
                             loading={fix.isPending && fix.variables?.code === g.code && fix.variables?.field === g.field}
                             onClick={() => apply({ fileId, code: g.code, field: g.field }, g.message)}>
                       적용
