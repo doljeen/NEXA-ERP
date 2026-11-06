@@ -4,7 +4,7 @@ import { ErrorPanel } from '@/ui/ErrorPanel';
 import { Icon } from '@/ui/Icon';
 import { Check, TriangleAlert } from '@/ui/icons';
 import { formatNumber } from '@/format';
-import { ENTITY_LABEL } from './schemas';
+import { batchEntityLabel } from './schemas';
 import s from './migration.module.css';
 
 /** ⑥ 대사(설계 6.7): 적재된 묶음마다 "원본 N = 적재 N ✓". 같지 않으면 warning으로 차이를 보여 준다 */
@@ -19,7 +19,7 @@ export function Reconciliation({ d }: { d: MigrationDetail }) {
     <ul className={s.recon}>
       {q.data.map((r) => (
         <li key={`${r.batchId}-${r.metric}`} className={r.match ? s.reconOk : s.reconBad}>
-          <b>{ENTITY_LABEL[r.entity as keyof typeof ENTITY_LABEL] ?? r.entity}</b>
+          <b>{batchEntityLabel(r.entity)}</b>
           <span className="nx-num">원본 {formatNumber(r.source)} {r.match ? '=' : '≠'} 적재 {formatNumber(r.loaded)}</span>
           {r.match
             ? <Icon as={Check} size={16} label="일치" />

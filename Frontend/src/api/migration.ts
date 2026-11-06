@@ -12,7 +12,13 @@ const LONG = { timeout: 300_000 };
 export const SINGLE_COMPANY_ID = 1;
 
 export type MigrationStatus = 'DRAFT' | 'LOADED' | 'COMPLETED';
+/** 화면에서 파일을 올리는 데이터 종류 */
 export type MigrationEntity = 'HR_ORG' | 'HR_EMPLOYEE';
+/**
+ * 적재 묶음(batch)의 데이터 종류. 사원 파일을 적재하면 서버가 그 파일에서 뽑은 기준정보(HR_CODE) 묶음을
+ * 같은 fileId로 사원 묶음 앞에 넣는다(origin/develop 2767c92 LoadService.units).
+ */
+export type BatchEntity = MigrationEntity | 'HR_CODE';
 export type Severity = 'BLOCK' | 'WARN' | 'FIX';
 export type IssueTotals = Record<Severity, number>;
 
@@ -160,6 +166,24 @@ export function useLoad(id: number) {
   return useMutation({
     mutationFn: (fileIds: number[]) => api.post<LoadResult>(`${BASE}/${id}/loads`, { fileIds }, { ...LONG, params: { dryRun: false } }),
     onSettled: refresh,
+  });
+}
+
+/**
+ * 기준정보 계획: 사원 파일에서 뽑은 직위·직급·직책·직무를 대상과 비교한다. 기준정보가 아직 적재되지 않은 사원 파일만 나온다.
+ * AMBIGUOUS가 하나라도 있으면 적재가 409 LOAD_009로 막힌다. GRADE의 value는 'G3 2호봉'처럼 호봉까지 붙는다.
+ */
+export type ReferenceType = 'POSITION' | 'GRADE' | 'DUTY' | 'JOB_CODE';
+export interface ReferencePlanItem {
+  fileId: number; type: ReferenceType; value: string; rankOrder: number | null;
+  status: 'NEW' | 'EXISTS' | 'AMBIGUOUS'; message: string | null;
+}
+
+export function useReferencePlan(id: number, enabled: boolean) {
+  return useQuery({
+    queryKey: [...migKeys.all(id), 'references'] as const,
+    queryFn: () => api.get<{ items: ReferencePlanItem[] }>(`${BASE}/${id}/references`).then((r) => r.items),
+    enabled,
   });
 }
 
