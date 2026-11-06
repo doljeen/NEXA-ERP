@@ -83,7 +83,7 @@ class HrMigrationIntegrationTest extends AbstractIntegrationTest {
         upsert("references", "b-ref-1", """
                 {"rowNo":1,"data":{"type":"POSITION","name":"이관직위","rankOrder":3}},
                 {"rowNo":2,"data":{"type":"POSITION","name":"대리","rankOrder":99}},
-                {"rowNo":3,"data":{"type":"GRADE","name":"이관직급","level":null}},
+                {"rowNo":3,"data":{"type":"GRADE","name":"이관직급","level":1}},
                 {"rowNo":4,"data":{"type":"GRADE","name":"G1","level":1}},
                 {"rowNo":5,"data":{"type":"DUTY","name":"이관직책"}},
                 {"rowNo":6,"data":{"type":"JOB_CODE","family":"이관직군","kind":"이관직종","role":"이관직무"}},
@@ -121,6 +121,17 @@ class HrMigrationIntegrationTest extends AbstractIntegrationTest {
         assertThat(count("SELECT COUNT(*) FROM position WHERE name IN ('이관직위', '대리')")).isEqualTo(1L);
         assertThat(count("SELECT COUNT(*) FROM grade WHERE name = '이관직급'")).isZero();
         assertThat(count("SELECT COUNT(*) FROM duty WHERE name = '이관직책'")).isZero();
+    }
+
+    @Test
+    void 호봉_없는_직급은_행번호와_함께_400() throws Exception {
+        upsert("references", "b-ref-nolevel", """
+                {"rowNo":4,"data":{"type":"GRADE","name":"이관직급","level":null}}""")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("MIG_001"))
+                .andExpect(jsonPath("$.error.message").value(containsString("행 4")))
+                .andExpect(jsonPath("$.error.message").value(containsString("호봉")));
+        assertThat(count("SELECT COUNT(*) FROM grade WHERE name = '이관직급'")).isZero();
     }
 
     @Test
