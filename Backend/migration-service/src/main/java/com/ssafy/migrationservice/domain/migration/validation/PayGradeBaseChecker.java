@@ -2,6 +2,7 @@ package com.ssafy.migrationservice.domain.migration.validation;
 
 import com.ssafy.migrationservice.domain.migration.entity.MigrationFile;
 import com.ssafy.migrationservice.domain.migration.entity.enums.MigrationEntity;
+import com.ssafy.migrationservice.domain.migration.load.GradeResolver;
 import com.ssafy.migrationservice.domain.migration.mapping.MappingService;
 import com.ssafy.migrationservice.domain.migration.reader.ParsedTable;
 import com.ssafy.migrationservice.domain.migration.repository.MigrationFileRepository;
@@ -105,16 +106,16 @@ public class PayGradeBaseChecker {
         }
         Map<String, String> f2c = mappingService.fieldToColumn(roster.get().getFileId());
         String empCol = f2c.get("empNo");
-        String gradeCol = f2c.get("grade");
-        if (empCol == null || gradeCol == null) {
+        if (empCol == null) {
             return Map.of();
         }
+        // 직급 표기는 적재와 같게 (호봉 열 합치기, 직급 열이 없으면 직위)
         Map<String, String> out = new HashMap<>();
         for (ParsedTable.Row r : stagingRowRepository.findByFileId(roster.get().getFileId())) {
             String emp = r.values().get(empCol);
-            String grade = r.values().get(gradeCol);
+            GradeResolver.Raw grade = GradeResolver.raw(f2c, r);
             if (emp != null && grade != null) {
-                out.put(emp, grade.trim());
+                out.put(emp, grade.level() == null ? grade.name() : grade.name() + " " + grade.level() + "호봉");
             }
         }
         return out;

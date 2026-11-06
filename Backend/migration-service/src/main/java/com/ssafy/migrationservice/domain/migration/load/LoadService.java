@@ -153,7 +153,8 @@ public class LoadService {
 
     /**
      * 사원 파일에서 뽑은 기준정보와 대상에 지금 있는 값 비교. 적재 전에 화면에서 보여준다.
-     * AMBIGUOUS: 호봉 없이 적힌 직급인데 그 이름의 직급이 호봉별로 여러 개라 사원 적재 때 하나로 못 고르는 값
+     * AMBIGUOUS: 호봉 없이 적힌 직급인데 그 이름의 호봉이 여럿(대상·같은 파일)이라 하나로 못 고르는 값.
+     * 호봉이 없어 1호봉으로 넣는 직급은 NEW 에 message 로 알린다
      */
     public ReferencePlanResponse references(Long migrationId) {
         findJob(migrationId);
@@ -174,17 +175,19 @@ public class LoadService {
 
         List<ReferencePlanResponse.Item> items = new ArrayList<>();
         for (MigrationFile file : employeeFiles) {
-            List<LoadRow> rows = rows(new Unit(file, MigrationEntity.HR_CODE), true);
-            Map<String, Set<Integer>> levels = new HashMap<>();
-            gradeLevels.forEach((name, lv) -> levels.put(name, new HashSet<>(lv)));
-            rows.stream().filter(r -> ReferenceRows.GRADE.equals(r.data().get("type")))
-                    .forEach(r -> levels.computeIfAbsent((String) r.data().get("name"), k -> new HashSet<>()).add((Integer) r.data().get("level")));
+            Map<String, String> f2c = mappingService.fieldToColumn(file.getFileId());
+            List<ParsedTable.Row> staged = stagingRowRepository.findByFileId(file.getFileId());
+            GradeResolver resolver = GradeResolver.of(gradeLevels, f2c, staged);
+            Set<String> defaulted = staged.stream().map(r -> resolver.resolve(f2c, r))
+                    .filter(g -> g != null && g.defaulted()).map(GradeResolver.Grade::name).collect(Collectors.toSet());
+            List<LoadRow> rows = ReferenceRows.from(f2c, staged, resolver);
             for (LoadRow r : rows) {
                 Map<String, Object> d = r.data();
                 String type = (String) d.get("type");
                 String value;
                 boolean exists;
                 String message = null;
+                String note = null;
                 switch (type) {
                     case ReferenceRows.POSITION -> {
                         value = (String) d.get("name");
@@ -195,8 +198,10 @@ public class LoadService {
                         Integer level = (Integer) d.get("level");
                         value = level == null ? name : name + " " + level + "호봉";
                         exists = existingGrades.contains(name + "|" + level);
-                        if (level == null && levels.get(name).size() > 1) {
+                        if (level == null) {
                             message = "직급 '" + name + "'은(는) 호봉이 여러 개라 사원 파일에 호봉까지 적어야 합니다 (예: " + name + " 1호봉)";
+                        } else if (!exists && defaulted.contains(name)) {
+                            note = "호봉이 없어 1호봉으로 넣습니다";
                         }
                     }
                     case ReferenceRows.DUTY -> {
@@ -210,7 +215,8 @@ public class LoadService {
                 }
                 ReferencePlanResponse.Status status = message != null ? ReferencePlanResponse.Status.AMBIGUOUS
                         : exists ? ReferencePlanResponse.Status.EXISTS : ReferencePlanResponse.Status.NEW;
-                items.add(new ReferencePlanResponse.Item(file.getFileId(), type, value, (Integer) d.get("rankOrder"), status, message));
+                items.add(new ReferencePlanResponse.Item(file.getFileId(), type, value, (Integer) d.get("rankOrder"), status,
+                        message != null ? message : note));
             }
         }
         return new ReferencePlanResponse(items);
@@ -296,7 +302,11 @@ public class LoadService {
     private List<LoadRow> rows(Unit unit, boolean strict) {
         MigrationFile file = unit.file();
         return switch (unit.entity()) {
-            case HR_CODE -> ReferenceRows.from(mappingService.fieldToColumn(file.getFileId()), stagingRowRepository.findByFileId(file.getFileId()));
+            case HR_CODE -> {
+                Map<String, String> f2c = mappingService.fieldToColumn(file.getFileId());
+                List<ParsedTable.Row> staged = stagingRowRepository.findByFileId(file.getFileId());
+                yield ReferenceRows.from(f2c, staged, gradeResolver(f2c, staged, strict));
+            }
             case PAY_PROFILE -> PayrollRows.grades(payrollLines(file, strict));
             case PAY_RESULT_HISTORY -> PayrollRows.payslips(payrollLines(file, strict));
             default -> transform(file);
@@ -329,6 +339,7 @@ public class LoadService {
         if (file.getEntity() != MigrationEntity.HR_EMPLOYEE) {
             return rows;
         }
+        rows = withGrades(file, rows);
         // 사원의 부서는 부서명으로 적혀 있는 경우가 많다. 대상에 같은 이름의 기존 부서가 있으면 이름으로는 못 고르므로
         // 같은 작업의 조직 파일에서 찾은 부서코드로 바꿔 보낸다. 못 찾으면 적힌 값 그대로
         Map<String, String> codes = deptCodeByLabel(file.getMigrationId());
@@ -344,6 +355,38 @@ public class LoadService {
             data.put("dept", codes.get(dept.toString()));
             return new LoadRow(r.rowNo(), data);
         }).toList();
+    }
+
+    /** 사원 직급을 NEXA 직급 표기('G3 2호봉')로. 호봉 열은 보내지 않는다 (user-service 는 직급 하나로 받는다) */
+    private List<LoadRow> withGrades(MigrationFile file, List<LoadRow> rows) {
+        Map<String, String> f2c = mappingService.fieldToColumn(file.getFileId());
+        List<ParsedTable.Row> staged = stagingRowRepository.findByFileId(file.getFileId());
+        GradeResolver resolver = gradeResolver(f2c, staged, false);
+        Map<Integer, GradeResolver.Grade> byRow = new HashMap<>();
+        staged.forEach(r -> byRow.put(r.rowNo(), resolver.resolve(f2c, r)));
+        return rows.stream().map(r -> {
+            Map<String, Object> data = new LinkedHashMap<>(r.data());
+            data.remove("gradeStep");
+            GradeResolver.Grade g = byRow.get(r.rowNo());
+            if (g != null) {
+                data.put("grade", g.text());
+            }
+            return new LoadRow(r.rowNo(), data);
+        }).toList();
+    }
+
+    /** 대상의 직급 이름 → 호봉들. 미리보기는 대상이 꺼져 있어도 보여주도록 비운 채로 */
+    private GradeResolver gradeResolver(Map<String, String> f2c, List<ParsedTable.Row> rows, boolean strict) {
+        Map<String, Set<Integer>> levels = new HashMap<>();
+        try {
+            hrTargetLoader.existingReferences().grades()
+                    .forEach(g -> levels.computeIfAbsent(g.name(), k -> new HashSet<>()).add(g.level()));
+        } catch (RuntimeException e) {
+            if (strict) {
+                throw e;
+            }
+        }
+        return GradeResolver.of(levels, f2c, rows);
     }
 
     private Map<String, String> deptCodeByLabel(Long migrationId) {

@@ -32,6 +32,8 @@ public final class EntitySchemas {
                 FieldSpec.of("dept", "부서", STRING).required().synonyms("부서명", "소속", "소속부서", "부서코드").build(),
                 FieldSpec.of("position", "직위", STRING).required().codeLike().synonyms("직위명").build(),
                 FieldSpec.of("grade", "직급", STRING).required().codeLike().synonyms("직급명").build(),
+                // NEXA 직급은 호봉이 꼭 있다. 직급 열과 따로 적힌 호봉은 적재할 때 직급과 합친다 ('2급' + 27 → '2급 27호봉')
+                FieldSpec.of("gradeStep", "호봉", NUMBER).synonyms("호봉수", "현호봉", "step", "gradestep", "gradelevel").build(),
                 FieldSpec.of("duty", "직책", STRING).required().codeLike().synonyms("직책명").build(),
                 FieldSpec.of("jobFamily", "직군", STRING).required().codeLike().build(),
                 FieldSpec.of("jobKind", "직종", STRING).required().codeLike().build(),

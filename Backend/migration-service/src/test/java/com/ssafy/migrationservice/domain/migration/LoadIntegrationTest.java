@@ -298,7 +298,7 @@ class LoadIntegrationTest extends AbstractIntegrationTest {
 
         // 직급별 기본급: user-service 직급 ID로
         assertThat(HR.rows("grades")).extracting(r -> r.data().get("gradeId").asLong() + "=" + r.data().get("baseAmount").asLong())
-                .containsExactlyInAnyOrder(FakeHrServer.gradeId("G3") + "=3000000", FakeHrServer.gradeId("G2") + "=2500000");
+                .containsExactlyInAnyOrder(FakeHrServer.gradeId("G3 1호봉") + "=3000000", FakeHrServer.gradeId("G2 1호봉") + "=2500000");
         // 명세서: 사번 → 사원 ID, 귀속월, pay_item 코드별 금액 (매핑 안 된 5만원은 기타수당)
         tools.jackson.databind.JsonNode hong = HR.rows("payslips").stream()
                 .filter(r -> r.data().get("empId").asLong() == FakeHrServer.empId("00123")).findFirst().orElseThrow().data();
@@ -327,5 +327,23 @@ class LoadIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("LOAD_001"));
         assertThat(HR.rows("payslips")).isEmpty();
+    }
+
+    @Test
+    void 직급은_호봉_열과_합치고_호봉이_없으면_1호봉으로_보낸다() throws Exception {
+        long id = createJob();
+        upload(id, "HR_ORG", ORG_CSV);
+        // 00123 은 호봉 열(27), 00124 는 호봉 없음
+        upload(id, "HR_EMPLOYEE", EMP_CSV.replace("사번,", "호봉,사번,").replace("00123,", "27,00123,").replace("00124,", ",00124,"));
+        applyFixes(id);
+
+        mvc.perform(post(BASE + "/{id}/loads", id)).andExpect(jsonPath("$.data.status").value("LOADED"));
+
+        assertThat(HR.rows("references")).filteredOn(r -> r.data().get("type").asString().equals("GRADE"))
+                .extracting(r -> r.data().get("name").asString() + " " + r.data().get("level").asInt())
+                .containsExactlyInAnyOrder("G3 27", "G2 1");
+        assertThat(HR.rows("employees")).extracting(r -> r.data().get("grade").asString())
+                .containsExactlyInAnyOrder("G3 27호봉", "G2 1호봉");
+        assertThat(HR.rows("employees")).allSatisfy(r -> assertThat(r.data().has("gradeStep")).isFalse());
     }
 }
