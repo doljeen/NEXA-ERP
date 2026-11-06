@@ -89,6 +89,20 @@ class AttendanceClientTest {
     }
 
     @Test
+    void 그_달의_공휴일을_받음() {
+        server.expect(requestTo(BASE_URL + "/api/v1/attn/holidays?startDate=2026-09-01&endDate=2026-09-30"))
+                .andRespond(withSuccess("""
+                        {"success":true,"data":[
+                          {"holidayDate":"2026-09-24","name":"추석 연휴","type":"LEGAL"},
+                          {"holidayDate":"2026-09-25","name":"추석","type":"LEGAL"}]}""", MediaType.APPLICATION_JSON));
+
+        assertThat(client.getHolidays(YearMonth.of(2026, 9)))
+                .extracting(AttendanceClient.Holiday::name)
+                .containsExactly("추석 연휴", "추석");
+        server.verify();
+    }
+
+    @Test
     void 인증_정보가_없으면_Authorization_헤더를_붙이지_않음() {
         server.expect(requestTo(SUMMARY_URL))
                 .andExpect(headerDoesNotExist(HttpHeaders.AUTHORIZATION))

@@ -14,11 +14,14 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.List;
 
 /**
  * 근태 서비스 호출.
  * GET /api/v1/attn/summary?empId=&month=YYYY-MM → ApiResult{data: AttendanceSummary}
+ * GET /api/v1/attn/holidays?startDate=&endDate= → ApiResult{data: [{holidayDate, name, type}]}
  */
 @Component
 public class AttendanceClient {
@@ -62,6 +65,29 @@ public class AttendanceClient {
             throw new BusinessException(ErrorCode.ATTENDANCE_CALL_FAILED, "근태 서비스 응답이 비어 있거나 실패입니다");
         }
         return res.data();
+    }
+
+    /** 그 달의 공휴일 (GET /api/v1/attn/holidays). 명절수당 지급 달 판단용 */
+    public List<Holiday> getHolidays(YearMonth month) {
+        InternalResult<List<Holiday>> res;
+        try {
+            res = restClient.get()
+                    .uri("/api/v1/attn/holidays?startDate={from}&endDate={to}", month.atDay(1), month.atEndOfMonth())
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<InternalResult<List<Holiday>>>() {
+                    });
+        } catch (RestClientException e) {
+            throw new BusinessException(ErrorCode.ATTENDANCE_CALL_FAILED, "근태 서비스 호출 실패: " + e.getMessage());
+        }
+
+        if (res == null || !res.success() || res.data() == null) {
+            throw new BusinessException(ErrorCode.ATTENDANCE_CALL_FAILED, "근태 서비스 응답이 비어 있거나 실패입니다");
+        }
+        return res.data();
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Holiday(LocalDate holidayDate, String name) {
     }
 
     // 팀 공통 응답 형식 ApiResult{success, error, data}

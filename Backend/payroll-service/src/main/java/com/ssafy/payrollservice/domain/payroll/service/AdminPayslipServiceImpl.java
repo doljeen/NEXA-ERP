@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -35,6 +36,7 @@ import java.util.stream.Collectors;
 public class AdminPayslipServiceImpl implements AdminPayslipService {
 
     private static final int PAY_DAY = 25;  // 지급일: 해당 월 25일
+    private static final Set<String> HOLIDAY_BONUS_NAMES = Set.of("설날", "추석");  // 명절수당 기준 공휴일명
 
     private final PayslipRepository payslipRepository;
     private final PayslipItemRepository payslipItemRepository;
@@ -69,10 +71,11 @@ public class AdminPayslipServiceImpl implements AdminPayslipService {
         AttendanceSummary attendance = attendanceClient.getSummary(request.empId(), month);
         AttendanceSummary.WorkTime workTime = attendance.workTime();
 
-        // 5. 지급 → 공제 계산 (승인 여부와 관계없이 실제 일한 시간 기준, 무급휴가는 지급에서 차감)
+        // 5. 지급 → 공제 계산 (승인 여부와 관계없이 실제 일한 시간 기준, 무급휴가는 지급에서 차감,
+        //    분기 마지막 달은 상여금, 설날·추석이 있는 달은 명절수당)
         EarningResult earning = EarningCalculator.calculate(grade.getBaseAmount(),
                 workTime.otExtendedMin(), attendance.nightTotalMin(), workTime.otHolidayMin(),
-                attendance.unpaidLeaveMin());
+                attendance.unpaidLeaveMin(), isQuarterEnd(month), isHolidayMonth(month));
         DeductionResult deduction = DeductionCalculator.calculate(earning.total());
 
         // 6. 명세서 저장 (생성 시점의 사원 정보, 근태 집계 스냅샷)
@@ -111,6 +114,17 @@ public class AdminPayslipServiceImpl implements AdminPayslipService {
         payslipItemRepository.saveAll(items);
 
         return PayslipGenerateResponse.from(payslip);
+    }
+
+    /** 분기 마지막 달 (3·6·9·12월) */
+    private static boolean isQuarterEnd(YearMonth month) {
+        return month.getMonthValue() % 3 == 0;
+    }
+
+    /** 설날·추석 당일이 있는 달 (근태 공휴일 기준, 연휴가 두 달에 걸쳐도 당일이 있는 달만) */
+    private boolean isHolidayMonth(YearMonth month) {
+        return attendanceClient.getHolidays(month).stream()
+                .anyMatch(holiday -> HOLIDAY_BONUS_NAMES.contains(holiday.name()));
     }
 
     /** pay_item.item_code → 금액 */

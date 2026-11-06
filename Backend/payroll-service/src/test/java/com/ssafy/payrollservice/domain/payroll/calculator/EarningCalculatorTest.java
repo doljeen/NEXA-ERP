@@ -52,6 +52,34 @@ class EarningCalculatorTest {
     }
 
     @Test
+    @DisplayName("분기 마지막 달: 상여금 = 기본급 100%")
+    void quarterlyBonus() {
+        EarningResult r = EarningCalculator.calculate(BASE, 0, 0, 0, 0, true, false);
+
+        assertEquals(BASE, r.bonus());
+        assertEquals(0, r.holidayBonus());
+        assertEquals(BASE * 2, r.total());
+    }
+
+    @Test
+    @DisplayName("설날·추석이 있는 달: 명절수당 = 기본급 50%")
+    void holidayBonus() {
+        EarningResult r = EarningCalculator.calculate(BASE, 0, 0, 0, 0, false, true);
+
+        assertEquals(1_750_000, r.holidayBonus());
+        assertEquals(0, r.bonus());
+    }
+
+    @Test
+    @DisplayName("상여·명절이 아닌 달은 0")
+    void noBonus() {
+        EarningResult r = EarningCalculator.calculate(BASE, 0, 0, 0, 0);
+
+        assertEquals(0, r.bonus());
+        assertEquals(0, r.holidayBonus());
+    }
+
+    @Test
     @DisplayName("원 미만 버림: 연장 1분 = 418.65원 → 418원")
     void truncate() {
         EarningResult r = EarningCalculator.calculate(BASE, 1, 0, 0);
