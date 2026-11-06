@@ -132,6 +132,28 @@ class HrMigrationIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.error.message").value(containsString("행 9")));
     }
 
+    // ===== 사번 → 사원 =====
+
+    @Test
+    void 사번으로_사원_ID와_명세서용_정보를_찾고_없는_사번은_빠진다() throws Exception {
+        Map<String, Object> dev = jdbc.queryForMap("""
+                SELECT e.emp_id, e.name, d.name AS dept_name, p.name AS position_name, e.grade_id, e.hire_date
+                FROM employee e JOIN department d ON d.dept_id = e.dept_id JOIN position p ON p.position_id = e.position_id
+                WHERE e.emp_no = 'DEV0101'""");
+
+        mvc.perform(post(BASE + "/employees/lookup").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"empNos\":[\"DEV0101\",\"NO-SUCH\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].empNo").value("DEV0101"))
+                .andExpect(jsonPath("$.data[0].empId").value(((Number) dev.get("emp_id")).longValue()))
+                .andExpect(jsonPath("$.data[0].name").value(dev.get("name")))
+                .andExpect(jsonPath("$.data[0].deptName").value(dev.get("dept_name")))
+                .andExpect(jsonPath("$.data[0].positionName").value(dev.get("position_name")))
+                .andExpect(jsonPath("$.data[0].gradeId").value(((Number) dev.get("grade_id")).longValue()))
+                .andExpect(jsonPath("$.data[0].hireDate").value(dev.get("hire_date").toString()));
+    }
+
     // ===== 조직 =====
 
     @Test
