@@ -46,10 +46,12 @@ python -I check_formulas.py out/mabaservice/급여대장.xlsx
 | `check_formulas.py` | 독립 구현(`formulas` 라이브러리)으로 다시 계산해 셀마다 비교 |
 | `newco/` | 추가 가상 회사 10곳 (1차 4곳 + 2차 6곳, 회사마다 모듈 하나, `base.py`는 공통 도우미. 아래 '추가 가상 회사'). `generate.py`가 기존 3곳 다음에 만든다 |
 | `demo.py` | 시연용 파일 → `demo/` (아래 '시연 파일') |
+| `demo_run.py` | 시연 순서대로 이관 API를 끝까지 돌리는 리허설 (`--rollback`으로 되돌림) |
 
 ## 시연 파일 (`demo/`)
 
 프론트 시연 대본(`DOCS/frontend-design.md` 6.7, `DOCS/frontend-requirements.md` 8장 #11)용. 커밋해 두었으니 데이터셋 없이 바로 쓴다.
+시연 순서·API·단계별 숫자는 [`demo/README.md`](demo/README.md), 서버만으로 끝까지 돌려 보는 리허설은 `python -I demo_run.py --rollback`.
 다시 만들려면 `python -I demo.py ~/personas/personas.parquet demo` (seed 7, 결과가 같다).
 
 | 파일 | 내용 | 올렸을 때 이슈 (LLM 켬) |

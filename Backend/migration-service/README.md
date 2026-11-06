@@ -42,6 +42,8 @@ MIGRATION_DB_PASSWORD=localpw \
 ./gradlew test   # Docker 필요 (Testcontainers로 Postgres 17을 띄움)
 ```
 
+시연·리허설 순서와 숫자는 [`tools/datagen/demo/README.md`](tools/datagen/demo/README.md)에 있다.
+
 적재 테스트는 `FakeHrServer`(실제 HTTP 가짜 서버)로 확인한다. user-service의 이관용 내부 API(`/internal/v1/hr/migration`)와는
 시연 파일로 로컬에서 끝까지 확인했다 (`tools/datagen/README.md` '시연 파일').
 
