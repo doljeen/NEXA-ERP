@@ -210,3 +210,18 @@ def cleanup_unused_files(db: Session) -> None:
         files.delete_stored(run_file.stored_name)
         db.delete(run_file)
     db.commit()
+
+
+# 실행 결과 파일 다운로드: 올린 사람 본인 또는 그 파일이 쓰인 실행의 요청자만
+def download_file(db: Session, file_id: int, user_id: str):
+    run_file = _get_file(db, file_id)
+    allowed = run_file.uploaded_by == user_id
+    if not allowed and run_file.run_id is not None:
+        run = db.get(Run, run_file.run_id)
+        allowed = run is not None and run.requested_by == user_id
+    if not allowed:
+        raise BusinessException(ErrorCode.RUN_FORBIDDEN)
+    path = files.file_path(run_file.stored_name)
+    if not path.exists():
+        raise BusinessException(ErrorCode.FILE_NOT_FOUND)
+    return run_file, path

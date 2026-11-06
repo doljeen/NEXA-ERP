@@ -26,6 +26,28 @@ import java.time.OffsetDateTime;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class LeaveLedger {
 
+    public static LeaveLedger grant(
+            LeaveAccount account,
+            Long grantId,
+            int minutes,
+            Long actorEmpId,
+            String reason,
+            String requestKey,
+            OffsetDateTime asOf
+    ) {
+        LeaveLedger ledger = new LeaveLedger();
+        ledger.account = account;
+        ledger.grantId = grantId;
+        ledger.eventType = LedgerEventType.GRANT;
+        ledger.quantityDelta = minutes;
+        ledger.reservedDelta = 0;
+        ledger.actorEmpId = actorEmpId;
+        ledger.reason = reason;
+        ledger.idempotencyKey = requestKey;
+        ledger.createdAt = asOf;
+        return ledger;
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "entry_id")

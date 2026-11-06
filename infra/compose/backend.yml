@@ -242,8 +242,10 @@ services:
       EUREKA_URL: "http://${EUREKA_USER:?EUREKA_USER is required}:${EUREKA_PASSWORD:?EUREKA_PASSWORD is required}@eureka-server:8761/eureka/"
 
       HR_SERVICE_URL: http://user-service:8081
+      PAY_SERVICE_URL: http://payroll-service:8085
+      # 이관 매핑·값 추천 LLM. 비우면 동의어 추천만
       JWT_JWKS_URI: http://user-service:8081/.well-known/jwks.json
-
+      # 서버의 공용 GMS 키를 마이그레이션에 전달
       GMS_KEY: ${GMS_API_KEY:-}
 
     ports:
@@ -288,7 +290,6 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${PAYROLL_DB_PASSWORD:?PAYROLL_DB_PASSWORD is required}
 
       JWT_JWKS_URI: http://user-service:8081/.well-known/jwks.json
-      ATTENDANCE_SERVICE_URL: http://attendance-service:8084
       EUREKA_URL: "http://${EUREKA_USER:?EUREKA_USER is required}:${EUREKA_PASSWORD:?EUREKA_PASSWORD is required}@eureka-server:8761/eureka/"
 
     ports:

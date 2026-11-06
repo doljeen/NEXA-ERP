@@ -6,6 +6,8 @@
   meta.json       모델 이름, 원문 파일별 해시, 만든 시각 → 원문만 바뀌고 색인이 옛것인지 확인
 """
 import json
+import logging
+import os
 import threading
 from dataclasses import asdict
 from functools import lru_cache
@@ -18,6 +20,9 @@ from ai.rag.parse import Clause
 INDEX_DIR = Path(__file__).resolve().parent / "index"
 # 다국어 문장 임베딩 (한국어 지원, 0.22GB, ONNX라 CPU에서 빠름 → 낮 GPU 예산을 쓰지 않음)
 EMBED_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+# 모델 저장 위치: Docker에서는 빌드 때 받아둔 /opt/models (FASTEMBED_CACHE_PATH), 로컬은 비워두면 fastembed 기본(임시 폴더)
+MODEL_CACHE = os.environ.get("FASTEMBED_CACHE_PATH") or None
+logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 
@@ -26,7 +31,7 @@ _lock = threading.Lock()
 def _embedder():
     """처음 쓸 때 한 번만 모델을 불러옴 (첫 실행 때 약 220MB 다운로드)"""
     from fastembed import TextEmbedding
-    return TextEmbedding(EMBED_MODEL)
+    return TextEmbedding(EMBED_MODEL, cache_dir=MODEL_CACHE)
 
 
 def embed(texts: list[str]) -> np.ndarray:
@@ -74,7 +79,7 @@ RERANK_MODEL = "BAAI/bge-reranker-v2-m3-int8"
 def _reranker():
     """처음 쓸 때 한 번만 불러옴 (첫 실행 때 약 570MB 다운로드)"""
     from fastembed.rerank.cross_encoder import TextCrossEncoder
-    return TextCrossEncoder(RERANK_MODEL)
+    return TextCrossEncoder(RERANK_MODEL, cache_dir=MODEL_CACHE)
 
 
 def rerank(query: str, docs: list[str]) -> np.ndarray:
@@ -82,3 +87,22 @@ def rerank(query: str, docs: list[str]) -> np.ndarray:
     with _lock:
         logits = np.asarray(list(_reranker().rerank(query, docs)), dtype=np.float32)
     return 1 / (1 + np.exp(-logits))
+
+
+def warm_up() -> None:
+    """서버 시작 때 색인·두 모델을 미리 불러옴 → 첫 규정 검토 요청이 느리지 않게.
+    실패해도 서버는 계속 뜸 (규정 검토 노드만 처음 쓸 때 다시 시도)"""
+    try:
+        get_index()
+        embed(["준비"])
+        rerank("준비", ["준비"])
+        logger.info("규정 RAG 준비 완료 (색인 %s)", get_index().version)
+    except Exception:
+        logger.exception("규정 RAG 미리 불러오기 실패")
+
+
+if __name__ == "__main__":
+    # Docker 빌드에서 모델을 미리 받는 용도: python -m ai.rag.index
+    _embedder()
+    _reranker()
+    print(f"모델 준비 완료 → {MODEL_CACHE or '기본 캐시'}")
