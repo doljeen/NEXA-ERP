@@ -273,7 +273,7 @@ class UserHrDepartmentFlowIntegrationTest {
                 }
             }
         }
-        assertThat(verified).isEqualTo(26);
+        assertThat(verified).isEqualTo(27);
     }
 
     @Test
