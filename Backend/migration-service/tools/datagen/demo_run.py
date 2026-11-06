@@ -3,7 +3,7 @@
 화면 없이 서버만 확인할 때 쓴다. 표준 라이브러리만 쓴다.
 
 사용: python -I demo_run.py [--base http://localhost:8087] [--token <관리자 access token>] [--rollback]
-  --rollback: 끝나고 사원 → 조직 → 기준정보 순으로 되돌린다 (리허설을 반복할 때)
+  --rollback: 끝나고 급여명세서 → 직급별 기본급 → 사원 → 조직 → 기준정보 순으로 되돌린다 (리허설을 반복할 때)
 """
 import argparse
 import collections
@@ -95,18 +95,25 @@ def main():
     loaded = api.call("POST", "/%d/loads" % mid, {"fileIds": [emp["fileId"]]})
     print("  적재: " + batches(loaded))
 
-    print("\n③ 대사")
-    for it in api.call("GET", "/%d/reconciliation" % mid):
-        print("  %-12s 원본 %5d = 적재 %5d %s" % (it["entity"], it["source"], it["loaded"], "✓" if it["match"] else "✗"))
-
-    print("\n④ 급여대장_2026-11.xlsx (REFERENCE, 검증만)")
-    pay = api.upload(mid, DEMO / "급여대장_2026-11.xlsx", "REFERENCE", "2026-11")
+    print("\n③ 급여대장_2026-11.xlsx (PAY_RESULT_HISTORY, 시트 2026-11)")
+    pay = api.upload(mid, DEMO / "급여대장_2026-11.xlsx", "PAY_RESULT_HISTORY", "2026-11")
+    pay_cols = confirm_mapping(api, mid, pay["fileId"])
     print("  %d행, 이슈 %s" % (pay["rows"], pay["issueTotals"]))
     show_groups(api, mid, pay["fileId"])
+    for b in api.call("GET", "/%d/issues?fileId=%d&severity=BLOCK&size=10" % (mid, pay["fileId"]))["content"]:
+        fixed = b["value"].replace("O", "0")  # 사번 오타 (숫자 0 대신 영문 O)
+        ru = api.call("PATCH", "/%d/files/%d/rows/%d" % (mid, pay["fileId"], b["rowNo"]), {"values": {pay_cols["empNo"]: fixed}})
+        print("  [행 수정] %d행 사번 %s → %s, 남은 오류 %d, %s" % (b["rowNo"], b["value"], fixed, len(ru["rowIssues"]), ru["issueTotals"]))
+    loaded = api.call("POST", "/%d/loads" % mid, {"fileIds": [pay["fileId"]]})
+    print("  적재: " + batches(loaded))
+
+    print("\n④ 대사")
+    for it in api.call("GET", "/%d/reconciliation" % mid):
+        print("  %-18s 원본 %5d = 적재 %5d %s" % (it["entity"], it["source"], it["loaded"], "✓" if it["match"] else "✗"))
 
     if args.rollback:
         print("\n⑤ 되돌리기")
-        order = ["HR_EMPLOYEE", "HR_ORG", "HR_CODE"]
+        order = ["PAY_RESULT_HISTORY", "PAY_PROFILE", "HR_EMPLOYEE", "HR_ORG", "HR_CODE"]
         for b in sorted(loaded["batches"], key=lambda b: order.index(b["entity"])):
             r = api.call("DELETE", "/%d/batches/%s" % (mid, b["batchId"]))
             print("  %s 되돌림 → 작업 %s" % (b["entity"], r["status"]))
