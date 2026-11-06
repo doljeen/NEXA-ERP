@@ -53,7 +53,8 @@ async function upsertWorkflow(name, description) {
   return { id: data.id, created: true };
 }
 
-const at = (col, row = 0) => ({ x: 80 + col * 260, y: 200 + row * 170 });
+// 노드 폭 240(style-guide 8.13) + 간격 100: 연결선과 분기 라벨 칩이 들어갈 자리
+const at = (col, row = 0) => ({ x: 80 + col * 340, y: 200 + row * 160 });
 
 // ── #8 영수증 경비 정산 ─────────────────────────────────────────────
 // 파일 업로드 → 사원 조회 → OCR → 서류 항목 추출 → 자동 검증 ─자동 확정→ 결재 상신 → 결재 대기
