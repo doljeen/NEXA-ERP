@@ -11,6 +11,7 @@ import com.ssafy.migrationservice.domain.migration.mapping.MappingService;
 import com.ssafy.migrationservice.domain.migration.repository.MigrationFileRepository;
 import com.ssafy.migrationservice.domain.migration.repository.MigrationJobRepository;
 import com.ssafy.migrationservice.domain.migration.repository.StagingRowRepository;
+import com.ssafy.migrationservice.domain.migration.validation.DeptHeadChecker;
 import com.ssafy.migrationservice.domain.migration.validation.issue.IssueRepository;
 import com.ssafy.migrationservice.domain.migration.validation.issue.Severity;
 import com.ssafy.migrationservice.domain.migration.validation.schema.EntitySchema;
@@ -22,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -188,8 +190,39 @@ public class LoadService {
 
     private List<LoadRow> transform(MigrationFile file) {
         EntitySchema schema = EntitySchemas.of(file.getEntity()).orElseThrow();
-        return RowTransformer.transform(schema, mappingService.fieldToColumn(file.getFileId()),
+        List<LoadRow> rows = RowTransformer.transform(schema, mappingService.fieldToColumn(file.getFileId()),
                 stagingRowRepository.findByFileId(file.getFileId()));
+        if (file.getEntity() != MigrationEntity.HR_EMPLOYEE) {
+            return rows;
+        }
+        // 사원의 부서는 부서명으로 적혀 있는 경우가 많다. 대상에 같은 이름의 기존 부서가 있으면 이름으로는 못 고르므로
+        // 같은 작업의 조직 파일에서 찾은 부서코드로 바꿔 보낸다. 못 찾으면 적힌 값 그대로
+        Map<String, String> codes = deptCodeByLabel(file.getMigrationId());
+        if (codes.isEmpty()) {
+            return rows;
+        }
+        return rows.stream().map(r -> {
+            Object dept = r.data().get("dept");
+            if (dept == null || !codes.containsKey(dept.toString())) {
+                return r;
+            }
+            Map<String, Object> data = new LinkedHashMap<>(r.data());
+            data.put("dept", codes.get(dept.toString()));
+            return new LoadRow(r.rowNo(), data);
+        }).toList();
+    }
+
+    private Map<String, String> deptCodeByLabel(Long migrationId) {
+        return fileRepository.findByMigrationIdOrderByFileIdAsc(migrationId).stream()
+                .filter(f -> f.getEntity() == MigrationEntity.HR_ORG)
+                .max(Comparator.comparing(MigrationFile::getFileId))
+                .map(org -> {
+                    Map<String, String> f2c = mappingService.fieldToColumn(org.getFileId());
+                    String codeCol = f2c.get("deptCode");
+                    return codeCol == null ? Map.<String, String>of()
+                            : DeptHeadChecker.codeByLabel(stagingRowRepository.findByFileId(org.getFileId()), codeCol, f2c.get("name"));
+                })
+                .orElse(Map.of());
     }
 
     private TargetLoader loaderFor(MigrationFile file) {

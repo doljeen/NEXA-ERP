@@ -147,6 +147,8 @@ class LoadIntegrationTest extends AbstractIntegrationTest {
                 .filter(s -> s.data().get("empNo").asString().equals("00123")).findFirst().orElseThrow();
         assertThat(hong.data().get("hireDate").asString()).isEqualTo("2024-01-02");
         assertThat(hong.data().get("empType").asString()).isEqualTo("REGULAR");
+        // 부서명은 같은 작업 조직 파일의 부서코드로 바꿔 보낸다 (대상에 같은 이름의 기존 부서가 있어도 고를 수 있게)
+        assertThat(hong.data().get("dept").asString()).isEqualTo("D100");
 
         mvc.perform(get(BASE + "/{id}/reconciliation", id))
                 .andExpect(jsonPath("$.data[*].match").value(contains(true, true)))

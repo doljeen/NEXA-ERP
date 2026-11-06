@@ -42,7 +42,12 @@ MIGRATION_DB_PASSWORD=localpw \
 ./gradlew test   # Docker 필요 (Testcontainers로 Postgres 17을 띄움)
 ```
 
-user-service의 이관용 내부 API는 아직 없어서, 적재 테스트는 `FakeHrServer`(실제 HTTP 가짜 서버)로 확인한다.
+적재 테스트는 `FakeHrServer`(실제 HTTP 가짜 서버)로 확인한다. user-service의 이관용 내부 API(`/internal/v1/hr/migration`)와는
+시연 파일로 로컬에서 끝까지 확인했다 (`tools/datagen/README.md` '시연 파일').
+
+사원의 부서 값은 같은 작업 조직 파일의 부서코드로 바꿔 보낸다. user-service는 부서를 코드로 먼저 찾고 이름은 하나뿐일 때만 쓰므로,
+같은 이름의 기존 부서가 있어도 새로 넣은 부서로 들어간다. 직위·직급·직책·직군·직종·직무는 user-service 기준정보의 이름으로 찾으므로
+거기 없는 값은 적재 때 그 행 오류로 묶음 전체가 실패한다 (이관 검증에서 미리 보려면 user-service에 토큰 없이 읽는 기준정보 API가 필요).
 
 ## API (`/api/v1/admin/migrations`)
 
