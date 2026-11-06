@@ -1,6 +1,10 @@
 import { useState } from 'react';
-import { Button, Segmented, Skeleton, Table } from 'antd';
-import { useApplyFixes, useIssues, type IssueGroup, type IssueTotals, type Severity, type ValidationIssue } from '@/api/migration';
+import { Button, Input, Segmented, Skeleton, Table, Tooltip } from 'antd';
+import {
+  useApplyFixes, useIssues, useUpdateRow, type IssueGroup, type IssueTotals, type Severity, type ValidationIssue,
+} from '@/api/migration';
+import { Icon } from '@/ui/Icon';
+import { Pencil } from '@/ui/icons';
 import { ErrorPanel } from '@/ui/ErrorPanel';
 import { StatusBadge } from '@/ui/StatusBadge';
 import { AiMark, EmptyState } from '@/ui/primitives';
@@ -37,12 +41,61 @@ function TotalsBar({ t }: { t: IssueTotals }) {
   );
 }
 
-/** ③ 검증·자동 정리(설계 6.7): 합계 → 원인별 묶음(+ [적용]) → 행 단위(서버 페이징) */
+const rowKey = (r: ValidationIssue) => `${r.rowNo}-${r.sourceColumn}-${r.code}-${r.value}`;
+/** 직접 고칠 수 있는 이슈: 행·원본 칸이 있고 자동 정리 대상이 아닌 것(자동 정리는 [적용]으로) */
+const editable = (r: ValidationIssue) => r.rowNo != null && !!r.sourceColumn && r.severity !== 'FIX';
+
+/**
+ * 값 칸 인라인 편집(설계 6.7 ✎, P1): ✎ → 입력 → Enter 저장(PATCH rows/{rowNo}) → 서버가 다시 검증 → 건수 갱신.
+ * 그 칸에 이슈가 남으면 입력을 닫지 않고 남은 문제를 아래에 적는다. Esc는 취소.
+ */
+function ValueCell({ r, migrationId, fileId, editing, onEdit, onClose }: {
+  r: ValidationIssue; migrationId: number; fileId: number; editing: boolean; onEdit: () => void; onClose: () => void;
+}) {
+  const notify = useNotify();
+  const update = useUpdateRow(migrationId, fileId);
+  const [draft, setDraft] = useState(r.value ?? r.suggestion ?? '');
+  const [left, setLeft] = useState<string | null>(null);
+  if (!editing) {
+    return (
+      <span className={s.valueCell}>
+        <span className={s.value}>{r.value ?? '—'}</span>
+        {editable(r) && (
+          <Tooltip title="이 칸 고치기">
+            <Button size="small" type="text" aria-label={`${r.rowNo}행 ${r.sourceColumn} 고치기`} onClick={onEdit}
+                    icon={<Icon as={Pencil} size={12} />} />
+          </Tooltip>
+        )}
+      </span>
+    );
+  }
+  const save = () => update.mutate({ rowNo: r.rowNo!, values: { [r.sourceColumn!]: draft } }, {
+    onSuccess: (res) => {
+      const same = res.rowIssues.filter((i) => i.sourceColumn === r.sourceColumn);
+      if (same.length) { setLeft(same.map((i) => i.message).join(' / ')); return; }
+      onClose();
+      notify.success(`${r.rowNo}행 ${r.sourceColumn}을(를) 고쳤습니다`,
+        `남은 이슈 적재 불가 ${res.issueTotals.BLOCK} · 확인 필요 ${res.issueTotals.WARN} · 자동 정리 ${res.issueTotals.FIX}`);
+    },
+    onError: (e) => notify.error(e, '행을 고치지 못했습니다'),
+  });
+  return (
+    <div className={s.editCell}>
+      <Input size="small" autoFocus value={draft} disabled={update.isPending} aria-label={`${r.rowNo}행 ${r.sourceColumn} 새 값`}
+             onChange={(e) => { setDraft(e.target.value); setLeft(null); }}
+             onPressEnter={save} onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }} />
+      <span className={left ? s.pending : s.muted}>{left ?? (update.isPending ? '다시 검증하는 중…' : 'Enter 저장 · Esc 취소')}</span>
+    </div>
+  );
+}
+
+/** ③ 검증·자동 정리(설계 6.7): 합계 → 원인별 묶음(+ [적용]) → 행 단위(서버 페이징, 값 칸 ✎ 직접 수정) */
 export function IssuesPanel({ migrationId, fileId, rows }: { migrationId: number; fileId: number; rows: number }) {
   const notify = useNotify();
   const fix = useApplyFixes(migrationId);
   const [severity, setSeverity] = useState<Severity | undefined>(undefined);
   const [page, setPage] = useState(0);
+  const [editKey, setEditKey] = useState<string | null>(null);
   const q = useIssues(migrationId, { fileId, severity, page, size: PAGE_SIZE });
 
   if (q.isError) return <ErrorPanel error={q.error} onRetry={() => q.refetch()} />;
@@ -59,7 +112,13 @@ export function IssuesPanel({ migrationId, fileId, rows }: { migrationId: number
   const cols = [
     { title: '행', dataIndex: 'rowNo', width: 70, render: (v: number | null) => <span className="nx-num">{v ?? '파일'}</span> },
     { title: '칸', dataIndex: 'sourceColumn', width: 120, render: (v: string | null) => v ?? '—' },
-    { title: '값', dataIndex: 'value', width: 160, render: (v: string | null) => <span className={s.value}>{v ?? '—'}</span> },
+    {
+      title: '값', dataIndex: 'value', width: 200,
+      render: (_: string | null, r: ValidationIssue) => (
+        <ValueCell key={rowKey(r)} r={r} migrationId={migrationId} fileId={fileId} editing={editKey === rowKey(r)}
+                   onEdit={() => setEditKey(rowKey(r))} onClose={() => setEditKey(null)} />
+      ),
+    },
     { title: '구분', dataIndex: 'severity', width: 110, render: (v: Severity) => <StatusBadge domain="Severity" value={v} /> },
     { title: '문제', dataIndex: 'message' },
     { title: '정리 값', dataIndex: 'suggestion', width: 160, render: (v: string | null) => v ? <span className={s.value}>{v}</span> : '—' },
@@ -121,7 +180,7 @@ export function IssuesPanel({ migrationId, fileId, rows }: { migrationId: number
           </div>
           <Table<ValidationIssue>
             size="small"
-            rowKey={(r) => `${r.rowNo}-${r.sourceColumn}-${r.code}-${r.value}`}
+            rowKey={rowKey}
             loading={q.isFetching}
             columns={cols}
             dataSource={content}

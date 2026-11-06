@@ -52,3 +52,5 @@
 .reconBad { background: var(--nx-warning-bg); color: var(--nx-warning-fg); }
 .recon b { color: var(--nx-n-800); min-width: 40px; }
 .scrollBox { max-height: 240px; overflow-y: auto; border: 1px solid var(--nx-divider); border-radius: var(--nx-r-md); }
+.valueCell { display: inline-flex; align-items: center; gap: 4px; }
+.editCell { display: flex; flex-direction: column; gap: 2px; }
