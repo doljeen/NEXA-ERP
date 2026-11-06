@@ -244,6 +244,8 @@ services:
       HR_SERVICE_URL: http://user-service:8081
       JWT_JWKS_URI: http://user-service:8081/.well-known/jwks.json
 
+      GMS_KEY: ${GMS_API_KEY:-}
+
     ports:
       - "127.0.0.1:8087:8087"
 
