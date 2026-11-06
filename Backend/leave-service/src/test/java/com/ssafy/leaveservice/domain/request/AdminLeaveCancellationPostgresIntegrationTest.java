@@ -594,7 +594,7 @@ class AdminLeaveCancellationPostgresIntegrationTest {
                 """)).isEqualTo(before);
         assertThat(legacy.queryForObject("select count(*) from information_schema.columns where table_schema=? and table_name='leave_request' and column_name like 'admin_cancel_%' and is_nullable='YES'", Integer.class, schema)).isEqualTo(5);
         assertThatThrownBy(() -> legacy.update("update leave_request set admin_cancel_status='UNKNOWN' where leave_req_id=1")).isInstanceOf(DataAccessException.class);
-        assertThat(jdbc.queryForObject("select count(*) from flyway_schema_history where success", Integer.class)).isEqualTo(6);
+        assertThat(jdbc.queryForObject("select count(*) from flyway_schema_history where success", Integer.class)).isEqualTo(7);
     }
 
     @ParameterizedTest
