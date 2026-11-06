@@ -20,6 +20,13 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class LeaveAccount {
 
+    public static LeaveAccount open(Long employeeId, LeaveBalanceType balanceType) {
+        LeaveAccount account = new LeaveAccount();
+        account.employeeId = employeeId;
+        account.balanceType = balanceType;
+        return account;
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "account_id")

@@ -24,6 +24,26 @@ import java.time.OffsetDateTime;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class LeaveGrant {
 
+    public static LeaveGrant manual(
+            LeaveAccount account,
+            Long policyVersionId,
+            int minutes,
+            OffsetDateTime validFrom,
+            OffsetDateTime expiresOn,
+            OffsetDateTime asOf
+    ) {
+        LeaveGrant grant = new LeaveGrant();
+        grant.account = account;
+        grant.policyVersionId = policyVersionId;
+        grant.grantKind = GrantKind.MANUAL;
+        grant.originalMinutes = minutes;
+        grant.validFrom = validFrom;
+        grant.expiresOn = expiresOn;
+        grant.grantedOn = asOf;
+        grant.createdAt = asOf;
+        return grant;
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "grant_id")

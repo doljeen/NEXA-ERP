@@ -410,7 +410,7 @@ class LeaveApprovalResultPostgresIntegrationTest {
                     .andExpect(jsonPath("$.data.status").value(result.status().name()))
                     .andExpect(jsonPath("$.data.approvalCreationStatus").doesNotExist());
         }
-        assertThat(jdbcTemplate.queryForObject("select count(*) from flyway_schema_history where success",Integer.class)).isEqualTo(6);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from flyway_schema_history where success",Integer.class)).isEqualTo(7);
         assertThat(jdbcTemplate.queryForObject("show server_version",String.class)).startsWith("17.");
     }
 
