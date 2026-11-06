@@ -264,6 +264,8 @@ services:
       start_period: 40s
 
   payroll-service:
+    build:
+      context: ./Backend/payroll-service
     image: nexa-payroll:local
     restart: unless-stopped
 
