@@ -135,3 +135,38 @@ export function useApplyFixes(id: number) {
     onSettled: refresh,
   });
 }
+
+/* ---------- ④ 미리보기 · ⑤ 적재 · ⑥ 대사 ---------- */
+
+/** 미리보기(dry run). loadable = 적재 불가(BLOCK) 0건 + 자동 정리(FIX) 0건. sample은 정리된 값 예시 몇 행(필드명 키) */
+export interface LoadPreview {
+  loadable: boolean; blockIssues: number; fixIssues: number;
+  files: { fileId: number; entity: string; rows: number; sample: Record<string, unknown>[] }[];
+}
+/** 적재 결과. 대상 서비스가 실패해도 HTTP 200 + batches[].status=FAILED로 온다(gaps B9, 계약) */
+export interface LoadResult { status: MigrationStatus; batches: BatchView[] }
+/** 대사: 묶음별 원본 행 수(source) vs 대상 서비스에 들어간 수(loaded) */
+export interface ReconciliationItem { batchId: string; entity: string; metric: string; source: number; loaded: number; match: boolean }
+
+/** fileIds를 비우면 작업 전체가 대상이다. 화면은 entity 탭마다 그 파일 하나만 보낸다(조직 → 사원 순서를 사람이 지킨다) */
+export function usePreviewLoad(id: number) {
+  return useMutation({
+    mutationFn: (fileIds: number[]) => api.post<LoadPreview>(`${BASE}/${id}/loads`, { fileIds }, { ...LONG, params: { dryRun: true } }),
+  });
+}
+
+export function useLoad(id: number) {
+  const refresh = useRefresh(id);
+  return useMutation({
+    mutationFn: (fileIds: number[]) => api.post<LoadResult>(`${BASE}/${id}/loads`, { fileIds }, { ...LONG, params: { dryRun: false } }),
+    onSettled: refresh,
+  });
+}
+
+export function useReconciliation(id: number, enabled: boolean) {
+  return useQuery({
+    queryKey: [...migKeys.all(id), 'reconciliation'] as const,
+    queryFn: () => api.get<ReconciliationItem[]>(`${BASE}/${id}/reconciliation`),
+    enabled,
+  });
+}
