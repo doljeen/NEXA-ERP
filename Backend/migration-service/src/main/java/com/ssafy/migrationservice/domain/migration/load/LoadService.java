@@ -9,6 +9,7 @@ import com.ssafy.migrationservice.domain.migration.entity.MigrationFile;
 import com.ssafy.migrationservice.domain.migration.entity.MigrationJob;
 import com.ssafy.migrationservice.domain.migration.entity.enums.MigrationEntity;
 import com.ssafy.migrationservice.domain.migration.mapping.MappingService;
+import com.ssafy.migrationservice.domain.migration.reader.ParsedTable;
 import com.ssafy.migrationservice.domain.migration.repository.MigrationFileRepository;
 import com.ssafy.migrationservice.domain.migration.repository.MigrationJobRepository;
 import com.ssafy.migrationservice.domain.migration.repository.StagingRowRepository;
@@ -61,7 +62,7 @@ public class LoadService {
         long blocks = count(migrationId, files, Severity.BLOCK);
         long fixes = count(migrationId, files, Severity.FIX);
         List<LoadPreviewResponse.Item> items = units(files).stream().map(u -> {
-            List<LoadRow> rows = rows(u);
+            List<LoadRow> rows = rows(u, false);
             List<Map<String, Object>> sample = rows.stream().limit(PREVIEW_SAMPLE).map(LoadRow::data).toList();
             return new LoadPreviewResponse.Item(u.file().getFileId(), u.entity(), rows.size(), sample);
         }).toList();
@@ -98,7 +99,7 @@ public class LoadService {
         for (Unit unit : units) {
             MigrationFile file = unit.file();
             TargetLoader loader = loaderFor(unit.entity());
-            List<LoadRow> rows = rows(unit);
+            List<LoadRow> rows = rows(unit, true);
             MigrationBatch batch = batchRepository.save(MigrationBatch.builder()
                     .batchId(newBatchId(file, unit.entity()))
                     .migrationId(migrationId)
@@ -173,7 +174,7 @@ public class LoadService {
 
         List<ReferencePlanResponse.Item> items = new ArrayList<>();
         for (MigrationFile file : employeeFiles) {
-            List<LoadRow> rows = rows(new Unit(file, MigrationEntity.HR_CODE));
+            List<LoadRow> rows = rows(new Unit(file, MigrationEntity.HR_CODE), true);
             Map<String, Set<Integer>> levels = new HashMap<>();
             gradeLevels.forEach((name, lv) -> levels.put(name, new HashSet<>(lv)));
             rows.stream().filter(r -> ReferenceRows.GRADE.equals(r.data().get("type")))
@@ -270,7 +271,7 @@ public class LoadService {
         return files.stream().mapToLong(f -> issueRepository.totals(migrationId, f.getFileId()).get(severity)).sum();
     }
 
-    /** 적재 단위: 파일 하나의 entity, 사원 파일이면 그 앞에 기준정보(아직 안 넣었으면). entity 순서로 정렬 */
+    /** 적재 단위: 파일 하나의 entity. 사원 파일이면 그 앞에 기준정보, 지난 급여 파일이면 그 앞에 직급별 기본급(아직 안 넣었으면). entity 순서로 정렬 */
     private record Unit(MigrationFile file, MigrationEntity entity) {
     }
 
@@ -281,18 +282,44 @@ public class LoadService {
                     && !batchRepository.existsByFileIdAndEntityAndStatus(f.getFileId(), MigrationEntity.HR_CODE, BatchStatus.LOADED)) {
                 units.add(new Unit(f, MigrationEntity.HR_CODE));
             }
+            if (f.getEntity() == MigrationEntity.PAY_RESULT_HISTORY
+                    && !batchRepository.existsByFileIdAndEntityAndStatus(f.getFileId(), MigrationEntity.PAY_PROFILE, BatchStatus.LOADED)) {
+                units.add(new Unit(f, MigrationEntity.PAY_PROFILE));
+            }
             units.add(new Unit(f, f.getEntity()));
         }
         units.sort(Comparator.comparing((Unit u) -> u.entity().ordinal()));
         return units;
     }
 
-    private List<LoadRow> rows(Unit unit) {
-        if (unit.entity() == MigrationEntity.HR_CODE) {
-            return ReferenceRows.from(mappingService.fieldToColumn(unit.file().getFileId()),
-                    stagingRowRepository.findByFileId(unit.file().getFileId()));
+    /** strict: 적재할 때. 미리보기는 급여 사원이 아직 대상에 없어도(같은 요청에서 사원을 먼저 넣는 경우) 행을 보여준다 */
+    private List<LoadRow> rows(Unit unit, boolean strict) {
+        MigrationFile file = unit.file();
+        return switch (unit.entity()) {
+            case HR_CODE -> ReferenceRows.from(mappingService.fieldToColumn(file.getFileId()), stagingRowRepository.findByFileId(file.getFileId()));
+            case PAY_PROFILE -> PayrollRows.grades(payrollLines(file, strict));
+            case PAY_RESULT_HISTORY -> PayrollRows.payslips(payrollLines(file, strict));
+            default -> transform(file);
+        };
+    }
+
+    /** 지난 급여 행마다 사원 ID·명세서용 사원 정보를 user-service 에서 사번으로 찾아 붙인다 */
+    private List<PayrollRows.Line> payrollLines(MigrationFile file, boolean strict) {
+        Map<String, String> f2c = mappingService.fieldToColumn(file.getFileId());
+        List<ParsedTable.Row> rows = stagingRowRepository.findByFileId(file.getFileId());
+        String empCol = f2c.get("empNo");
+        List<String> empNos = empCol == null ? List.of()
+                : rows.stream().map(r -> r.values().get(empCol)).filter(v -> v != null && !v.isBlank()).map(String::trim).toList();
+        Map<String, HrTargetLoader.EmployeeRef> employees;
+        try {
+            employees = hrTargetLoader.lookupEmployees(empNos);
+        } catch (RuntimeException e) {
+            if (strict) {
+                throw e;
+            }
+            employees = Map.of();
         }
-        return transform(unit.file());
+        return PayrollRows.lines(file, f2c, rows, employees, strict);
     }
 
     private List<LoadRow> transform(MigrationFile file) {
