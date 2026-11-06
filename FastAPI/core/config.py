@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     # 팀원 서비스 주소 (compose 안에선 http://user-service:8081 처럼 서비스 이름으로)
     user_service_url: str = "http://localhost:8081"
     approval_service_url: str = "http://localhost:8083"
+    attendance_service_url: str = "http://localhost:8084"
+    leave_service_url: str = "http://localhost:8082"
     service_timeout: float = 10.0
 
     # 결재 문서 출처: ai-service 업무 자동화 (결재 서비스 V10부터 지원)
