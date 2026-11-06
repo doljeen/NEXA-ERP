@@ -95,6 +95,13 @@ def receipt_facts(fields: dict, extra: dict, today: date) -> tuple[dict, list[st
         known["오후 7시 이후까지 근무 여부(결제 시각 기준)"] = h >= 19 or h < 6
     else:
         unknown.append("결제 시각")
+    # 근태 조회 노드가 있으면: 결제 시각 추정 대신 실제 퇴근 기록 (경비 규정 제8조①), 회사 달력의 휴일 (대체휴일 포함)
+    if extra.get("퇴근 시각"):
+        known["퇴근 시각"] = extra["퇴근 시각"]
+        known.pop("오후 7시 이후까지 근무 여부(결제 시각 기준)", None)
+        known["오후 7시 이후까지 근무 여부(근태 기록)"] = int(str(extra["퇴근 시각"])[:2]) >= 19
+    if isinstance(extra.get("회사 휴일 여부"), bool):
+        known["회사 휴일 여부(근태 기록)"] = extra["회사 휴일 여부"]
 
     # 결제 수단 → 증빙 종류 (경비 규정 제3조③)
     pay = extra.get("결제 수단")

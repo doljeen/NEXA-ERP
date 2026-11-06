@@ -1,4 +1,5 @@
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -17,6 +18,7 @@ from nodes.routers import router as nodes_router
 from runs.routers import router as runs_router
 from workflows.routers import router as workflows_router
 from ai.routers import router as ai_router
+from ai.rag.index import warm_up as warm_up_rag
 
 # 우리 코드의 INFO 로그가 보이게 (httpx 요청 로그는 너무 많아서 경고 이상만)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
@@ -32,6 +34,8 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(engine)
     init_checkpointer()
     approval_consumer.start()          # 결재 결과 구독 시작 (KAFKA_BOOTSTRAP_SERVERS 없으면 건너뜀)
+    # 규정 RAG 모델 미리 불러오기: 수 초~수십 초 걸려서 백그라운드로 (헬스체크·다른 요청을 막지 않게)
+    threading.Thread(target=warm_up_rag, name="rag-warmup", daemon=True).start()
     if settings.eureka_server_url:
         options = {}
         if settings.instance_host:

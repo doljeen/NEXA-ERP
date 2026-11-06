@@ -1,4 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from core.auth import AuthUser, get_current_user, get_user_id
@@ -60,6 +61,14 @@ def upload_file(
 def get_file(file_id: int, db: Session = Depends(get_db)):
     run_file = service.get_file(db, file_id)
     return ok(RunFileResponse.model_validate(run_file))
+
+
+@router.get("/runs/files/{file_id}/download")
+def download_file(file_id: int, db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
+    run_file, path = service.download_file(db, file_id, user_id)
+    # 한글 파일 이름도 브라우저에서 그대로 저장됨 (Content-Disposition filename*=UTF-8)
+    return FileResponse(path, filename=run_file.original_name,
+                        media_type=run_file.content_type or "application/octet-stream")
 
 
 @router.delete("/runs/files/{file_id}", response_model=ApiResult[None])
