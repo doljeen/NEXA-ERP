@@ -2,11 +2,14 @@
 
   python -X utf8 -m mlops.promote --challenger mlops/data/programs/miprov2-xxx.json
   python -X utf8 -m mlops.promote --challenger ... --dry-run     # 판정만 하고 승격은 안 함
+  python -X utf8 -m mlops.promote --challenger-model receipt-lora --dry-run   # 모델(QLoRA 어댑터) 비교
 
 승격되면
   1) MLflow Model Registry: receipt-extractor 새 버전 등록 + 별칭 champion
   2) 서빙용 파일 내보내기: ai/programs/receipt.json + receipt.meta.json → 커밋하면 CI/CD로 배포
 떨어지면: 등록·내보내기 없이 MLflow에 판정 기록만 남김 (왜 떨어졌는지 나중에 볼 수 있게)
+모델 도전자(--challenger-model): 같은 프로그램으로 vLLM의 다른 모델 이름을 비교. 통과해도 자동 전환하지 않고
+  방법만 안내 (서빙 모델 전환 = vLLM 어댑터 상시 로드 + EC2 LOCAL_LLM_MODEL 변경이라 사람이 확인하고 진행)
 """
 import argparse
 import json
@@ -14,7 +17,8 @@ from datetime import datetime
 from pathlib import Path
 
 from ai.modules.receipt import PROGRAM_DIR
-from mlops.common import DATA_DIR, FIELDS, dataset_info, load_program, load_records, setup_mlflow
+from core.config import settings
+from mlops.common import DATA_DIR, FIELDS, dataset_info, load_program, load_records, require_local_lm, setup_mlflow
 from mlops.evaluate import breakdown, log_to_mlflow, print_report, run_eval, summarize
 
 MODEL_NAME = "receipt-extractor"          # MLflow Model Registry 이름
@@ -23,6 +27,7 @@ MODEL_NAME = "receipt-extractor"          # MLflow Model Registry 이름
 MIN_GAIN = 0.02            # 전부 정답률 최소 +2%p (100장 기준 2장 이상 더 맞혀야 함)
 MAX_FIELD_DROP = 0.01      # 필드별 정답률은 최대 1%p(1장)까지만 하락 허용 → 한 필드를 희생한 개선 방지
 MAX_LATENCY_RATIO = 1.5    # 예시가 붙으면 프롬프트가 길어져 느려짐 → 1.5배까지만 허용
+MAX_INVENTED_INCREASE = 0  # 지어낸 오답(OCR에 없는 값을 만들어낸 오답)은 챔피언보다 늘면 안 됨 (2026-11-06 추가)
 EPS = 1e-9                 # 소수 계산 오차 보정 (0.81 - 0.79 = 0.0199999... 같은 경우)
 
 
@@ -51,6 +56,8 @@ def gate(champ: dict, chal: dict) -> tuple[bool, list[tuple[str, bool, str]]]:
     ratio = chal["avg_ms"] / max(champ["avg_ms"], 1)
     checks.append((f"지연 {MAX_LATENCY_RATIO}배 이내", ratio <= MAX_LATENCY_RATIO,
                    f"{champ['avg_ms']}ms → {chal['avg_ms']}ms (x{ratio:.2f})"))
+    checks.append(("지어낸 오답 증가 없음", chal["invented"] - champ["invented"] <= MAX_INVENTED_INCREASE,
+                   f"{champ['invented']}개 → {chal['invented']}개"))
     return all(ok for _, ok, _ in checks), checks
 
 
@@ -89,30 +96,39 @@ def export_for_serving(program, version: int, run_id: str, ds: dict, s: dict, pr
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--challenger", required=True, help="도전자 프로그램 JSON (5-5 결과)")
+    p.add_argument("--challenger", help="도전자 프로그램 JSON (5-5 결과). 생략하면 챔피언 프로그램 그대로")
+    p.add_argument("--challenger-model", help="도전자 모델 = vLLM에 띄운 다른 모델 이름 (예: receipt-lora)")
     p.add_argument("--name", help="도전자 이름 (기본: 파일 이름)")
     p.add_argument("--data", type=Path, default=DATA_DIR)
     p.add_argument("--split", default="test", help="판정용 split (최적화에 안 쓴 데이터여야 함)")
     p.add_argument("--threads", type=int, default=4)
     p.add_argument("--dry-run", action="store_true", help="판정만, 등록·내보내기 안 함")
     args = p.parse_args()
+    if not args.challenger and not args.challenger_model:
+        raise SystemExit("--challenger(프로그램) 또는 --challenger-model(모델) 중 하나는 필요합니다")
 
     records = load_records(args.split, args.data)
     champ_label, champ_path = current_champion()
     champion = load_program(champ_path)
-    challenger = load_program(args.challenger)
-    chal_name = args.name or Path(args.challenger).stem
+    challenger = load_program(args.challenger) if args.challenger else load_program(champ_path)
+    chal_name = args.name or (Path(args.challenger).stem if args.challenger else args.challenger_model)
+
+    # 모델 비교: 챔피언은 .env의 기본 모델, 도전자는 같은 vLLM의 다른 모델 이름 (같은 서버·같은 시점이라 시간 비교도 공정)
+    champ_model = settings.local_llm_model
+    chal_model = args.challenger_model or champ_model
+    champ_lm = require_local_lm()
+    chal_lm = champ_lm.copy(model=f"openai/{chal_model}") if chal_model != champ_model else champ_lm
 
     # 같은 시점·같은 조건으로 둘 다 다시 채점 (예전 점수를 가져다 쓰면 vLLM 상태 차이가 섞일 수 있음)
     print(f"[1/2] 챔피언 {champ_label} 평가 ({args.split} {len(records)}장)")
-    champ_rows = run_eval(champion, records, args.threads)
-    print(f"[2/2] 도전자 {chal_name} 평가")
-    chal_rows = run_eval(challenger, records, args.threads)
+    champ_rows = run_eval(champion, records, args.threads, lm=champ_lm)
+    print(f"[2/2] 도전자 {chal_name} 평가 (모델 {chal_model})")
+    chal_rows = run_eval(challenger, records, args.threads, lm=chal_lm)
     cs, hs = summarize(champ_rows), summarize(chal_rows)
 
     passed, checks = gate(cs, hs)
     print_report(chal_name, args.split, args.data.name, hs, breakdown(chal_rows), chal_rows)
-    print(f"\n=== 승격 판정: {champ_label} vs {chal_name} ===")
+    print(f"\n=== 승격 판정: {champ_label}({champ_model}) vs {chal_name}({chal_model}) ===")
     for rule, ok, detail in checks:
         print(f"  {'✅' if ok else '❌'} {rule:20} {detail}")
     decision = ("promoted" if not args.dry_run else "pass(dry-run)") if passed else "rejected"
@@ -122,14 +138,19 @@ def main():
     common = {"stage": "promote", "gate_split": args.split}
     champ_run = log_to_mlflow(champ_label, args.split, args.data, champion, str(champ_path or "(base)"),
                               cs, breakdown(champ_rows), champ_rows, args.threads,
-                              tags={**common, "role": "champion"})
+                              tags={**common, "role": "champion"}, model=champ_model)
     chal_run = log_to_mlflow(chal_name, args.split, args.data, challenger, args.challenger,
                              hs, breakdown(chal_rows), chal_rows, args.threads,
                              tags={**common, "role": "challenger", "decision": decision,
                                    "compared_with": champ_run,
-                                   "gain_acc_all": f"{hs['acc_all'] - cs['acc_all']:+.4f}"})
+                                   "gain_acc_all": f"{hs['acc_all'] - cs['acc_all']:+.4f}",
+                                   "challenger_model": chal_model},
+                             model=chal_model)
 
-    if passed and not args.dry_run:
+    if passed and not args.dry_run and args.challenger_model:
+        # 모델 전환은 자동으로 하지 않음: vLLM에 어댑터를 항상 붙여 띄우고, EC2 .env의 LOCAL_LLM_MODEL을 바꿔야 함
+        print(f"\n게이트 통과: 서빙 모델 전환 방법 → GPU serve.sh에 LORA_PATH 상시 지정 + EC2 LOCAL_LLM_MODEL={chal_model}")
+    elif passed and not args.dry_run:
         setup_mlflow()
         version = register_champion(chal_run)
         export_for_serving(challenger, version, chal_run, dataset_info(args.data), hs, champ_label)

@@ -8,6 +8,11 @@
 
 평가에서는 GMS 대체 없이 로컬 LLM만 쓴다.
 평가 대상은 '우리 모델'이라, 중간에 GMS 답이 섞이면 점수가 오염되기 때문.
+다른 모델(예: QLoRA 어댑터)을 평가하려면 앞에 LOCAL_LLM_MODEL=receipt-lora 를 붙여 실행.
+
+지어낸 오답(invented): 틀렸는데 그 값이 OCR 텍스트 어디에도 없는 경우 (store·total)
+  예) OCR에 가게 이름 줄이 없는데 "달빛커피 강남역점"처럼 그럴듯한 이름을 만들어냄
+  → 틀린 걸 사람이 알아채기 어려운 오류라, 정답률과 따로 세어 승격 게이트에서 막는다 (2026-11-06 QLoRA 평가에서 발견)
 """
 import argparse
 import json
@@ -22,7 +27,7 @@ import dspy
 from core.config import settings
 from mlops.build_textset import ocr_ceiling
 from mlops.common import (
-    DATA_DIR, FIELDS, dataset_info, load_program, load_records, require_local_lm, score_fields, setup_mlflow,
+    DATA_DIR, FIELDS, dataset_info, load_program, load_records, require_local_lm, score_fields, setup_mlflow, squash,
 )
 
 logging.getLogger("LiteLLM").setLevel(logging.WARNING)   # 요청마다 찍히는 로그 줄이기
@@ -36,6 +41,18 @@ GROUPS = {
     "discount": lambda m: "?" if "discount" not in m else ("할인 있음" if m["discount"] else "할인 없음"),
     "kind": lambda m: m.get("kind", "?"),
 }
+
+
+def grounded(field: str, value, text: str) -> bool | None:
+    """예측값이 OCR 텍스트에 보이는지 (띄어쓰기·쉼표 무시). 판단할 수 없는 필드(date: 표기 형식이 다양함)는 None"""
+    if value in (None, ""):
+        return True                                # 빈 값은 지어낸 게 아님 (모른다고 한 것)
+    if field == "store":
+        return squash(value) in squash(text)
+    if field == "total":
+        plain = squash(text).replace(",", "")
+        return str(value) in plain
+    return None
 
 
 def predict_one(program, lm, rec: dict) -> dict:
@@ -53,17 +70,23 @@ def predict_one(program, lm, rec: dict) -> dict:
     ceiling = ocr_ceiling(rec)                     # store/total 정답 글자가 OCR 텍스트에 보이는지
     # 틀린 필드 원인: 정답 글자가 OCR 텍스트에 아예 없으면 OCR 탓, 있는데 틀렸으면 LLM 탓
     blame = {k: ("ocr" if ceiling.get(k) is False else "llm") for k, ok in scores.items() if not ok}
+    # 지어낸 오답: 틀렸고 예측값이 OCR 텍스트에 없음 / OCR 너머 교정: 맞혔는데 정답이 OCR 텍스트에 없음 (오타를 고친 것)
+    values = pred.model_dump() if pred is not None else {}
+    invented = [k for k, ok in scores.items() if not ok and grounded(k, values.get(k), rec["text"]) is False]
+    corrected = [k for k, ok in scores.items() if ok and ceiling.get(k) is False]
     return {
         "id": rec["id"], "meta": rec["meta"], "label": rec["label"],
         "pred": pred.model_dump() if pred is not None else None,
         "error": error, "scores": scores, "all_ok": all(scores.values()),
         "blame": blame, "ceiling": ceiling, "ms": ms,
+        "invented": invented, "corrected": corrected,
     }
 
 
-def run_eval(program, records: list[dict], threads: int = 4) -> list[dict]:
-    """여러 장을 동시에 요청 (vLLM이 묶어서 처리해 훨씬 빠름). 결과 순서는 입력 순서 그대로"""
-    lm = require_local_lm()
+def run_eval(program, records: list[dict], threads: int = 4, lm=None) -> list[dict]:
+    """여러 장을 동시에 요청 (vLLM이 묶어서 처리해 훨씬 빠름). 결과 순서는 입력 순서 그대로
+    lm: 평가할 LM (생략하면 .env의 로컬 모델). 승격 게이트에서 모델 두 개를 한 번에 비교할 때 사용"""
+    lm = lm or require_local_lm()
     with ThreadPoolExecutor(max_workers=threads) as pool:
         return list(pool.map(lambda r: predict_one(program, lm, r), records))
 
@@ -89,6 +112,8 @@ def summarize(rows: list[dict]) -> dict:
     s["avg_ms"] = round(sum(r["ms"] for r in rows) / len(rows))
     s["wrong_llm"] = sum(1 for r in rows for b in r["blame"].values() if b == "llm")
     s["wrong_ocr"] = sum(1 for r in rows for b in r["blame"].values() if b == "ocr")
+    s["invented"] = sum(len(r.get("invented", [])) for r in rows)        # 지어낸 오답 (게이트: 늘면 탈락)
+    s["corrected_beyond_ocr"] = sum(len(r.get("corrected", [])) for r in rows)   # OCR 오타를 고쳐 맞힌 수 (참고)
     for k in ("store", "total"):
         s[f"ocr_ceiling_{k}"] = _rate(rows, lambda r, k=k: r["ceiling"][k])
     s["acc_all_photo"] = _rate([r for r in rows if r["meta"].get("photo") is True], lambda r: r["all_ok"])
@@ -120,6 +145,7 @@ def print_report(name: str, split: str, data: str, s: dict, bd: dict, rows: list
     print(f"전부 정답 {s['acc_all']:.1%} | store {s['acc_store']:.1%} | total {s['acc_total']:.1%} | date {s['acc_date']:.1%}")
     print(f"실행 실패 {s['error_rate']:.1%} | 평균 {s['avg_ms']}ms | 틀린 필드: LLM 탓 {s['wrong_llm']}개, OCR 탓 {s['wrong_ocr']}개")
     print(f"OCR 상한 store {s['ocr_ceiling_store']:.1%} | total {s['ocr_ceiling_total']:.1%}")
+    print(f"지어낸 오답 {s['invented']}개 | OCR 너머 교정 {s['corrected_beyond_ocr']}개")
 
     print("\n[조건별 전부 정답률]  값 정답률(장수)")
     for gname, groups in bd.items():
@@ -142,17 +168,19 @@ def print_report(name: str, split: str, data: str, s: dict, bd: dict, rows: list
                 continue
             traps = ",".join(r["meta"].get("traps", [])) or "-"
             for k, b in r["blame"].items():
-                print(f"  {r['id']} {k:5} 정답={r['label'][k]!r} 예측={r['pred'][k]!r} ({b} 탓) [함정 {traps}]")
+                mark = " ⚠️지어냄" if k in r.get("invented", []) else ""
+                print(f"  {r['id']} {k:5} 정답={r['label'][k]!r} 예측={r['pred'][k]!r} ({b} 탓){mark} [함정 {traps}]")
 
 
-def log_to_mlflow(name, split, data_dir, program, program_path, s, bd, rows, threads, tags=None, ocr_file="ocr.jsonl") -> str:
+def log_to_mlflow(name, split, data_dir, program, program_path, s, bd, rows, threads, tags=None, ocr_file="ocr.jsonl",
+                  model: str | None = None) -> str:
     """지표(숫자) + 조건별 분석 + 장별 예측 + 프로그램 상태를 run 하나로 기록"""
     mlflow = setup_mlflow()
     ds = dataset_info(data_dir, ocr_file)
     with mlflow.start_run(run_name=f"eval-{name}-{ds['dataset']}-{split}") as run:
         mlflow.set_tags({"stage": "eval", "program": name, "split": split, **ds, **(tags or {})})
         mlflow.log_params({
-            "model": settings.local_llm_model,
+            "model": model or settings.local_llm_model,
             "program": name,
             "program_path": program_path or "(base)",
             "split": split,
