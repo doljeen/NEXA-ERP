@@ -13,6 +13,7 @@ import { MigrationPage } from '@/pages/admin/MigrationPage';
 import { HrPage } from '@/pages/admin/HrPage';
 import { PayPage } from '@/pages/pay/PayPage';
 import { OrgPage } from '@/pages/org/OrgPage';
+import { LeavePage } from '@/pages/leave/LeavePage';
 
 // 캔버스(@xyflow)는 무거워서 쓰는 화면에서만 불러온다
 const DevKitPage = lazy(() => import('@/pages/dev/kit/DevKitPage').then((m) => ({ default: m.DevKitPage })));
@@ -27,7 +28,7 @@ export function App() {
       <Route element={<SessionGate><AppShell /></SessionGate>}>
         <Route index element={<HomePage />} />
         <Route path="attendance/*" element={<AttendancePage />} />
-        <Route path="leave/*" element={<Placeholder title="휴가" week="P1 · 이번 범위 제외(2026-11-05 결정)" />} />
+        <Route path="leave/*" element={<LeavePage />} />
         <Route path="approvals" element={<ApprovalsPage />} />
         <Route path="approvals/:docId" element={<ApprovalsPage />} />
         <Route path="pay/*" element={<PayPage />} />
