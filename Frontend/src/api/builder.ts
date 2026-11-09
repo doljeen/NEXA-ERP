@@ -176,3 +176,14 @@ export function useSavePlacements(id: number) {
     ]),
   });
 }
+
+/** 여러 워크플로 상세(노출 화면 확인용, 관리 홈). 키는 편집기와 같다 */
+export function useBuilderWorkflows(ids: number[]) {
+  return useQueries({
+    queries: ids.map((id) => ({
+      queryKey: builderKeys.detail(id),
+      queryFn: () => api.get<BuilderWorkflow>(`${BASE}/workflows/${id}`),
+      staleTime: 30_000,
+    })),
+  });
+}
