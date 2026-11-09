@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './client';
 
 // FastAPI ai-service (origin/develop f4725fd 기준). 바깥 필드는 camelCase, inputs·outputs·step output 안쪽은 snake_case.
@@ -137,6 +137,35 @@ export function useMyPendingRuns(enabled = true) {
     refetchIntervalInBackground: false,
     retry: false,
   });
+}
+
+/**
+ * 내 실행 이력(P1, 요구사항 3.7 #7). 서버가 최근 50건만 준다(id 내림차순, runs/service.py list_my_runs).
+ * status는 값 하나로만 거른다. 진행 중 실행이 있으면 10초마다 다시 불러온다.
+ */
+export function useMyRuns(status: RunStatus | null) {
+  return useQuery({
+    queryKey: ['runs', 'me', status ?? 'ALL'] as const,
+    queryFn: () => api.get<RunSummary[]>(`${BASE}/runs/me`, { params: status ? { status } : undefined }),
+    placeholderData: keepPreviousData,
+    refetchInterval: (q) => (!document.hidden && q.state.data?.some((r) => !isFinal(r.status)) ? 10_000 : false),
+    refetchIntervalInBackground: false,
+  });
+}
+
+/** 여러 워크플로 이름. useWorkflow와 같은 키라 캐시를 같이 쓴다. 지워진 워크플로는 이름 없이 둔다 */
+export function useWorkflowNames(ids: number[]) {
+  const results = useQueries({
+    queries: [...new Set(ids)].map((id) => ({
+      queryKey: ['workflows', id] as const,
+      queryFn: () => api.get<WorkflowDetail>(`${BASE}/workflows/${id}`),
+      staleTime: 10 * 60_000,
+      retry: false,
+    })),
+  });
+  const names: Record<number, string> = {};
+  for (const r of results) if (r.data) names[r.data.id] = r.data.name;
+  return names;
 }
 
 export function useAvailableWorkflows(screen: ScreenCode) {
