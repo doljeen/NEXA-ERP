@@ -5,6 +5,7 @@ import type { Employee } from './types';
 // user-service 부서 관리(DepartmentAdminController, /api/v1/admin/departments, ADMIN)와 사원 목록(origin/develop def2081 기준).
 
 export type DeptType = 'COMPANY' | 'DIVISION' | 'TEAM';
+export const DEPT_TYPE_LABEL: Record<DeptType, string> = { COMPANY: '회사', DIVISION: '본부', TEAM: '팀' };
 
 /** headEmpId는 저장값 그대로라 부서장이 휴직·퇴직이어도 남을 수 있다(결재선에서는 공석으로 본다) */
 export interface Department {
@@ -30,10 +31,13 @@ export function useAllEmployees(enabled = true) {
   });
 }
 
-/** 부서장·유형 변경 후 부서 목록을 다시 받는다 */
+/** 부서장·유형 변경 후 부서 목록과 조직 체인을 다시 받는다 */
 function useRefreshOrg() {
   const qc = useQueryClient();
-  return () => qc.invalidateQueries({ queryKey: deptKey });
+  return () => Promise.all([
+    qc.invalidateQueries({ queryKey: deptKey }),
+    qc.invalidateQueries({ queryKey: ['org-chain'] }),
+  ]);
 }
 
 /** 부서장 지정·교체. 재직자만(409 DEPT_002), 그 부서나 하위 부서 소속만(400 DEPT_003) */
@@ -60,5 +64,20 @@ export function useChangeDeptType() {
     mutationFn: ({ deptId, deptType }: { deptId: number; deptType: DeptType }) =>
       api.put<Department>(`${DEPT_BASE}/${deptId}/type`, { deptType }),
     onSettled: refresh,
+  });
+}
+
+/**
+ * 사원의 소속 부서 → 최상위 부서 체인(GET /employees/{id}/org-chain, 일반 사원도 호출 가능).
+ * headEmpId는 재직 중인 부서장만 담고, 공석·휴직·퇴직이면 null(결재선은 위로 올라간다)
+ */
+export interface OrgUnit { deptId: number; deptName: string; deptType: DeptType | null; headEmpId: number | null }
+export interface OrgChain { employeeId: number; deptId: number; chain: OrgUnit[] }
+
+export function useOrgChain(empId: number | null) {
+  return useQuery({
+    queryKey: ['org-chain', empId],
+    queryFn: () => api.get<OrgChain>(`/api/v1/employees/${empId}/org-chain`),
+    enabled: empId != null,
   });
 }

@@ -3,7 +3,7 @@ import { Alert, Button, Select, Skeleton, Tree } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import {
   useAllEmployees, useAssignHead, useChangeDeptType, useClearHead, useDepartments,
-  type DeptType, type Department,
+  DEPT_TYPE_LABEL, type DeptType, type Department,
 } from '@/api/org';
 import type { Employee } from '@/api/types';
 import { Card, EmptyState } from '@/ui/primitives';
@@ -20,7 +20,7 @@ import s from './admin.module.css';
 // 공석(또는 재직 아닌 부서장)은 건너뛰고 상위 부서장이 결재한다. 전결 단계 이상의 부서장이 위로 끝까지 없으면 APPROVAL_022.
 // 유형이 비면 팀으로 본다(ApprovalLevel.ofDeptType).
 
-const TYPE_LABEL: Record<DeptType, string> = { COMPANY: '회사', DIVISION: '본부', TEAM: '팀' };
+const TYPE_LABEL = DEPT_TYPE_LABEL;
 /** 높은 단계부터(서버 DeptType 선언 순서) */
 const TYPE_ORDER: DeptType[] = ['COMPANY', 'DIVISION', 'TEAM'];
 const rank = (t: DeptType) => TYPE_ORDER.indexOf(t);
