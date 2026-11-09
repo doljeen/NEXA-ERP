@@ -10,10 +10,11 @@ import s from './builder.module.css';
  * 배포·버전 조회(P1, 설계 9장 "빌더 배포·버전 조회"). 버전 활성화(되돌리기)는 P2라 두지 않는다.
  * 배포는 저장 + 서버 검사 통과(이슈 0) 뒤에만 연다. 서버도 배포 때 다시 검사한다(WF_INVALID_GRAPH).
  */
-export function DeployControls({ workflowId, blockedReason, warningCount, exposed }: {
+export function DeployControls({ workflowId, blockedReason, warningCount, exposed, onDeployed }: {
   workflowId: number;
   /** 사원 업무 자동화 목록 노출(placements에 HOME) 여부. 꺼져 있으면 확인 창에 알린다 */
   exposed: boolean;
+  onDeployed?: (version: number) => void;
   /** 배포를 막는 이유(저장 안 됨, 검사 안 함, 이슈 있음). null이면 배포 가능 */
   blockedReason: string | null;
   /** 클라이언트 순서 경고 수(배포는 막지 않고 확인 창에 적는다) */
@@ -33,7 +34,7 @@ export function DeployControls({ workflowId, blockedReason, warningCount, expose
         title={`v${next}로 배포합니다`}
         confirmLabel="배포"
         onConfirm={() => deploy.mutateAsync().then(
-          (r) => notify.success(`v${r.version}로 배포했습니다`),
+          (r) => { notify.success(`v${r.version}로 배포했습니다`); onDeployed?.(r.version); },
           (e) => notify.error(e, '배포하지 못했습니다'),
         )}
         trigger={(openConfirm) => (
