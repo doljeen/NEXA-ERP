@@ -52,8 +52,9 @@ def _convert(value, kind: str):
     return str(value).strip()
 
 
-def collect_facts(config: dict, inputs: dict) -> dict:
-    """노드 설정 → 실행 입력 순서로 추가 사실을 모음 (규정 용어 이름을 키로)"""
+def collect_facts(config: dict, inputs: dict, attendance: dict | None = None, receipt_date: str | None = None) -> dict:
+    """노드 설정 → 실행 입력 순서로 추가 사실을 모음 (규정 용어 이름을 키로)
+    attendance: 근태 조회 노드 출력. 영수증 날짜와 같은 날일 때만 사용 (다른 날 기록으로 판정하면 안 됨)"""
     extra = {}
     for key, name, kind, _ in FACTS:
         raw = config.get(key)
@@ -62,6 +63,11 @@ def collect_facts(config: dict, inputs: dict) -> dict:
         value = _convert(raw, kind)
         if value is not None:
             extra[name] = value
+    if isinstance(attendance, dict) and attendance.get("work_date") == receipt_date:
+        if attendance.get("clock_out"):
+            extra["퇴근 시각"] = attendance["clock_out"]
+        if attendance.get("is_holiday") is not None:
+            extra["회사 휴일 여부"] = bool(attendance["is_holiday"])
     return extra
 
 
@@ -90,6 +96,8 @@ class PolicyCheckNode(BaseNode):
         {"key": "doc_type", "label": "문서 종류", "type": "select", "options": list(CHECKERS), "required": True},
         {"key": "extraction", "label": "검토할 추출 결과 노드 (예: {{n5 || n4}}, 비우면 가장 최근)", "type": "ref",
          "required": False},
+        {"key": "attendance", "label": "근태 조회 노드 (예: {{n4}}, 비우면 가장 최근 · 영수증 날짜와 같은 날만 사용)",
+         "type": "ref", "required": False},
         *[{"key": key, "label": f"{label} — 비우면 실행 입력의 {key}", "type": "text", "required": False}
           for key, _, _, label in FACTS],
     ]
@@ -117,7 +125,9 @@ class PolicyCheckNode(BaseNode):
         if not isinstance(extraction, dict) or not isinstance(extraction.get("fields"), dict):
             raise ValueError("검토할 추출 결과가 없습니다 (앞에 추출 노드가 필요합니다)")
 
-        result = checker(extraction["fields"], collect_facts(ctx.config, ctx.inputs))
+        attendance = ctx.config.get("attendance") or latest_output(ctx.outputs, "work_date")
+        facts = collect_facts(ctx.config, ctx.inputs, attendance, extraction["fields"].get("date"))
+        result = checker(extraction["fields"], facts)
         POLICY_CHECKS.labels(doc_type, result["verdict"], result["judge_version"]).inc()
 
         # model_version은 일부러 넘기지 않음: 뒤에 사람 확인 노드가 와도

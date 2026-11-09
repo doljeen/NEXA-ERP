@@ -145,7 +145,8 @@ export function useApplyFixes(id: number) {
 /** 행 수정 결과. rowIssues: 수정 후 그 행에 남은 이슈(비어 있으면 해결) */
 export interface RowUpdateResult { rowNo: number; rowIssues: ValidationIssue[]; issueTotals: IssueTotals }
 
-/** 행 하나 직접 수정(P1, 설계 6.7 ✎). values는 원본 컬럼명 → 새 값, 빈 값이면 칸을 비운다. 서버가 파일 전체를 다시 검증한다 */
+/** 행 하나 직접 수정(P1, 설계 6.7 ✎). values는 원본 컬럼명 → 새 값, 빈 값이면 칸을 비운다. 서버가 파일 전체를 다시 검증한다.
+ * 적재된 파일은 되돌린 뒤에만 고칠 수 있다(409 FILE_ALREADY_LOADED) */
 export function useUpdateRow(id: number, fileId: number) {
   const refresh = useRefresh(id);
   return useMutation({

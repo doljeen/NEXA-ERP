@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     # 팀원 서비스 주소 (compose 안에선 http://user-service:8081 처럼 서비스 이름으로)
     user_service_url: str = "http://localhost:8081"
     approval_service_url: str = "http://localhost:8083"
+    attendance_service_url: str = "http://localhost:8084"
+    leave_service_url: str = "http://localhost:8082"
     service_timeout: float = 10.0
 
     # 결재 문서 출처: ai-service 업무 자동화 (결재 서비스 V10부터 지원)
@@ -50,8 +52,10 @@ class Settings(BaseSettings):
     kafka_bootstrap_servers: str = ""
     kafka_group_id: str = "ai-service"
 
-    # MLflow 추적 서버 (GPU 서버, Tailscale 경유). MLOps 스크립트에서만 사용
+    # MLflow 추적 서버 (GPU 서버, Tailscale 경유). MLOps 스크립트 + 골든셋 자동 전송에서 사용
     mlflow_tracking_uri: str = ""
+
+    golden_sync_hours: float = 24       # 골든셋 → MLflow 자동 전송 주기 (0 = 끔, 개발 PC는 .env에 0)
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

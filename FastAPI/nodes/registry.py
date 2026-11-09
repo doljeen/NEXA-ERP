@@ -1,15 +1,22 @@
 from nodes.base import BaseNode
 from nodes.impl.approval_draft import ApprovalDraftNode
+from nodes.impl.attendance_lookup import AttendanceLookupNode
+from nodes.impl.calculate import CalculateNode
+from nodes.impl.complete import CompleteNode
 from nodes.impl.condition import ConditionNode
+from nodes.impl.doc_classify import DocClassifyNode
 from nodes.impl.employee_lookup import EmployeeLookupNode
+from nodes.impl.excel_write import ExcelWriteNode
 from nodes.impl.file_upload import FileUploadNode
+from nodes.impl.free_prompt import FreePromptNode
 from nodes.impl.human_confirm import HumanConfirmNode
+from nodes.impl.leave_balance import LeaveBalanceNode
 from nodes.impl.llm_verify import LlmVerifyNode
 from nodes.impl.ocr_extract import OcrExtractNode
-from nodes.impl.structured_extract import StructuredExtractNode
-from nodes.impl.wait_approval import WaitApprovalNode
 from nodes.impl.policy_check import PolicyCheckNode
 from nodes.impl.rag_search import RagSearchNode
+from nodes.impl.structured_extract import StructuredExtractNode
+from nodes.impl.wait_approval import WaitApprovalNode
 
 
 CATEGORIES = [
@@ -26,15 +33,22 @@ CATEGORIES = [
 _NODE_CLASSES: list[type[BaseNode]] = [
     FileUploadNode,          # 파일 업로드
     EmployeeLookupNode,      # 사원 조회 (user-service)
+    AttendanceLookupNode,    # 근태 조회 (attendance-service)
+    LeaveBalanceNode,        # 휴가 잔액 조회 (leave-service)
     OcrExtractNode,          # OCR 글자 인식
+    DocClassifyNode,         # 문서 분류 (DSPy, 종류별 분기)
     StructuredExtractNode,   # 항목 추출 (DSPy)
     LlmVerifyNode,           # 자동 검증 (GMS 교차 추출)
     PolicyCheckNode,         # 규정 검토 (RAG + DSPy 판정)
     RagSearchNode,           # 규정 근거 검색 (RAG, LLM 없음)
+    FreePromptNode,          # 자유 프롬프트 (요약·정리·문구, 판단 안 함)
     ConditionNode,           # 조건 분기
+    CalculateNode,           # 계산 (사칙연산·1인당·날짜 차이, LLM 없음)
     HumanConfirmNode,        # 사람 확인 (interrupt)
     ApprovalDraftNode,       # 결재 상신 (approval-service)
     WaitApprovalNode,        # 결재 대기 (Kafka 결과 이벤트)
+    ExcelWriteNode,          # 엑셀 작성 (.xlsx, 다운로드)
+    CompleteNode,            # 업무 완료 (결과 요약 메시지)
 ]
 
 

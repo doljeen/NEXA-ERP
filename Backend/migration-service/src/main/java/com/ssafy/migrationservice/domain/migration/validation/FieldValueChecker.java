@@ -6,7 +6,9 @@ import com.ssafy.migrationservice.domain.migration.validation.schema.FieldSpec;
 
 import java.time.DateTimeException;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -31,7 +33,9 @@ public final class FieldValueChecker {
     private static final Pattern ISO_DATE = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
     private static final Pattern NUMBER = Pattern.compile("-?\\d+(\\.\\d+)?");
     private static final Pattern NUMBER_WITH_COMMA = Pattern.compile("-?\\d{1,3}(,\\d{3})+(\\.\\d+)?");
-    private static final Pattern EMAIL = Pattern.compile("[^@\\s]+@[^@\\s]+\\.[^@\\s]+");
+    // 휴대전화 앞자리 0만 빠진 숫자: 10 + 8자리(010), 11·16~19 + 7~8자리
+    private static final Pattern MOBILE_ZERO_DROPPED = Pattern.compile("10\\d{8}|1[16789]\\d{7,8}");
+    private static final Pattern EMAIL =Pattern.compile("[^@\\s]+@[^@\\s]+\\.[^@\\s]+");
 
     private FieldValueChecker() {
     }
@@ -111,6 +115,13 @@ public final class FieldValueChecker {
         if (digits.matches("0\\d{8,10}")) {
             return Optional.empty();
         }
+        // 숫자 칸으로 저장돼 앞자리 0이 빠진 휴대전화 (1022710888 → 010-2271-0888)
+        if (MOBILE_ZERO_DROPPED.matcher(digits).matches()) {
+            String d = "0" + digits;
+            String fixed = d.substring(0, 3) + "-" + d.substring(3, d.length() - 4) + "-" + d.substring(d.length() - 4);
+            return Optional.of(new Finding(Severity.FIX, IssueCode.PHONE_ZERO_DROPPED,
+                    f.label() + " 앞자리 0이 빠져 있어 " + fixed + "(으)로 바꿉니다 (숫자 칸으로 저장된 번호)", fixed));
+        }
         return Optional.of(new Finding(Severity.WARN, IssueCode.INVALID_PHONE,
                 f.label() + " 번호 형식을 확인해 주세요", null));
     }
@@ -123,6 +134,23 @@ public final class FieldValueChecker {
         }
         String allowed = f.enumValues().keySet().stream().sorted().collect(Collectors.joining(", "));
         return block(IssueCode.INVALID_ENUM, f.label() + "에 허용되지 않는 값입니다 (허용: " + allowed + ")");
+    }
+
+    /**
+     * 허용 값(한글 표기) 중 이 값으로 시작하는 것이 하나뿐이면 그 표기 ('정규' → '정규직', '파트' → '파트타임').
+     * 같은 코드로 가는 표기가 여럿이면(퇴직·퇴사) 하나로 친다. 두 글자 미만은 보지 않는다
+     */
+    public static Optional<String> enumPrefixMatch(FieldSpec f, String value) {
+        String v = value.strip();
+        if (v.length() < 2) {
+            return Optional.empty();
+        }
+        List<Map.Entry<String, String>> hits = f.enumValues().entrySet().stream()
+                .filter(e -> e.getKey().startsWith(v)).toList();
+        if (hits.isEmpty() || hits.stream().map(Map.Entry::getValue).distinct().count() != 1) {
+            return Optional.empty();
+        }
+        return Optional.of(hits.stream().map(Map.Entry::getKey).sorted().findFirst().orElseThrow());
     }
 
     private static Optional<Finding> block(IssueCode code, String message) {

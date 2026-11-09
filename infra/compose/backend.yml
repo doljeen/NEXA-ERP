@@ -115,11 +115,6 @@ services:
 
       JWT_JWKS_URI: http://user-service:8081/.well-known/jwks.json
 
-      # 다른 서비스 주소 (없으면 기본값 localhost로 호출해 실패)
-      APPROVAL_SERVICE_URL: http://approval-service:8083
-      LEAVE_SERVICE_URL: http://leave-service:8082
-      USER_SERVICE_URL: http://user-service:8081
-
       EUREKA_URL: "http://${EUREKA_USER:?EUREKA_USER is required}:${EUREKA_PASSWORD:?EUREKA_PASSWORD is required}@eureka-server:8761/eureka/"
 
     ports:
@@ -249,8 +244,9 @@ services:
       HR_SERVICE_URL: http://user-service:8081
       PAY_SERVICE_URL: http://payroll-service:8085
       # 이관 매핑·값 추천 LLM. 비우면 동의어 추천만
-      GMS_KEY: ${GMS_KEY:-}
       JWT_JWKS_URI: http://user-service:8081/.well-known/jwks.json
+      # 서버의 공용 GMS 키를 마이그레이션에 전달
+      GMS_KEY: ${GMS_API_KEY:-}
 
     ports:
       - "127.0.0.1:8087:8087"
@@ -269,6 +265,8 @@ services:
       start_period: 40s
 
   payroll-service:
+    build:
+      context: ./Backend/payroll-service
     image: nexa-payroll:local
     restart: unless-stopped
 
@@ -294,8 +292,6 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${PAYROLL_DB_PASSWORD:?PAYROLL_DB_PASSWORD is required}
 
       JWT_JWKS_URI: http://user-service:8081/.well-known/jwks.json
-      ATTENDANCE_SERVICE_URL: http://attendance-service:8084
-      USER_SERVICE_URL: http://user-service:8081
       EUREKA_URL: "http://${EUREKA_USER:?EUREKA_USER is required}:${EUREKA_PASSWORD:?EUREKA_PASSWORD is required}@eureka-server:8761/eureka/"
 
     ports:

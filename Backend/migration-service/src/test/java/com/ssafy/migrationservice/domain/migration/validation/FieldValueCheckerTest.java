@@ -88,4 +88,25 @@ class FieldValueCheckerTest {
         assertThat(FieldValueChecker.parseDate("2024.1.2")).contains(LocalDate.of(2024, 1, 2));
         assertThat(FieldValueChecker.parseDate("00123")).isEmpty();
     }
+
+    @Test
+    void 허용_값의_앞부분이면_그_값을_제안한다() {
+        assertThat(FieldValueChecker.enumPrefixMatch(employee("empType"), "정규")).contains("정규직");
+        assertThat(FieldValueChecker.enumPrefixMatch(employee("empType"), "계약")).contains("계약직");
+        assertThat(FieldValueChecker.enumPrefixMatch(employee("empType"), "파트")).contains("파트타임");
+        assertThat(FieldValueChecker.enumPrefixMatch(employee("status"), "퇴")).isEmpty();      // 한 글자는 보지 않음
+        assertThat(FieldValueChecker.enumPrefixMatch(employee("empType"), "인턴")).isEmpty();
+    }
+
+    @Test
+    void 앞자리_0이_빠진_휴대전화는_고친_번호를_제안한다() {
+        var dropped = FieldValueChecker.check(employee("mobile"), "1022710888").orElseThrow();
+        assertThat(dropped.severity()).isEqualTo(Severity.FIX);
+        assertThat(dropped.code()).isEqualTo(IssueCode.PHONE_ZERO_DROPPED);
+        assertThat(dropped.suggestion()).isEqualTo("010-2271-0888");
+        assertThat(FieldValueChecker.check(employee("mobile"), "162345678").orElseThrow().suggestion()).isEqualTo("016-234-5678");
+        // 다른 모양은 그대로 확인 필요
+        assertThat(FieldValueChecker.check(employee("mobile"), "12345").orElseThrow().code()).isEqualTo(IssueCode.INVALID_PHONE);
+        assertThat(FieldValueChecker.check(employee("mobile"), "010-2271-0888")).isEmpty();
+    }
 }

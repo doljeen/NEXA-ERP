@@ -1,6 +1,7 @@
 package com.ssafy.payrollservice.domain.migration;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -42,6 +43,8 @@ class InternalPayMigrationIntegrationTest {
     @Autowired
     JdbcTemplate jdbc;
 
+    // 기본급은 V5 마이그레이션으로 미리 들어 있으므로 테스트 전에도 비운다
+    @BeforeEach
     @AfterEach
     void clean() {
         jdbc.update("DELETE FROM payslip_item");
