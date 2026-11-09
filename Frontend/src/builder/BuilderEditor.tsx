@@ -23,6 +23,7 @@ import { formatTime, serverUtc } from '@/format';
 import { orderWarnings } from './nodeIO';
 import { DeployControls } from './DeployControls';
 import { PlacementToggle } from './PlacementToggle';
+import { InputFormEditor } from './InputFormEditor';
 import s from './builder.module.css';
 
 type BuilderNodeData = FlowNodeData & { nodeType: string; config: Record<string, unknown> };
@@ -146,7 +147,16 @@ function Editor({ wf, live, catalog, byType }: { wf: BuilderWorkflow; live: Buil
   const [testRunId, setTestRunId] = useState<number | null>(null);
 
   const graph = useMemo(() => toGraph(nodes, edges), [nodes, edges]);
-  const warnings = useMemo(() => orderWarnings(graph, catalog), [graph, catalog]);
+  const [formOpen, setFormOpen] = useState(false);
+  // 파일 업로드 노드가 있는데 사원 입력 폼에 파일 칸이 없으면 사원이 파일을 올릴 수 없다(서버 검사는 이걸 보지 않는다)
+  const fileNode = graph.nodes.find((n) => n.type === 'file_upload');
+  const fileMissing = !!fileNode && !live.inputForm.some((f) => f.type === 'file');
+  const warnings = useMemo(() => [
+    ...orderWarnings(graph, catalog),
+    ...(fileNode && fileMissing
+      ? [{ nodeId: fileNode.id, message: `'${byType.get('file_upload')?.name ?? '파일 업로드'}'가 있는데 사원 입력 폼에 파일 칸이 없습니다(사원이 파일을 올릴 수 없음)` }]
+      : []),
+  ], [graph, catalog, fileNode, fileMissing, byType]);
   const selectedNode = nodes.find((n) => n.selected);
   const selectedEdge = edges.find((e) => e.selected);
 
@@ -310,11 +320,13 @@ function Editor({ wf, live, catalog, byType }: { wf: BuilderWorkflow; live: Buil
         <Button onClick={onSave} loading={save.isPending} disabled={!dirty}>저장 <Kbd>{modKey}+S</Kbd></Button>
         <Button onClick={onValidate} loading={validate.isPending}>검사 <Kbd>{modKey}+Shift+V</Kbd></Button>
         <Button type="primary" onClick={onTest}>테스트 실행</Button>
+        <InputFormEditor workflowId={wf.id} fields={live.inputForm} open={formOpen} setOpen={setFormOpen} needsFile={!!fileNode} />
         <PlacementToggle workflowId={wf.id} placements={live.placements} deployed={live.deployedVersion != null} />
         <DeployControls
           workflowId={wf.id}
           warningCount={warnings.length}
           exposed={live.placements.includes('HOME')}
+          fileMissing={fileMissing}
           onDeployed={() => setJustDeployed(true)}
           blockedReason={dirty ? '저장한 뒤 검사를 통과해야 배포할 수 있습니다'
             : justDeployed ? `마지막 배포(v${live.deployedVersion}) 이후 바뀐 내용이 없습니다`
@@ -410,6 +422,9 @@ function Editor({ wf, live, catalog, byType }: { wf: BuilderWorkflow; live: Buil
           <li key={`${w.nodeId}-${w.message}`} className={s.issue}>
             <Icon as={TriangleAlert} size={16} className={s.warnIcon} />{w.message}
             <Button size="small" type="link" onClick={() => focusNode(w.nodeId)}>노드로 이동</Button>
+            {fileMissing && w.nodeId === fileNode?.id && w.message.includes('입력 폼') && (
+              <Button size="small" type="link" onClick={() => setFormOpen(true)}>입력 폼 열기</Button>
+            )}
           </li>
         ))}
         </ul>
@@ -419,7 +434,7 @@ function Editor({ wf, live, catalog, byType }: { wf: BuilderWorkflow; live: Buil
               title={testRunId ? `테스트 실행 · run #${testRunId} (초안 그래프)` : '테스트 실행 (초안 그래프)'}>
         {testRunId ? <RunMonitor runId={testRunId} /> : (
           <div className={s.testForm}>
-            <SchemaForm fields={wf.inputForm} submitting={startTest.isPending} submitLabel="테스트 실행"
+            <SchemaForm fields={live.inputForm} submitting={startTest.isPending} submitLabel="테스트 실행"
                         onSubmit={(v) => startTest.mutate(v, {
                           onSuccess: (r) => setTestRunId(r.runId),
                           onError: (e) => notify.error(e, '테스트 실행을 시작하지 못했습니다'),
