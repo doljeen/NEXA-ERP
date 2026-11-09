@@ -11,6 +11,7 @@ import { ApprovalsPage } from '@/pages/approvals/ApprovalsPage';
 import { AutomationPage } from '@/pages/automation/AutomationPage';
 import { MigrationPage } from '@/pages/admin/MigrationPage';
 import { HrPage } from '@/pages/admin/HrPage';
+import { PayPage } from '@/pages/pay/PayPage';
 
 // 캔버스(@xyflow)는 무거워서 쓰는 화면에서만 불러온다
 const DevKitPage = lazy(() => import('@/pages/dev/kit/DevKitPage').then((m) => ({ default: m.DevKitPage })));
@@ -28,7 +29,7 @@ export function App() {
         <Route path="leave/*" element={<Placeholder title="휴가" week="P1 · 이번 범위 제외(2026-11-05 결정)" />} />
         <Route path="approvals" element={<ApprovalsPage />} />
         <Route path="approvals/:docId" element={<ApprovalsPage />} />
-        <Route path="pay/*" element={<Placeholder title="급여" week="P1" />} />
+        <Route path="pay/*" element={<PayPage />} />
         <Route path="automation/*" element={<AutomationPage />} />
         <Route path="org/*" element={<Placeholder title="조직도" week="P1" />} />
         <Route path="admin" element={<RequireAdmin><Placeholder title="관리 홈" week="5주차" /></RequireAdmin>} />
