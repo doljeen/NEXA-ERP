@@ -13,7 +13,6 @@ import { Workflow } from '@/ui/icons';
 import { formatRelative, serverUtc } from '@/format';
 import { SchemaForm } from '@/automation/SchemaForm';
 import { RunMonitor } from '@/automation/RunMonitor';
-import { usePreviewStore } from '@/automation/previewStore';
 import s from '@/automation/automation.module.css';
 
 /** 사원 업무 자동화 메뉴의 진입 화면 코드(요구사항 3.7: 시연은 HOME만 쓴다) */
@@ -69,7 +68,6 @@ function StartRun({ id }: { id: number }) {
   const start = useStartRun(id);
   const navigate = useNavigate();
   const notify = useNotify();
-  const attach = usePreviewStore((st) => st.attachToRun);
   if (form.isError) return <ErrorPanel error={form.error} onRetry={() => form.refetch()} />;
   if (!form.data) return <Skeleton active={false} paragraph={{ rows: 5 }} />;
   return (
@@ -80,10 +78,7 @@ function StartRun({ id }: { id: number }) {
         submitting={start.isPending}
         submitLabel="실행"
         onSubmit={(v) => start.mutate(v, {
-          onSuccess: (res) => {
-            attach(res.runId, v.fileIds);
-            navigate(`/automation/runs/${res.runId}`);
-          },
+          onSuccess: (res) => navigate(`/automation/runs/${res.runId}`),
           onError: (e) => notify.error(e, '실행하지 못했습니다'),
         })}
       />

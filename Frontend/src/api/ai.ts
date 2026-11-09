@@ -51,6 +51,20 @@ export interface RunSummary {
   finishedAt: string | null;
 }
 
+/** 실행에 붙은 파일. 서버가 inputs.files에 넣는다(runs/service.py `_file_info`, snake_case). path는 서버 경로라 쓰지 않는다 */
+export interface RunInputFile { file_id: number; name: string; content_type: string | null; size: number }
+
+export function runInputFiles(run: RunDetail): RunInputFile[] {
+  const files = run.inputs?.files;
+  return Array.isArray(files) ? (files as RunInputFile[]) : [];
+}
+
+/**
+ * 원본 내려받기(GET /runs/files/{id}/download, origin/develop e712f8e). 쿠키 인증이라 <img src>·링크로 바로 쓴다.
+ * 업로드한 사람·실행 요청자만 받을 수 있다(그 외 RUN_FORBIDDEN) → 결재자는 볼 수 없다.
+ */
+export const runFileDownloadUrl = (fileId: number) => `${BASE}/runs/files/${fileId}/download`;
+
 export interface RunDetail extends RunSummary {
   inputs: Record<string, unknown>;
   outputs: Record<string, unknown> | null;

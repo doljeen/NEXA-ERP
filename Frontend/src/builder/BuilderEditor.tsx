@@ -13,7 +13,6 @@ import {
 import { nodeTypes, type FlowNodeData, type NodeCategory } from '@/flow/FlowNode';
 import { RunMonitor } from '@/automation/RunMonitor';
 import { SchemaForm } from '@/automation/SchemaForm';
-import { usePreviewStore } from '@/automation/previewStore';
 import { ErrorPanel } from '@/ui/ErrorPanel';
 import { Icon } from '@/ui/Icon';
 import { CircleAlert, TriangleAlert } from '@/ui/icons';
@@ -127,7 +126,6 @@ function Editor({ wf, catalog, byType }: { wf: BuilderWorkflow; catalog: NodeDet
   const save = useSaveGraph(wf.id);
   const validate = useValidateGraph(wf.id);
   const startTest = useStartTestRun(wf.id);
-  const attach = usePreviewStore((st) => st.attachToRun);
 
   const [nodes, setNodes] = useState<BNode[]>(() => wf.draftGraph.nodes.map((n) => toNode(n, byType)));
   const [edges, setEdges] = useState<BEdge[]>(() => wf.draftGraph.edges.map(toEdge));
@@ -402,7 +400,7 @@ function Editor({ wf, catalog, byType }: { wf: BuilderWorkflow; catalog: NodeDet
           <div className={s.testForm}>
             <SchemaForm fields={wf.inputForm} submitting={startTest.isPending} submitLabel="테스트 실행"
                         onSubmit={(v) => startTest.mutate(v, {
-                          onSuccess: (r) => { attach(r.runId, v.fileIds); setTestRunId(r.runId); },
+                          onSuccess: (r) => setTestRunId(r.runId),
                           onError: (e) => notify.error(e, '테스트 실행을 시작하지 못했습니다'),
                         })} />
           </div>
