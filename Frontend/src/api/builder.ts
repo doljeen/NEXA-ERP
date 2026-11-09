@@ -158,3 +158,21 @@ export function useDeployWorkflow(id: number) {
     ]),
   });
 }
+
+/* ---------- 노출 화면(placements) ---------- */
+
+/**
+ * 노출 화면 저장(PUT /workflows/{id}/placements). 사원 화면 목록(GET /workflows/available?screen=)은
+ * 배포된 버전이 있고 placements에 그 화면 코드가 있는 워크플로만 준다. 배포만으로는 보이지 않는다.
+ */
+export function useSavePlacements(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (screens: string[]) => api.put<BuilderWorkflow>(`${BASE}/workflows/${id}/placements`, { screens }),
+    onSuccess: (wf) => qc.setQueryData(builderKeys.detail(id), wf),
+    onSettled: () => Promise.all([
+      qc.invalidateQueries({ queryKey: builderKeys.list }),
+      qc.invalidateQueries({ queryKey: ['workflows', 'available'] }),
+    ]),
+  });
+}
