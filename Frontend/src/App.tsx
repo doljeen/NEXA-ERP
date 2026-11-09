@@ -10,6 +10,7 @@ import { AttendancePage } from '@/pages/attendance/AttendancePage';
 import { ApprovalsPage } from '@/pages/approvals/ApprovalsPage';
 import { AutomationPage } from '@/pages/automation/AutomationPage';
 import { MigrationPage } from '@/pages/admin/MigrationPage';
+import { HrPage } from '@/pages/admin/HrPage';
 
 // 캔버스(@xyflow)는 무거워서 쓰는 화면에서만 불러온다
 const DevKitPage = lazy(() => import('@/pages/dev/kit/DevKitPage').then((m) => ({ default: m.DevKitPage })));
@@ -31,7 +32,7 @@ export function App() {
         <Route path="automation/*" element={<AutomationPage />} />
         <Route path="org/*" element={<Placeholder title="조직도" week="P1" />} />
         <Route path="admin" element={<RequireAdmin><Placeholder title="관리 홈" week="5주차" /></RequireAdmin>} />
-        <Route path="admin/hr/*" element={<RequireAdmin><Placeholder title="인사" week="5주차(P1)" /></RequireAdmin>} />
+        <Route path="admin/hr/*" element={<RequireAdmin><HrPage /></RequireAdmin>} />
         <Route path="admin/migration" element={<RequireAdmin><MigrationPage /></RequireAdmin>} />
         <Route path="admin/migration/:id" element={<RequireAdmin><MigrationPage /></RequireAdmin>} />
         <Route path="admin/builder/*" element={<RequireAdmin><Suspense fallback={null}><BuilderPage /></Suspense></RequireAdmin>} />
