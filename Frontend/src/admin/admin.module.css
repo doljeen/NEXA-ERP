@@ -14,3 +14,4 @@
 .props { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 6px 12px; margin: 0; font-size: 13px; }
 .props dt { color: var(--nx-n-500); }
 .props dd { margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--nx-n-700); }

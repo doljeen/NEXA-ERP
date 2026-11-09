@@ -81,3 +81,20 @@ export function useOrgChain(empId: number | null) {
     enabled: empId != null,
   });
 }
+
+/**
+ * 퇴직 처리(PATCH /employees/{id}/terminate, ADMIN). 즉시 TERMINATED가 되고 refresh 토큰이 지워진다
+ * (access는 최대 15분 유효). 부서장 지정은 그대로 남지만 결재선에서는 공석으로 본다. 이미 퇴직이면 409 EMP_008
+ */
+export function useTerminateEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ empId, resignDate, resignReason }: { empId: number; resignDate: string; resignReason?: string }) =>
+      api.patch<null>(`/api/v1/employees/${empId}/terminate`, { resignDate, resignReason: resignReason || null }),
+    onSettled: (_d, _e, v) => Promise.all([
+      qc.invalidateQueries({ queryKey: allEmpKey }),
+      qc.invalidateQueries({ queryKey: ['employee', v.empId] }),
+      qc.invalidateQueries({ queryKey: ['org-chain'] }),
+    ]),
+  });
+}

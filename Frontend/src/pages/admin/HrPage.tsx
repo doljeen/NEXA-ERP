@@ -1,12 +1,26 @@
+import { Tabs } from 'antd';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/ui/primitives';
 import { DepartmentAdmin } from '@/admin/DepartmentAdmin';
+import { EmployeeAdmin } from '@/admin/EmployeeAdmin';
 
-/** 관리자 인사(요구사항 4.1). 지금은 부서(트리·부서장·유형)만, 사원 목록·퇴직은 P1 다음 항목 */
+const TABS = [
+  { key: '', label: '부서' },
+  { key: 'employees', label: '사원' },
+];
+
+/** 관리자 인사(요구사항 4.1): /admin/hr 부서(트리·부서장·유형), /admin/hr/employees 사원(목록·퇴직) */
 export function HrPage() {
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const sub = pathname.replace(/^\/admin\/hr\/?/, '').split('/')[0] ?? '';
+  const active = TABS.some((t) => t.key === sub) ? sub : '';
   return (
     <>
-      <PageHeader title="인사" description="부서 트리에서 부서장과 부서 유형을 관리합니다. 결재선이 이 정보로 만들어집니다." />
-      <DepartmentAdmin />
+      <PageHeader title="인사" description="부서장·부서 유형은 결재선을 만드는 기준입니다." />
+      <Tabs activeKey={active} onChange={(k) => navigate(k ? `/admin/hr/${k}` : '/admin/hr')}
+            items={TABS.map((t) => ({ key: t.key, label: t.label }))} />
+      {active === '' ? <DepartmentAdmin /> : <EmployeeAdmin />}
     </>
   );
 }
