@@ -44,7 +44,7 @@ public class DeptReferenceChecker {
         Optional<Set<String>> labels = orgLabels(file.getMigrationId());
         if (labels.isEmpty()) {
             return List.of(new ValidationIssue(file.getFileId(), null, "dept", deptCol, Severity.WARN, IssueCode.ORG_FILE_MISSING,
-                    "조직 파일이 없어 사원의 부서를 확인하지 못했습니다. 조직 파일을 올리면 다시 확인합니다", null, null));
+                    "조직 파일이 없거나 부서코드·부서명이 연결되지 않아 사원의 부서를 확인하지 못했습니다. 조직 파일을 올리면 다시 확인합니다", null, null));
         }
         List<ValidationIssue> issues = new ArrayList<>();
         for (ParsedTable.Row r : rows) {
@@ -57,7 +57,7 @@ public class DeptReferenceChecker {
         return issues;
     }
 
-    /** 가장 최근 조직 파일의 부서코드·부서명 (같은 이름이 둘이어도 '있는 이름'으로 본다). 조직 파일이 없으면 empty */
+    /** 가장 최근 조직 파일의 부서코드·부서명 (같은 이름이 둘이어도 '있는 이름'으로 본다). 조직 파일이 없거나 부서코드·부서명이 연결되지 않았으면 empty */
     private Optional<Set<String>> orgLabels(Long migrationId) {
         Optional<MigrationFile> org = fileRepository.findByMigrationIdOrderByFileIdAsc(migrationId).stream()
                 .filter(f -> f.getEntity() == MigrationEntity.HR_ORG)

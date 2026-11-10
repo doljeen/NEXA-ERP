@@ -85,7 +85,7 @@ payroll-service(`/internal/v1/pay/migration`)의 실제 이관 API와는 시연 
 | GET | `/{id}/issues` | 오류: 심각도별 건수, 원인별 묶음, 행 단위 목록 |
 | POST | `/{id}/fixes` | 자동 정리 일괄 적용. `issueTotals`(작업 전체) + `fileTotals`(fileId를 줬을 때 그 파일) |
 | GET | `/{id}/references` | 사원 파일에서 뽑은 기준정보와 대상 비교: `NEW`(새로 만듦) / `EXISTS`(있는 값 씀) / `AMBIGUOUS`(적재 막힘) |
-| POST | `/{id}/loads?dryRun=` | 적재 / 미리보기 (차단·자동정리·고를 수 없는 기준정보 0건일 때만). 미리보기에 기준정보 묶음도 나옴. fileIds가 없으면 종류마다 가장 최근 파일 |
+| POST | `/{id}/loads?dryRun=` | 적재 / 미리보기 (차단·자동정리·고를 수 없는 기준정보 0건일 때만). 미리보기에 기준정보 묶음도 나옴. fileIds가 없으면 조직·사원은 가장 최근 파일만, 지난 급여는 적재 안 된 파일 모두 |
 | DELETE | `/{id}/batches/{batchId}` | 묶음 되돌리기 |
 | GET | `/{id}/reconciliation` | 대사 |
 
@@ -197,7 +197,7 @@ AI(LLM)가 관여하는 코드는 `ENUM_VALUE_SUGGESTED` 하나다 (허용 값�
 | `SELF_PARENT` | 적재 불가 | 부서의 상위부서가 자기 자신 |
 | `PARENT_NOT_IN_FILE` | 확인 필요 | 상위부서 코드가 조직 파일에 없음 |
 | `DEPT_NOT_IN_ORG` | 적재 불가 | 사원의 부서가 조직 파일(부서코드·부서명)에 없음 |
-| `ORG_FILE_MISSING` | 확인 필요 | 조직 파일이 없어 사원 부서를 확인하지 못함 (파일 단위) |
+| `ORG_FILE_MISSING` | 확인 필요 | 조직 파일이 없거나 부서코드·부서명이 연결되지 않아 사원 부서를 확인하지 못함 (파일 단위) |
 | **직원명부 대조** | | |
 | `EMP_NOT_IN_ROSTER` | 확인 필요 · 적재 불가 | 사번이 직원명부에 없음 (적재하는 파일이면 적재 불가) |
 | `EMP_NAME_MISMATCH` | 확인 필요 | 사번은 있는데 이름이 다름 |

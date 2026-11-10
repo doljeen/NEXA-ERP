@@ -79,7 +79,7 @@ function ValueCell({ r, migrationId, fileId, editing, onEdit, onClose }: {
       if (same.length) { setLeft(same.map((i) => i.message).join(' / ')); return; }
       onClose();
       notify.success(`${r.rowNo}행 ${r.sourceColumn}을(를) 고쳤습니다`,
-        `남은 이슈 적재 불가 ${res.issueTotals.BLOCK} · 확인 필요 ${res.issueTotals.WARN} · 자동 정리 ${res.issueTotals.FIX}`);
+        `이 파일 남은 이슈 적재 불가 ${res.issueTotals.BLOCK} · 확인 필요 ${res.issueTotals.WARN} · 자동 정리 ${res.issueTotals.FIX}`);
     },
     onError: (e) => notify.error(e, '행을 고치지 못했습니다'),
   });

@@ -26,6 +26,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -268,14 +269,19 @@ public class LoadService {
     // ---------- 내부 ----------
 
     /** fileIds가 비면 적재 가능한 파일 전체(이미 적재된 것·미지원 entity 제외), 있으면 그 파일만 엄격하게 확인 */
+    private static final Set<MigrationEntity> SINGLE_FILE = EnumSet.of(MigrationEntity.HR_ORG, MigrationEntity.HR_EMPLOYEE);
+
     private List<MigrationFile> selectFiles(Long migrationId, List<Long> fileIds) {
         List<MigrationFile> all = fileRepository.findByMigrationIdOrderByFileIdAsc(migrationId);
         List<MigrationFile> selected;
         if (fileIds == null || fileIds.isEmpty()) {
+            // 조직·사원은 회사에 하나뿐이라 다시 올린 예전 파일은 넣지 않는다 (지난 급여는 달마다 파일이 따로일 수 있어 모두)
             Map<MigrationEntity, MigrationFile> latest = new LinkedHashMap<>();
-            all.stream().filter(this::isSupported).forEach(f -> latest.merge(f.getEntity(), f,
-                    (a, b) -> a.getFileId() > b.getFileId() ? a : b));
-            selected = latest.values().stream()
+            all.stream().filter(f -> SINGLE_FILE.contains(f.getEntity()))
+                    .forEach(f -> latest.merge(f.getEntity(), f, (a, b) -> a.getFileId() > b.getFileId() ? a : b));
+            selected = all.stream()
+                    .filter(this::isSupported)
+                    .filter(f -> !SINGLE_FILE.contains(f.getEntity()) || latest.get(f.getEntity()) == f)
                     .filter(f -> !batchRepository.existsByFileIdAndEntityAndStatus(f.getFileId(), f.getEntity(), BatchStatus.LOADED))
                     .toList();
         } else {
