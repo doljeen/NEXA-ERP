@@ -191,9 +191,13 @@ export function RequestForm() {
   const [fix, setFix] = useState<FixRow[]>([]);
   const [ot, setOt] = useState<OtRow[]>(() => {
     const d = params.get('date');
-    const st = params.get('start');
-    const en = params.get('end');
-    return [{ key: nextKey(), start: d ? timeFromIso(d, st) : emptyTime, end: d ? timeFromIso(d, en) : emptyTime }];
+    const starts = params.getAll('start');
+    const ends = params.getAll('end');
+    // 미승인 구간이 여러 개면 구간마다 한 행(start·end는 같은 순서로 짝지음)
+    if (d && starts.length > 0) {
+      return starts.map((st, i) => ({ key: nextKey(), start: timeFromIso(d, st), end: timeFromIso(d, ends[i]) }));
+    }
+    return [{ key: nextKey(), start: emptyTime, end: emptyTime }];
   });
   const [reason, setReason] = useState('');
   const fillClock = params.get('fill') === 'clock' && date === params.get('date');
