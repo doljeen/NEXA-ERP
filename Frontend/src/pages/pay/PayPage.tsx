@@ -70,7 +70,8 @@ function RetirementCard() {
               <dt>상여·연차</dt><dd className="nx-num">상여 {formatMoney(r.annualBonus)} · 연차수당 {formatMoney(r.annualLeavePay)}</dd>
             </dl>
             {r.serviceDays < 365 && <Alert type="info" showIcon message="근속 1년 미만은 퇴직금이 없습니다." />}
-            {r.basePayslipCount < 3 && (
+            {/* 명세서가 하나도 없으면(근속 1년 미만 0원 응답) 환산할 것이 없으므로 안내하지 않는다 */}
+            {r.basePayslipCount > 0 && r.basePayslipCount < 3 && (
               <p className={s.muted}>최근 3개월 중 명세서가 {r.basePayslipCount}개뿐이라 월평균 × 3으로 환산했습니다.</p>
             )}
           </>
@@ -134,6 +135,8 @@ function Payslips() {
   const year = Number(params.get('year')) || thisYear;
   const openId = Number(params.get('payslip')) || null;
   const q = usePayslips(year);
+  // Drawer 제목·PDF는 상세 응답 기준(목록 연도와 다른 명세서나 남의 명세서 id여도 "월"이 비거나 PDF가 보이지 않게, QA C6·PY-52)
+  const detail = usePayslip(openId);
   const set = (next: Record<string, string | null>) => {
     const p = new URLSearchParams(params);
     Object.entries(next).forEach(([k, v]) => (v == null ? p.delete(k) : p.set(k, v)));
@@ -185,8 +188,8 @@ function Payslips() {
         onClose={() => set({ payslip: null })}
         width={640}
         destroyOnHidden
-        title={openId ? `${year}년 ${q.data?.payslips.find((p) => p.payslipId === openId)?.payMonth ?? ''}월 급여명세서` : ''}
-        extra={openId && <Button href={payslipPdfUrl(openId)} download>PDF 내려받기</Button>}
+        title={detail.data ? `${detail.data.payYear}년 ${detail.data.payMonth}월 급여명세서` : '급여명세서'}
+        extra={openId != null && detail.data && <Button href={payslipPdfUrl(openId)} download>PDF 내려받기</Button>}
       >
         {openId != null && <PayslipView id={openId} />}
       </Drawer>
