@@ -96,7 +96,7 @@
 | # | 우선 | 증상 | 원인·위치 | 수정 방법 |
 |---|---|---|---|---|
 | CM-B1 (F22, OG-18) | P2 | user-service가 꺼지면 조직도 등이 ErrorPanel 대신 **안내 없이 로그인 화면으로** 튕김 | `Frontend/src/auth/SessionGate.tsx`: `/employees/me` 실패(네트워크·5xx)를 미인증으로 처리 | 401/403만 로그아웃, 5xx·네트워크 오류는 "서버에 연결하지 못했습니다" + [다시 시도] |
-| CM-B2 (F3) | P2 | 초과근무 신청 URL의 시각이 `18:00`처럼 ISO가 아니면 앱 전체가 흰 화면(`….second is not a function`) | `Frontend/src/attendance/requests/TimeField.tsx:22` 파싱 실패 값을 그대로 씀 | 파싱 실패 시 빈 값으로 두기 + ErrorBoundary |
+| CM-B2 (F3) | P2 | 초과근무 신청 URL의 시각이 `18:00`처럼 ISO가 아니면 앱 전체가 흰 화면(`….second is not a function`) | `Frontend/src/attendance/requests/TimeField.tsx:22` 파싱 실패 값을 그대로 씀 | **수정(2026-11-10, 황문규, `fix/qa-1109-attendance-payroll`)**: 읽을 수 없는 시각은 빈 칸, 형식이 틀리거나 없는 날짜(`date`·`subst`)는 무시. 로컬 확인: `start=18:00` → 빈 시각 + 안내, `date=abc` → 오늘, `date=2026-13-45` → 빈 날짜. 앱 전체 ErrorBoundary는 공통 셸이라 남김 |
 | CM-B3 (F5) | P2 | 로그인된 상태에서 `/login`을 직접 열면 홈으로 가지 않고 로그인 폼이 보임 | `LoginPage.tsx:46`은 `status === 'authenticated'`만 처리. 직접 열면 status가 unknown이라 폼부터 보임 | unknown일 때 `/employees/me` 확인 후 이동(SessionGate 안에서 렌더) |
 | CM-B4 (F14) | P2 | 로그인 잠금 카운트다운이 처음 1초 "16:29"로 표시 | 남은 시간 초기값 계산 | 서버 남은 초로 첫 렌더 |
 | CM-C1 (C29) | P3 | 세션 만료(퇴직·다른 기기)로 로그인 화면에 올 때 안내 문구·`?next`가 남지 않을 때가 있음(E9-03) | 만료 처리 경로마다 다름 | 공통 만료 핸들러로 통일 |
