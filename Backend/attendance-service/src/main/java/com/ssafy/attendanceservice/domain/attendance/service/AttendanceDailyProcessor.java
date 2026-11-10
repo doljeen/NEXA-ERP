@@ -162,12 +162,12 @@ public class AttendanceDailyProcessor {
     }
 
     /**
-     * 조회에 내보낼 근태이상. 저장된 판정에 더해, 퇴근 없이 근무일 마감이 지난 날은 출퇴근 누락으로 본다
+     * 조회에 내보낼 근태이상. 저장된 판정에 더해, 출근하고 퇴근 없이 근무일 마감이 지난 날은 출퇴근 누락으로 본다
      * (저장은 다음 출근·재계산 때 하므로 그 전까지는 조회 시점에 판정)
      */
     public List<AnomalyType> anomalyTypes(AttendanceDaily daily, List<AttendanceAnomaly> stored, OffsetDateTime now) {
         List<AnomalyType> types = stored.stream().map(AttendanceAnomaly::getAnomalyType).toList();
-        if (types.contains(AnomalyType.MISSING_CLOCK) || !daily.isUnclosedPastCutoff(now)) {
+        if (types.contains(AnomalyType.MISSING_CLOCK) || daily.getClockIn() == null || !daily.isUnclosedPastCutoff(now)) {
             return types;
         }
         List<AnomalyType> withMissing = new ArrayList<>(types);
@@ -214,8 +214,9 @@ public class AttendanceDailyProcessor {
                     daily.getWorkDate(), clockIn, schedule.startTime(), daily.getIsHoliday()));
         }
 
-        // 4. 출퇴근 누락: 퇴근이 생겼으면 해소, 퇴근 없이 근무일 마감이 지났으면 판정 (지난 날 관리자 등록·결재 반영)
-        if (clockOut != null) {
+        // 4. 출퇴근 누락: 퇴근이 생겼거나 출근 기록까지 없어졌으면 해소,
+        //    출근만 있고 근무일 마감이 지났으면 판정 (지난 날 관리자 등록·결재 반영)
+        if (clockOut != null || clockIn == null) {
             attendanceAnomalyRepository.deleteByAttendanceDailyAndAnomalyTypeIn(daily, List.of(AnomalyType.MISSING_CLOCK));
         } else if (daily.isPastWorkDayCutoff(DateTimeUtils.now())) {
             attendanceAnomalyRepository.deleteByAttendanceDailyAndAnomalyTypeIn(daily, List.of(AnomalyType.MISSING_CLOCK));

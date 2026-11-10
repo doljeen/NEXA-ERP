@@ -4,6 +4,7 @@ import com.ssafy.attendanceservice.domain.attendance.dto.AdminWorkStatusLogReque
 import com.ssafy.attendanceservice.domain.attendance.entity.enums.AnomalyType;
 import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceAnomalyRepository;
 import com.ssafy.attendanceservice.domain.attendance.repository.AttendanceDailyRepository;
+import com.ssafy.attendanceservice.domain.attendance.repository.WorkStatusLogRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -40,6 +41,7 @@ class MissingClockIntegrationTest {
     @Autowired AttendanceService attendanceService;
     @Autowired AttendanceDailyRepository attendanceDailyRepository;
     @Autowired AttendanceAnomalyRepository attendanceAnomalyRepository;
+    @Autowired WorkStatusLogRepository workStatusLogRepository;
 
     private static OffsetDateTime at(LocalDate date, int hour, int minute) {
         return date.atTime(hour, minute).atOffset(KST);
@@ -54,6 +56,19 @@ class MissingClockIntegrationTest {
                 .extracting(a -> a.getAnomalyType())
                 .containsOnlyOnce(AnomalyType.MISSING_CLOCK);
         assertThat(attendanceService.getDaily(EMP, PAST_DAY).anomalies()).containsOnlyOnce(AnomalyType.MISSING_CLOCK);
+    }
+
+    @Test
+    void 출근_기록까지_지우면_출퇴근_누락이_아님() {
+        var registered = adminAttendanceService.registerLog(1L,
+                new AdminWorkStatusLogRequest(EMP, PAST_DAY, "CLOCK_IN", at(PAST_DAY, 9, 0), "test"));
+        Long logId = workStatusLogRepository
+                .findByEmpIdAndWorkDateAndIsDeletedFalseOrderByStartAtAscLogIdAsc(EMP, PAST_DAY).get(0).getLogId();
+
+        adminAttendanceService.deleteLog(logId);
+
+        assertThat(registered.anomalies()).contains(AnomalyType.MISSING_CLOCK);
+        assertThat(attendanceService.getDaily(EMP, PAST_DAY).anomalies()).doesNotContain(AnomalyType.MISSING_CLOCK);
     }
 
     @Test
