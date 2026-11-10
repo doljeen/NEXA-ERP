@@ -4,7 +4,7 @@ import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import {
-  payslipPdfUrl, useContract, usePayslip, usePayslips, useRetirementEstimate,
+  gradeLabel, payslipPdfUrl, useContract, useGrades, usePayslip, usePayslips, useRetirementEstimate,
   type PayItem, type PayslipListItem,
 } from '@/api/pay';
 import { isApiError } from '@/api/ApiError';
@@ -22,10 +22,13 @@ function ExpectedError({ error, onRetry }: { error: unknown; onRetry: () => void
   return <ErrorPanel error={error} onRetry={onRetry} />;
 }
 
-/** 내 직급 급여 정보(토큰 직급 기준 기본급, 개인 계약 아님) */
+/** 내 직급 급여 정보(토큰 직급 기준 기본급, 개인 계약 아님). 같은 직급도 호봉마다 기본급이 달라 호봉까지 보여 준다 */
 function ContractCard() {
   const q = useContract();
-  const gradeName = useSession((st) => st.me?.gradeName);
+  const grades = useGrades();
+  const sessionGradeName = useSession((st) => st.me?.gradeName);
+  const grade = grades.data?.find((g) => g.gradeId === q.data?.gradeId);
+  const gradeName = grade ? gradeLabel(grade) : sessionGradeName;
   return (
     <Card title="내 직급 급여" meta={gradeName && <span className={s.muted}>{gradeName}</span>}>
       {q.isError ? <ExpectedError error={q.error} onRetry={() => q.refetch()} />
