@@ -8,11 +8,10 @@ export interface TimeVal { time: string | null; nextDay: boolean }
 
 export const emptyTime: TimeVal = { time: null, nextDay: false };
 
-/** 서버 ISO → 근무일 기준 TimeVal. 손으로 고친 URL(`start=18:00`)처럼 읽을 수 없는 값이면 빈 칸(QA CM-B2: 흰 화면 방지) */
+/** 서버 ISO → 근무일 기준 TimeVal. URL로 들어온 값처럼 ISO가 아니면(예: `18:00`) 빈 값(QA CM-B2: 흰 화면) */
 export function timeFromIso(workDate: string, iso: string | null | undefined): TimeVal {
-  if (!iso) return emptyTime;
+  if (!iso || !dayjs(iso).isValid()) return emptyTime;
   const d = kst(iso);
-  if (!d.isValid()) return emptyTime;
   return { time: d.format('HH:mm'), nextDay: d.format('YYYY-MM-DD') !== workDate };
 }
 
