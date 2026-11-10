@@ -125,9 +125,9 @@ export function LoginPage() {
         )}
 
         <Form<FormValues> form={form} layout="vertical" requiredMark onFinish={submit} disabled={busy}>
-          {/* 붙여 넣은 이메일의 앞뒤 공백 때문에 형식 오류로 막히지 않게 입력값에서 바로 뺀다(QA CM-C3) */}
-          <Form.Item name="email" label="이메일" normalize={(v?: string) => v?.trim()} rules={[{ required: true, message: '이메일을 입력해 주세요.' },
-            { type: 'email', message: '이메일 형식이 아닙니다. 예: user1@local.dev' }]} validateTrigger="onBlur">
+          {/* 붙여 넣은 이메일의 앞뒤 공백 때문에 형식 오류로 막히지 않게 검사할 때 공백을 뺀다(QA CM-C3). 보낼 때는 submit이 trim한다 */}
+          <Form.Item name="email" label="이메일" rules={[{ required: true, whitespace: true, message: '이메일을 입력해 주세요.' },
+            { type: 'email', transform: (v?: string) => v?.trim(), message: '이메일 형식이 아닙니다. 예: user1@local.dev' }]} validateTrigger="onBlur">
             <Input autoComplete="username" placeholder="예: user1@local.dev" autoFocus />
           </Form.Item>
           <Form.Item name="pass" label="비밀번호" rules={[{ required: true, message: '비밀번호를 입력해 주세요.' }]}>
