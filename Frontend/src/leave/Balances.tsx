@@ -4,7 +4,7 @@ import { isApiError } from '@/api/ApiError';
 import { useLeaveSummary, useLeaveTypes, type LeaveBalance } from '@/api/leave';
 import { BarSegments, EmptyState } from '@/ui/primitives';
 import { ErrorPanel } from '@/ui/ErrorPanel';
-import { formatLeaveDays } from '@/format';
+import { formatLeaveAmount } from '@/format';
 import { APPLY_PATH } from './links';
 import s from './leave.module.css';
 
@@ -18,24 +18,22 @@ export function NoPolicyNotice() {
   return <Alert type="info" showIcon message="휴가 정책이 배정되지 않았습니다. 인사 담당자에게 문의해 주세요" />;
 }
 
-const days = (min: number) => formatLeaveDays(min).replace(/일$/, '');
-
 function BalanceItem({ b }: { b: LeaveBalance }) {
   return (
     <div className={s.balance}>
       <span className={s.balanceName}>{b.balanceTypeName}</span>
-      <span className={`${s.kpi} nx-num`}>{days(b.remainingMinutes)}<span className={s.kpiUnit}>일 사용 가능</span></span>
+      <span className={`${s.kpi} nx-num`}>{formatLeaveAmount(b.remainingMinutes)}<span className={s.kpiUnit}> 사용 가능</span></span>
       <BarSegments
-        ariaLabel={`${b.balanceTypeName} 사용 가능 ${formatLeaveDays(b.remainingMinutes)}, 결재 중 ${formatLeaveDays(b.reservedMinutes)}`}
+        ariaLabel={`${b.balanceTypeName} 사용 가능 ${formatLeaveAmount(b.remainingMinutes)}, 결재 중 ${formatLeaveAmount(b.reservedMinutes)}`}
         total={b.quantityMinutes}
         segments={[
-          { value: b.remainingMinutes, color: 'var(--nx-brand-600)', label: `사용 가능 ${formatLeaveDays(b.remainingMinutes)}` },
-          { value: b.reservedMinutes, color: 'var(--nx-info-fg)', label: `결재 중 ${formatLeaveDays(b.reservedMinutes)}` },
+          { value: b.remainingMinutes, color: 'var(--nx-brand-600)', label: `사용 가능 ${formatLeaveAmount(b.remainingMinutes)}` },
+          { value: b.reservedMinutes, color: 'var(--nx-info-fg)', label: `결재 중 ${formatLeaveAmount(b.reservedMinutes)}` },
         ]}
       />
       <span className={s.balanceMeta}>
-        <span>결재 중 <b className="nx-num">{formatLeaveDays(b.reservedMinutes)}</b></span>
-        <span>보유 <b className="nx-num">{formatLeaveDays(b.quantityMinutes)}</b></span>
+        <span>결재 중 <b className="nx-num">{formatLeaveAmount(b.reservedMinutes)}</b></span>
+        <span>보유 <b className="nx-num">{formatLeaveAmount(b.quantityMinutes)}</b></span>
       </span>
     </div>
   );
