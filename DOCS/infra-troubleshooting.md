@@ -38,7 +38,7 @@ CI Job이 이미 실행용 JAR를 만들었는데 배포용 Docker 빌드 안에
 develop에 반영할 때는 테스트를 다시 돌리지 않지만 병합된 코드로 JAR는 새로 만듭니다. MR 파이프라인의 JAR를 develop에서 재사용하는 방식은 아닙니다.
 
 ### 결과
-커밋 `b6b0b34` (2026-10-28 10:05 KST) 전후 Runner 로그의 배포 Job 평균 시간입니다.
+커밋 [`9a8c234`](https://github.com/doljeen/NEXA-ERP/commit/9a8c2342bf5a015033c499805c24ee34d9a5495b) (2026-10-28 10:05 KST) 전후 Runner 로그의 배포 Job 평균 시간입니다.
 
 | 서비스 | 적용 전 | 적용 후 |
 | --- | ---: | ---: |
@@ -83,7 +83,7 @@ cache:
 | 항목 | 첫 실행 | 캐시 적중 실행 |
 | --- | --- | --- |
 | 서비스 | User | User |
-| MR / 커밋 | MR !84 / `cf2ff6be` | MR !84 / `cf2ff6be` |
+| MR / 커밋 | MR !84 (GitLab 원본 SHA `cf2ff6be`) | MR !84 (GitLab 원본 SHA `cf2ff6be`) |
 | GitLab Job | `733490` | `734362` |
 | Gradle 로그 | `BUILD SUCCESSFUL in 2m 38s` | `BUILD SUCCESSFUL in 1m 35s` |
 | 시간 | 158초 | 95초 |
@@ -92,7 +92,7 @@ cache:
 
 **적용 전후 Job 전체 시간**
 
-커밋 `cf2ff6b` (2026-10-28 10:47 KST) 전후로 User 빌드 Job 전체 시간이 183초에서 108~116초로 줄었습니다.
+커밋 [`0d20427`](https://github.com/doljeen/NEXA-ERP/commit/0d204273381b04c786ea25017193d8a6190d967a) (2026-10-28 10:47 KST) 전후로 User 빌드 Job 전체 시간이 183초에서 108~116초로 줄었습니다.
 
 Gradle 작업 시간과 Job 시간만 비교했습니다. 대기와 업로드까지 포함한 파이프라인 전체 시간은 아닙니다.
 
@@ -182,7 +182,7 @@ GRANT USAGE, CREATE ON SCHEMA public TO nexa_leave_app;
 Gateway의 [CORS 설정](../Backend/gateway-service/src/main/java/com/ssafy/gatewayservice/config/CorsConfig.java)이 허용 도메인을 `http://localhost:5173` 하나로 고정하고 있었습니다.
 
 ### 해결
-허용 도메인을 `CORS_ALLOWED_ORIGINS` 환경변수로 받도록 바꾸고 Compose에서 값을 넣었습니다. 쉼표로 여러 도메인을 넣을 수 있고 값이 없으면 로컬 주소를 씁니다. (커밋 `12acc8d`)
+허용 도메인을 `CORS_ALLOWED_ORIGINS` 환경변수로 받도록 바꾸고 Compose에서 값을 넣었습니다. 쉼표로 여러 도메인을 넣을 수 있고 값이 없으면 로컬 주소를 씁니다. (커밋 [`63eb905`](https://github.com/doljeen/NEXA-ERP/commit/63eb9057891f15a1e65415ab338884ca98c01041))
 
 ### 결과 (Nginx 접속 로그, 11월 5일 KST)
 
@@ -210,8 +210,8 @@ Gateway의 [CORS 설정](../Backend/gateway-service/src/main/java/com/ssafy/gate
 
 | 항목 | 확인한 기록 | 방법 |
 | --- | --- | --- |
-| 배포 시간 | GitLab Runner Job 로그 | `b6b0b34` 전후로 서비스별 배포 Job 시간을 모아 평균 |
-| Gradle 캐시 | Runner 로그의 `BUILD SUCCESSFUL in ...` | 같은 커밋의 첫 실행과 캐시 적중 실행 비교, Job 시간은 `cf2ff6b` 전후 비교 |
+| 배포 시간 | GitLab Runner Job 로그 | `9a8c234` 전후로 서비스별 배포 Job 시간을 모아 평균 |
+| Gradle 캐시 | Runner 로그의 `BUILD SUCCESSFUL in ...` | 같은 커밋의 첫 실행과 캐시 적중 실행 비교, Job 시간은 `0d20427` 전후 비교 |
 | CPU | `sar` 10분 평균 (11월 6~14일) | 하루 평균과 최고값을 뽑고 최고값 시각의 Runner Job 수와 대조 |
 | 로그인 403 | Nginx access log | 로그인 요청의 상태 코드와 시각을 커밋 시각과 대조 |
 | 서버 분리 | 두 서버의 `docker ps` | 컨테이너 목록 비교 |
