@@ -1,0 +1,88 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+
+    db_host: str
+    db_port: int
+    db_name: str
+    db_user: str
+    db_password: str
+
+    # Local LLM (vLLM on GPU server, via SSAFY VPN)
+    local_llm_base_url: str = ""
+    local_llm_api_key: str = ""
+    local_llm_model: str = "qwen3.8-27b"
+    local_llm_timeout: float = 60.0
+    # 프로세스 전체 LLM 동시 호출 상한 (영수증 수백 장 실행이 겹쳐도 vLLM·GMS를 몰아치지 않게)
+    llm_max_concurrency: int = 16
+    # 다른 실행에서 이미 정산 신청한 영수증 찾기 (이중 청구 방지). 같은 영수증으로 E2E를 반복하는 개발 PC는 .env에서 false
+    receipt_duplicate_check: bool = True
+
+    # OCR 서버 (GPU 서버 PyTriton, Tailscale 경유)
+    ocr_base_url: str = ""          # "호스트:포트" 형식, http:// 없이 (예: 100.x.x.x:18100)
+    ocr_timeout: float = 30.0       # OCR 응답 대기 최대 시간(초)
+
+    # GMS (fallback when the local LLM is down)
+    GMS_API_KEY: str = ""
+    gms_base_url: str = ""
+    gms_model: str = ""
+
+    # 개발용 LLM 테스트 API 등록 여부 (운영에서는 False 유지)
+    llm_test_api_enabled: bool = False
+
+    eureka_server_url: str = ""
+    instance_host: str = ""
+    instance_port: int = 8086
+
+    upload_dir: str = "uploads"
+    max_upload_mb: int = 20
+
+    # JWT 인증 (user-service가 발급한 access 토큰을 공개키로 검증, 팀원 서비스와 같은 환경변수 이름)
+    jwt_jwks_uri: str = "http://localhost:8081/.well-known/jwks.json"
+    auth_dev_employee_id: int | None = None   # 로컬 개발용: 토큰 없으면 이 사원으로 간주 (운영에선 비워둠)
+
+    # 팀원 서비스 주소 (compose 안에선 http://user-service:8081 처럼 서비스 이름으로)
+    user_service_url: str = "http://localhost:8081"
+    approval_service_url: str = "http://localhost:8083"
+    attendance_service_url: str = "http://localhost:8084"
+    leave_service_url: str = "http://localhost:8082"
+    service_timeout: float = 10.0
+
+    # 결재 문서 출처: ai-service 업무 자동화 (결재 서비스 V10부터 지원)
+    approval_source_type: str = "AUTOMATION"
+
+    # Kafka (결재 결과 이벤트 구독). 비어 있으면 구독 안 함
+    kafka_bootstrap_servers: str = ""
+    kafka_group_id: str = "ai-service"
+
+    # MLflow 추적 서버 (GPU 서버, Tailscale 경유). MLOps 스크립트 + 골든셋 자동 전송에서 사용
+    mlflow_tracking_uri: str = ""
+
+    golden_sync_hours: float = 24       # 골든셋 → MLflow 자동 전송 주기 (0 = 끔, 개발 PC는 .env에 0)
+    # 밤 작업이 승격한 모델(MLflow champion)을 재시작 없이 반영하는 확인 주기 (0 = 끔 → Git 파일 기준만)
+    champion_sync_minutes: float = 30
+    # 자동 롤백 (골든셋 전송이 켜진 운영 DB에서만): 승격 버전의 사람 수정률이 이전 버전보다 이만큼 넘게 높으면 되돌림
+    rollback_min_samples: int = 20          # 양쪽 버전 모두 사람 확인이 이 장수 이상일 때만 비교
+    rollback_max_edit_increase: float = 0.10
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+
+    @property
+    def database_url(self) -> str:
+        return (
+            f"postgresql+psycopg://{self.db_user}:{self.db_password}"
+            f"@{self.db_host}:{self.db_port}/{self.db_name}"
+        )
+
+    @property
+    def checkpoint_url(self) -> str:
+        return(
+            f"postgresql://{self.db_user}:{self.db_password}"
+            f"@{self.db_host}:{self.db_port}/{self.db_name}"
+        )
+
+
+settings = Settings()
+

@@ -1,0 +1,17 @@
+name: nexa
+
+include:
+  - path: ./infra/compose/data.yml
+    project_directory: .
+
+  - path: ./infra/compose/platform.yml
+    project_directory: .
+
+  - path: ./infra/compose/backend.yml
+    project_directory: .
+
+  - path: ./infra/compose/ai.yml
+    project_directory: .
+
+  - path: ./infra/compose/monitoring.yml
+    project_directory: .
